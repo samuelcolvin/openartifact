@@ -67,6 +67,36 @@ def test_collect_components_detects_cycle(tmp_path: Path):
         build.collect_components('<component src="A.html"></component>', comps)
 
 
+def test_svg_component_is_inlined_without_prolog(tmp_path: Path):
+    comps = tmp_path / 'components'
+    write(
+        comps / 'Arrow.svg',
+        '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "x.dtd">\n'
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0L10 10" stroke="var(--accent)"/></svg>\n',
+    )
+    found = build.collect_components('<component src="Arrow.svg"></component>', comps)
+    assert found['Arrow.svg'].startswith('<svg xmlns=')
+    assert 'var(--accent)' in found['Arrow.svg']
+
+
+def test_svg_component_must_be_svg(tmp_path: Path):
+    comps = tmp_path / 'components'
+    write(comps / 'Nope.svg', '<div>not svg</div>')
+    with pytest.raises(BuildError, match='expected an <svg> root element'):
+        build.collect_components('<component src="Nope.svg"></component>', comps)
+
+
+def test_component_extension_is_checked(tmp_path: Path):
+    comps = tmp_path / 'components'
+    write(comps / 'Card.txt', '<div/>')
+    with pytest.raises(BuildError, match=r'must be one of \.html, \.svg'):
+        build.collect_components('<component src="Card.txt"></component>', comps)
+
+
+def test_svg_component_reference_is_not_an_image(tmp_path: Path):
+    assert build.collect_images(['<component src="Arrow.svg"></component>'], tmp_path) == {}
+
+
 def test_collect_components_rejects_escape(tmp_path: Path):
     comps = tmp_path / 'components'
     comps.mkdir()

@@ -29,6 +29,23 @@ Anything longer than a few lines of HTML goes in a file and is pulled in with a
 
 <component src="Hero.html"></component>
 
+<slide tab="intro"/>
+
+# Columns and an SVG component
+
+<div class="row">
+<div class="col">
+
+- `.row` and `.col` are layout helpers from `base.css`
+- The diagram is `components/Steps.svg`, inlined as markup
+- Its colours are CSS variables, so it follows the theme
+
+</div>
+<div class="col">
+<component src="Steps.svg"></component>
+</div>
+</div>
+
 <slide tab="details" space="tight"/>
 
 # Details

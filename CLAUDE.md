@@ -72,12 +72,12 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 - **`src/deck.ts`** - navigation: `#N` hash routing (1-indexed), keyboard, wheel, prev/next buttons, tab links, traffic-light home link, viewport scaling via `--slide-scale`, `document.title`, and the `NN/NN` counter injected into every slide's `.topbar-nav`. Next/previous step through a slide's build steps before changing slide; shift + left/right jump a whole slide.
 - **`src/steps.ts`** - in-slide build steps. Elements with `data-step="N"` (and optional `data-step-end="M"`) get a `data-step-state` of `pending` / `active` / `done`; the slide gets `data-step`. Print state is precomputed into `data-step-print`. All appearance lives in `base.css`, never in JS.
 - **`src/types.ts`** - `DeckData` / `DeckConfig`, the JSON contract with `build.py`.
-- **`src/styles/base.css`** - layout, typography, `@page`, transitions, theme variants. Relies on CSS variables that user `styles.css` overrides. `src/hljs.css` maps highlight.js token classes onto those variables.
+- **`src/styles/base.css`** - layout, typography, `@page`, transitions, theme variants, the opt-in layout helpers (`.row`, `.col`, `.cols-2`, `.cols-3`, `.shrink`, `.small-code`, `.center`) and the build-step rules. Relies on CSS variables that user `styles.css` overrides. `src/hljs.css` maps highlight.js token classes onto those variables.
 
 **Builder (`backend/deckx/build.py` + `backend/deckx/template.html`)**
 
 - `main()` is the `deckx` console script declared in `pyproject.toml`; `uv run deckx ...` is the CLI.
-- Loads and validates `deckx.toml` (`tomllib`), reads `deck.md`, collects every `<component src>` file (nesting, cycles, path escapes), inlines every referenced image as a data URI, writes the JSON blob into `template.html` (with `<` escaped as `\u003c`) and copies `frontend/dist/deck.js` next to the output. `pdf` and `html-to-pdf` run Chrome headless with the paper size from `base.css`.
+- Loads and validates `deckx.toml` (`tomllib`), reads `deck.md`, collects every `<component src>` file (`.html` verbatim, `.svg` inlined with its XML prolog stripped; nesting, cycles, path escapes), inlines every referenced image as a data URI, writes the JSON blob into `template.html` (with `<` escaped as `\u003c`) and copies `frontend/dist/deck.js` next to the output. `pdf` and `html-to-pdf` run Chrome headless with the paper size from `base.css`.
 - No third-party runtime Python dependencies. Keep it that way. `deck.js` is not shipped inside the package yet; the builder finds it via the repo layout (`backend/deckx/` -> repo root -> `frontend/dist/`).
 
 **Supporting files**
@@ -102,7 +102,7 @@ Image keys are `posixpath.normpath` of the path as written; `components.ts` norm
 
 ## Slide syntax in one paragraph
 
-A line containing only `<slide .../>` starts a slide; the body runs to the next marker or end of file. Attributes mirror the old `<Slide>` props: `layout` (`title` | `statement`), `theme` (`light`), `tab`, `title`, `space` (`tight` | `wide`), `fontSize` (`large`), `id`. Anything before the first marker is a build error. Any element inside a slide can carry `data-step="N"` / `data-step-end="M"` to take part in build steps. `<component src="Name.html"></component>` needs its closing tag. See `SKILL.md` for the full reference.
+A line containing only `<slide .../>` starts a slide; the body runs to the next marker or end of file. Attributes mirror the old `<Slide>` props: `layout` (`title` | `statement`), `theme` (`light`), `tab`, `title`, `space` (`tight` | `wide`), `fontSize` (`large`), `id`. Anything before the first marker is a build error. Any element inside a slide can carry `data-step="N"` / `data-step-end="M"` to take part in build steps. `<component src="Name.html"></component>` needs its closing tag; `.svg` components are inlined as markup. See `SKILL.md` for the full reference.
 
 ## Code style
 

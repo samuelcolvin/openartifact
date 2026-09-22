@@ -25,7 +25,7 @@ my-deck/
 ├── deckx.toml          # config: title, theme, tabs, footer, paths (all optional)
 ├── deck.md             # the slides
 ├── styles.css          # CSS variable overrides (optional)
-├── components/         # optional HTML snippets pulled in with <component src="...">
+├── components/         # optional HTML or SVG files pulled in with <component src="...">
 │   └── Hero.html
 └── assets/             # images referenced from the markdown, components or styles
 ```
@@ -147,6 +147,7 @@ Short HTML can sit directly in the markdown - a `<mark>`, a small `<div class="n
 - Put the tag on its own line with blank lines around it.
 - `src` is relative to the `components` directory and may not escape it.
 - Components are plain HTML files. They may contain other `<component>` tags (nesting is resolved at load time; cycles fail the build) and may reference images the same way the markdown does.
+- A component can also be an `.svg` file. It is inlined as SVG markup rather than as an image, so it can use the deck's CSS variables (`fill="var(--accent)"`, `font-family="var(--font-mono)"`) and follows the theme. Any XML prolog or doctype is stripped. Use `![](assets/x.svg)` instead when the SVG is a fixed picture that should not pick up the theme.
 - Components take no parameters. Two cards with different text are two files.
 - Scripts inside components do not run. Components see the same CSS variables your `styles.css` defines, so read from variables (`color: var(--accent)`) rather than hard-coding colors.
 
@@ -244,6 +245,34 @@ Fonts:
 - `--font-heading` (default inherits body) - headings.
 - `--font-mono` (default system mono) - inline code, code blocks, tabs, counter, h3.
 - `--font-terminal` (default inherits body) - body inside `.slide-body`.
+
+### Layout helpers
+
+Markdown has no columns, so `base.css` ships a few opt-in classes for the wrapper HTML you write in `deck.md`. Leave a blank line between the wrapper tags and the markdown inside them, or the markdown is not rendered.
+
+- `.row` - a flex row of `.col` children, vertically centred, filling the remaining slide height. Add `.row-top` to align children to the top.
+- `.col` - an equal-width column inside `.row`. Override with inline `style="flex: 0 0 40%"` for an uneven split.
+- `.cols-2` / `.cols-3` - a two or three column grid. Columns are `minmax(0, 1fr)`, so a wide code block shrinks instead of pushing the other column off the slide.
+- `.shrink` - scales its content from the top centre. Set the factor with `style="--shrink: 0.85"` (default 0.9). Use it when a diagram or table is slightly too tall for the slide.
+- `.small-code` - smaller font in code blocks inside it.
+- `.center` - centred text.
+
+```markdown
+<div class="row">
+<div class="col">
+
+- Bullets on the left
+
+</div>
+<div class="col small-code">
+
+```py
+print("code on the right")
+```
+
+</div>
+</div>
+```
 
 ### CSS class hooks
 

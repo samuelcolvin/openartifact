@@ -5,7 +5,7 @@ A deck directory looks like:
     deckx.toml      title, theme, footer, tabs, path overrides (all optional)
     deck.md         the slides, one `<slide .../>` line starting each slide
     styles.css      CSS variable overrides (optional)
-    components/     HTML files pulled in with <component src="Name.html"></component>
+    components/     HTML or SVG files pulled in with <component src="Name.html"></component>
     assets/         images referenced from the markdown, components or styles
 
 Nothing is rendered here. The markdown source, every referenced component, the user's
@@ -204,6 +204,10 @@ def validate_slides(source: str, path: Path) -> int:
 # ---------------------------------------------------------------------------
 
 COMPONENT_RE = re.compile(r"""<component\s+src=(["'])(?P<src>[^"']+)\1\s*>\s*</component>""", re.IGNORECASE)
+COMPONENT_EXTS = '.html', '.svg'
+# The XML prolog and doctype that editors put at the top of an SVG file. They are meaningless once the
+# SVG is inline in an HTML document and the HTML parser would turn them into a bogus comment.
+SVG_PROLOG_RE = re.compile(r'^\s*(?:<\?xml[^>]*\?>\s*|<!DOCTYPE[^>]*>\s*)*', re.IGNORECASE)
 
 
 def collect_components(body: str, components_dir: Path) -> dict[str, str]:
@@ -225,7 +229,11 @@ def collect_components(body: str, components_dir: Path) -> dict[str, str]:
 
 
 def load_component(src: str, components_dir: Path, chain: tuple[str, ...]) -> str:
-    """Read one component file, refusing paths that leave the components directory."""
+    """Read one component file, refusing paths that leave the components directory.
+
+    `.html` files are used verbatim. `.svg` files are inlined as SVG markup (so they can use the deck's CSS
+    variables, which an `<img>` cannot) with any XML prolog and doctype removed.
+    """
     if not components_dir.is_dir():
         raise BuildError(f'components directory not found: {components_dir} (needed for <component src="{src}">)')
     path = (components_dir / src).resolve()
@@ -234,9 +242,16 @@ def load_component(src: str, components_dir: Path, chain: tuple[str, ...]) -> st
     referenced_from = f' (referenced from {chain[-1]})' if chain else ''
     if not path.is_file():
         raise BuildError(f'component not found: {path}{referenced_from}')
-    if SELF_CLOSING_COMPONENT_RE.search(path.read_text(encoding='utf-8')):
+    if path.suffix.lower() not in COMPONENT_EXTS:
+        raise BuildError(f'component {src!r} must be one of {", ".join(COMPONENT_EXTS)}{referenced_from}')
+    source = path.read_text(encoding='utf-8')
+    if SELF_CLOSING_COMPONENT_RE.search(source):
         raise BuildError(f'{path}: self-closing <component .../> is not valid HTML')
-    return path.read_text(encoding='utf-8')
+    if path.suffix.lower() == '.svg':
+        source = SVG_PROLOG_RE.sub('', source, count=1)
+        if not source.lstrip().lower().startswith('<svg'):
+            raise BuildError(f'{path}: expected an <svg> root element')
+    return source
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +273,8 @@ def collect_images(texts: list[str], base: Path) -> dict[str, str]:
     """Find relative image references in `texts` and read them as data URIs, keyed by normalised path."""
     images: dict[str, str] = {}
     for text in texts:
+        # A <component src="X.svg"> is a component reference, not an image.
+        text = COMPONENT_RE.sub('', text)
         for regex in HTML_SRC_RE, MD_IMAGE_RE, CSS_URL_RE:
             for match in regex.finditer(text):
                 raw = match.group('path')
