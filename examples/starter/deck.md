@@ -14,6 +14,12 @@
 - Bigger blocks of HTML live in `components/*.html`
 - Theme is plain CSS variables in `styles.css`
 
+<div data-step="1">
+
+Press next: this paragraph is a build step (`data-step="1"`).
+
+</div>
+
 <slide tab="intro" title="Components"/>
 
 # A component

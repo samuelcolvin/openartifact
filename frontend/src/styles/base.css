@@ -430,6 +430,21 @@ body {
 }
 
 /* ========================================
+   BUILD STEPS (data-step, see steps.ts)
+   The runtime writes data-step-state; everything visual is decided here and can be
+   overridden from styles.css, e.g. to dim "done" elements instead of hiding them.
+   ======================================== */
+[data-step-state] {
+  transition: opacity 0.25s ease;
+}
+
+[data-step-state='pending'],
+[data-step-state='done'] {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* ========================================
    SLIDE BODY
    ======================================== */
 .slide-content {
@@ -1046,6 +1061,19 @@ body {
     background: var(--slide-bg);
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  /* Every slide prints at its final build step. */
+  [data-step-state] {
+    opacity: 1;
+    visibility: visible;
+    transition: none;
+  }
+
+  [data-step-print='pending'],
+  [data-step-print='done'] {
+    opacity: 0;
+    visibility: hidden;
   }
 
   .deck-presenter {

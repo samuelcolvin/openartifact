@@ -69,7 +69,8 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 - **`src/render.ts`** - markdown-it (default preset, `html: true`) with highlight.js `lib/core` plus a curated language list.
 - **`src/slide.ts`** - builds the `section.slide` DOM (topbar with dots, tabs or title, nav slot; `.slide-content > .slide-body`; footer). Class names must match `base.css`.
 - **`src/components.ts`** - replaces `<component src>` tags from the blob (looping for nesting, unwrapping the `<p>` markdown-it puts around an inline tag) and rewrites `img[src]` to embedded data URIs.
-- **`src/deck.ts`** - navigation: `#N` hash routing (1-indexed), keyboard, wheel, prev/next buttons, tab links, traffic-light home link, viewport scaling via `--slide-scale`, `document.title`, and the `NN/NN` counter injected into every slide's `.topbar-nav`.
+- **`src/deck.ts`** - navigation: `#N` hash routing (1-indexed), keyboard, wheel, prev/next buttons, tab links, traffic-light home link, viewport scaling via `--slide-scale`, `document.title`, and the `NN/NN` counter injected into every slide's `.topbar-nav`. Next/previous step through a slide's build steps before changing slide; shift + left/right jump a whole slide.
+- **`src/steps.ts`** - in-slide build steps. Elements with `data-step="N"` (and optional `data-step-end="M"`) get a `data-step-state` of `pending` / `active` / `done`; the slide gets `data-step`. Print state is precomputed into `data-step-print`. All appearance lives in `base.css`, never in JS.
 - **`src/types.ts`** - `DeckData` / `DeckConfig`, the JSON contract with `build.py`.
 - **`src/styles/base.css`** - layout, typography, `@page`, transitions, theme variants. Relies on CSS variables that user `styles.css` overrides. `src/hljs.css` maps highlight.js token classes onto those variables.
 
@@ -101,7 +102,7 @@ Image keys are `posixpath.normpath` of the path as written; `components.ts` norm
 
 ## Slide syntax in one paragraph
 
-A line containing only `<slide .../>` starts a slide; the body runs to the next marker or end of file. Attributes mirror the old `<Slide>` props: `layout` (`title` | `statement`), `theme` (`light`), `tab`, `title`, `space` (`tight` | `wide`), `fontSize` (`large`), `id`. Anything before the first marker is a build error. `<component src="Name.html"></component>` needs its closing tag. See `SKILL.md` for the full reference.
+A line containing only `<slide .../>` starts a slide; the body runs to the next marker or end of file. Attributes mirror the old `<Slide>` props: `layout` (`title` | `statement`), `theme` (`light`), `tab`, `title`, `space` (`tight` | `wide`), `fontSize` (`large`), `id`. Anything before the first marker is a build error. Any element inside a slide can carry `data-step="N"` / `data-step-end="M"` to take part in build steps. `<component src="Name.html"></component>` needs its closing tag. See `SKILL.md` for the full reference.
 
 ## Code style
 

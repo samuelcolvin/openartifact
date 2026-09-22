@@ -3,6 +3,9 @@
  *
  *  - the current slide lives in the URL hash (`#3` is the third slide, 1-indexed)
  *  - keyboard (arrows, space, page up/down), wheel and the topbar buttons navigate
+ *  - "next" and "previous" step through a slide's build steps (`data-step`, see steps.ts)
+ *    before moving between slides; a slide entered backwards opens on its last step
+ *  - shift + left/right jump a whole slide, skipping build steps
  *  - the slide stream is scaled to fit the viewport via `--slide-scale`
  *  - `document.title` follows the active slide
  *  - traffic-light dots jump to slide 1, topbar tabs jump to the first slide of that tab
@@ -11,6 +14,7 @@
  * print-to-PDF sees the counters and every slide.
  */
 
+import { initSteps } from './steps.ts'
 import type { DeckConfig } from './types.ts'
 
 /** Transition style between slides: 'fade' for crossfade, 'slide' for directional slide. */
@@ -29,6 +33,7 @@ export function initDeck(presenter: HTMLElement, config: DeckConfig): void {
   const slides = Array.from(presenter.querySelectorAll<HTMLElement>('.slide'))
   const total = slides.length
   if (total === 0) return
+  const steps = slides.map(initSteps)
 
   let current = indexFromHash(total) ?? 0
   // Navigation direction and the previously active slide, used for directional transitions.
@@ -70,17 +75,30 @@ export function initDeck(presenter: HTMLElement, config: DeckConfig): void {
     prev = null
   }
 
-  /** Jump to a slide index, recording direction for transitions and syncing the hash. */
-  const setCurrent = (next: number, direction: -1 | 1) => {
+  /**
+   * Jump to a slide index, recording direction for transitions and syncing the hash. The
+   * slide opens on its first step, or on its last when `direction` is backwards and
+   * `lastStep` is set (so stepping back through a deck retraces every build).
+   */
+  const setCurrent = (next: number, direction: -1 | 1, lastStep = false) => {
     dir = direction
     if (next !== current) prev = current
     current = next
+    steps[next].set(lastStep ? steps[next].count - 1 : 0)
     window.history.replaceState(null, '', `#${next + 1}`)
     apply()
   }
 
+  /** Advance or retreat one step, spilling over to the neighbouring slide at either end. */
   const go = (direction: -1 | 1) => {
-    setCurrent(Math.max(0, Math.min(total - 1, current + direction)), direction)
+    const s = steps[current]
+    const nextStep = s.current + direction
+    if (nextStep >= 0 && nextStep < s.count) {
+      s.set(nextStep)
+      return
+    }
+    const next = Math.max(0, Math.min(total - 1, current + direction))
+    if (next !== current) setCurrent(next, direction, direction === -1)
   }
 
   /** Scale factor to fit one slide in the viewport with a little padding. */
@@ -93,9 +111,18 @@ export function initDeck(presenter: HTMLElement, config: DeckConfig): void {
     presenter.style.setProperty('--slide-scale', String(scale))
   }
 
-  // Keyboard navigation.
+  /** Jump a whole slide in `direction`, ignoring build steps; the target opens on its first step. */
+  const jump = (direction: -1 | 1) => {
+    const next = Math.max(0, Math.min(total - 1, current + direction))
+    if (next !== current) setCurrent(next, direction)
+  }
+
+  // Keyboard navigation. Shift + arrow skips build steps and moves one slide.
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') {
+    if (e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+      e.preventDefault()
+      jump(e.key === 'ArrowRight' ? 1 : -1)
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') {
       e.preventDefault()
       go(1)
     } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
@@ -126,6 +153,7 @@ export function initDeck(presenter: HTMLElement, config: DeckConfig): void {
     const n = indexFromHash(total)
     if (n !== null) {
       current = n
+      steps[n].set(0)
       apply()
     }
   })
