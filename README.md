@@ -1,4 +1,4 @@
-# Open Artifact
+# OpenArtifact
 
 Markdown slide decks that render in the browser and print to PDF.
 
@@ -30,8 +30,8 @@ my-deck/
 Clone the repo and build the browser runtime once:
 
 ```bash
-git clone https://github.com/samuelcolvin/open-artifact
-cd open-artifact
+git clone https://github.com/samuelcolvin/openartifact
+cd openartifact
 pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/deck.js
 ```
 
@@ -45,8 +45,8 @@ uv run backend/build.py pdf --dir examples/starter     # -> examples/starter/dis
 The builder is a single script with no dependencies beyond Python 3.11+, so it also runs with plain `python3`. To build your own deck, point `--dir` at it or run from inside the deck directory:
 
 ```bash
-python3 path/to/open-artifact/backend/build.py html --dir path/to/my-deck
-cd path/to/my-deck && python3 path/to/open-artifact/backend/build.py pdf
+python3 path/to/openartifact/backend/build.py html --dir path/to/my-deck
+cd path/to/my-deck && python3 path/to/openartifact/backend/build.py pdf
 ```
 
 ## Authoring
@@ -97,7 +97,7 @@ The four built-in themes split on two axes: light vs dark backgrounds, and wheth
 }
 ```
 
-The full authoring guide - slide attributes, components, images, code blocks, the CSS variable contract and class hooks - lives at [`skills/open-artifact/SKILL.md`](skills/open-artifact/SKILL.md). It can be installed into Claude Code, Codex, Cursor, etc. via [skills.sh](https://skills.sh) (`bunx skills add samuelcolvin/open-artifact`).
+The full authoring guide - slide attributes, components, images, code blocks, the CSS variable contract and class hooks - lives at [`skills/openartifact/SKILL.md`](skills/openartifact/SKILL.md). It can be installed into Claude Code, Codex, Cursor, etc. via [skills.sh](https://skills.sh) (`bunx skills add samuelcolvin/openartifact`).
 
 ## Commands
 
@@ -126,7 +126,7 @@ This builds the HTML, prints the exact Chrome command it's about to run, then ru
 
 (Use `google-chrome` or `chromium` on Linux - the script looks for them automatically.)
 
-## Developing Open Artifact itself
+## Developing OpenArtifact itself
 
 The browser runtime is in `frontend/` (pnpm), the builder is `backend/build.py` (dev tools via uv, configured by the root `pyproject.toml`).
 

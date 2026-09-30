@@ -1,5 +1,5 @@
 [project]
-name = "open-artifact"
+name = "openartifact"
 version = "0.1.0"
 description = "Markdown slide decks rendered in the browser, with a print stylesheet that makes PDF export work."
 readme = "README.md"

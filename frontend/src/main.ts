@@ -18,7 +18,7 @@ import type { DeckConfig, DeckData } from './types.ts'
 
 function readData(): DeckData {
   const node = document.getElementById('deck-data')
-  if (!node) throw new Error('open-artifact: <script type="application/json" id="deck-data"> not found')
+  if (!node) throw new Error('openartifact: <script type="application/json" id="deck-data"> not found')
   return JSON.parse(node.textContent ?? '') as DeckData
 }
 
@@ -33,7 +33,7 @@ function addStyle(css: string): void {
 function showError(root: HTMLElement, message: string): void {
   const pre = document.createElement('pre')
   pre.style.cssText = 'margin:2rem;padding:1rem;font:14px/1.5 monospace;color:#ff6b6b;white-space:pre-wrap'
-  pre.textContent = `open-artifact: ${message}`
+  pre.textContent = `openartifact: ${message}`
   root.replaceChildren(pre)
 }
 

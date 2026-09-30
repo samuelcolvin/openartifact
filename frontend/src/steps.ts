@@ -1,5 +1,5 @@
 /**
- * In-slide build steps, the Open Artifact equivalent of Keynote builds or reveal.js fragments.
+ * In-slide build steps, the OpenArtifact equivalent of Keynote builds or reveal.js fragments.
  *
  * Any element inside a slide can opt in with `data-step="N"`: it is hidden until the slide
  * reaches step N. An optional `data-step-end="M"` hides it again once the slide moves past

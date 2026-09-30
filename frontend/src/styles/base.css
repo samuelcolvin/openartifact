@@ -1,5 +1,5 @@
 /*
- * Open Artifact base stylesheet.
+ * OpenArtifact base stylesheet.
  *
  * Structural rules - slide dimensions, @page, counters, transitions, layout,
  * topbar - are theme-agnostic and live at the top.
@@ -763,7 +763,7 @@ body {
 }
 
 /* Code blocks. Background/color are guarded with :not(.shiki) so Shiki-highlighted
-   blocks can supply their own theme palette while keeping Open Artifact's chrome (padding,
+   blocks can supply their own theme palette while keeping OpenArtifact's chrome (padding,
    border, radius, font-size). */
 .slide pre {
   padding: 1.2em 1.4em;

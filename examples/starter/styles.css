@@ -1,4 +1,4 @@
-/* Override the CSS variable defaults defined by the Open Artifact base stylesheet. */
+/* Override the CSS variable defaults defined by the OpenArtifact base stylesheet. */
 :root {
   --bg-deck: #061314;
   --bg-slide: #092224;

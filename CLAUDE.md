@@ -1,10 +1,10 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working in the Open Artifact repository.
+This file provides guidance to Claude Code (claude.ai/code) when working in the OpenArtifact repository.
 
 ## What this is
 
-Open Artifact turns a small set of source files - one markdown file, an optional folder of HTML/SVG components, an optional CSS file and any images they reference - into a single self-contained HTML page that renders itself. The page needs no server and no network: it opens from `file://`, presents in a browser and prints to PDF with Chrome headless. That page is the "artifact". Today the only artifact type is a slide deck.
+OpenArtifact turns a small set of source files - one markdown file, an optional folder of HTML/SVG components, an optional CSS file and any images they reference - into a single self-contained HTML page that renders itself. The page needs no server and no network: it opens from `file://`, presents in a browser and prints to PDF with Chrome headless. That page is the "artifact". Today the only artifact type is a slide deck.
 
 The repo has two halves:
 
@@ -105,7 +105,7 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 
 **Supporting files**
 
-- `skills/open-artifact/SKILL.md` - the user-facing authoring guide. Update it whenever slide syntax, config keys or the CSS contract change.
+- `skills/openartifact/SKILL.md` - the user-facing authoring guide. Update it whenever slide syntax, config keys or the CSS contract change.
 - `examples/starter/` - smoke-test deck exercising every feature (components, nesting, image, tabs, light slide, code).
 - `tests/test_build.py` - pytest for `backend/build.py` (imported as `build`; pytest adds `backend/` to `pythonpath`).
 

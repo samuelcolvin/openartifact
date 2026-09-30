@@ -1,19 +1,19 @@
 ---
-name: open-artifact
-description: Create a deck with Open Artifact. Use when the user mentions "open-artifact", "deck" or "slides", asks to build a slide deck from markdown, asks to convert a brand palette into a deck stylesheet, or asks how to convert an Open Artifact HTML deck into a PDF. Covers project layout, artifact.toml config, deck.md authoring with <slide/> breaks, HTML components, images, code blocks, the styles.css token contract, and the Chrome headless PDF command.
+name: openartifact
+description: Create a deck with OpenArtifact. Use when the user mentions "openartifact", "deck" or "slides", asks to build a slide deck from markdown, asks to convert a brand palette into a deck stylesheet, or asks how to convert an OpenArtifact HTML deck into a PDF. Covers project layout, artifact.toml config, deck.md authoring with <slide/> breaks, HTML components, images, code blocks, the styles.css token contract, and the Chrome headless PDF command.
 ---
 
-# Open Artifact
+# OpenArtifact
 
-Open Artifact builds a single HTML slide deck from one markdown file plus a CSS theme, an optional folder of HTML components and any images they reference. The page renders itself in the browser and converts to PDF via Chrome headless. Building a deck needs Python (via `uv`) and nothing else.
+OpenArtifact builds a single HTML slide deck from one markdown file plus a CSS theme, an optional folder of HTML components and any images they reference. The page renders itself in the browser and converts to PDF via Chrome headless. Building a deck needs Python (via `uv`) and nothing else.
 
 ## Installation
 
-Open Artifact is not packaged. Clone the repo and build the browser runtime once (this is the only step that needs Node):
+OpenArtifact is not packaged. Clone the repo and build the browser runtime once (this is the only step that needs Node):
 
 ```bash
-git clone https://github.com/samuelcolvin/open-artifact
-cd open-artifact && pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/deck.js
+git clone https://github.com/samuelcolvin/openartifact
+cd openartifact && pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/deck.js
 ```
 
 The builder is the single script `backend/build.py` in that checkout. It needs Python 3.11+ and nothing else, so run it with `python3` from any directory. Below, `CHECKOUT` stands for the path to that checkout.
@@ -320,7 +320,7 @@ Deck-level theme classes (applied to both `<html>` and `.deck-presenter` based o
 
 - `.theme-light` / `.theme-dark` / `.theme-markdown-light` / `.theme-markdown-dark`
 
-Markdown inside `.slide-body` renders as plain HTML (`h1`-`h4`, `p`, `ul`, `ol`, `pre`, `code`, `table`, `blockquote`, `a`, `img`, `hr`) - target those tags directly with `.slide <tag>` selectors rather than expecting open-artifact to add wrapper classes.
+Markdown inside `.slide-body` renders as plain HTML (`h1`-`h4`, `p`, `ul`, `ol`, `pre`, `code`, `table`, `blockquote`, `a`, `img`, `hr`) - target those tags directly with `.slide <tag>` selectors rather than expecting OpenArtifact to add wrapper classes.
 
 ### Mapping a brand palette
 

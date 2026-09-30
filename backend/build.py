@@ -381,7 +381,7 @@ def find_chrome() -> str | None:
 
 
 def html_to_pdf(html_path: Path, pdf_path: Path) -> None:
-    """Print an HTML file to PDF with Chrome headless at open-artifact's slide page size.
+    """Print an HTML file to PDF with Chrome headless at openartifact's slide page size.
 
     The exact command is printed first so it can be copied and edited if Chrome is not found
     or the conversion fails.

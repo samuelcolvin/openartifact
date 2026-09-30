@@ -1,5 +1,5 @@
 /**
- * Build the DOM for one slide. The structure and class names are exactly what Open Artifact's
+ * Build the DOM for one slide. The structure and class names are exactly what OpenArtifact's
  * React `<Slide>` used to render, so `styles/base.css` applies unchanged:
  *
  *   section.slide[.title-slide|.statement-slide|.light-slide|.space-*|.font-large]

@@ -1,8 +1,8 @@
 <slide layout="title"/>
 
-### Open Artifact Starter
+### OpenArtifact Starter
 
-# A minimal Open Artifact deck
+# A minimal OpenArtifact deck
 
 ## Built from markdown, HTML and CSS
 
@@ -78,7 +78,7 @@ export function greet(name: string): string {
   return `hello, ${name}`;
 }
 
-console.log(greet("open-artifact"));
+console.log(greet("openartifact"));
 ```
 
 <slide theme="light"/>
@@ -89,7 +89,7 @@ console.log(greet("open-artifact"));
 def greet(name: str) -> str:
     return f"hello, {name}"
 
-print(greet("open-artifact"))
+print(greet("openartifact"))
 ```
 
 <slide layout="statement"/>
