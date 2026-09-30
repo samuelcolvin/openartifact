@@ -16,7 +16,7 @@ export interface DeckTab {
  */
 export type DeckTheme = 'light' | 'dark' | 'markdown-light' | 'markdown-dark'
 
-/** Deck-level config, parsed from `open-artifact.toml` by build.py. */
+/** Deck-level config, parsed from `artifact.toml` by build.py. */
 export interface DeckConfig {
   /** Browser tab title; also the fallback when a slide has no title or h1. */
   title?: string

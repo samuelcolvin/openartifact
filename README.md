@@ -15,7 +15,7 @@ A deck is a directory:
 
 ```
 my-deck/
-├── open-artifact.toml          # title, theme, footer, tabs, paths (all optional)
+├── artifact.toml          # title, theme, footer, tabs, paths (all optional)
 ├── deck.md             # the slides
 ├── styles.css          # theme tokens (optional)
 ├── components/         # HTML files pulled in with <component src="...">
@@ -74,7 +74,7 @@ cd path/to/my-deck && python3 path/to/open-artifact/backend/build.py pdf
 # One bold statement.
 ```
 
-`open-artifact.toml`:
+`artifact.toml`:
 
 ```toml
 title = "My Deck"

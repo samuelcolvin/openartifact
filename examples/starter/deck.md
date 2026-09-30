@@ -55,7 +55,7 @@ Anything longer than a few lines of HTML goes in a file and is pulled in with a
 | Slide content | `deck.md`             |
 | Theme tokens  | `styles.css`          |
 | Components    | `components/*.html`   |
-| Config        | `open-artifact.toml`          |
+| Config        | `artifact.toml`          |
 
 <slide theme="light"/>
 

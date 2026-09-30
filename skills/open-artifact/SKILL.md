@@ -1,6 +1,6 @@
 ---
 name: open-artifact
-description: Create a deck with Open Artifact. Use when the user mentions "open-artifact", "deck" or "slides", asks to build a slide deck from markdown, asks to convert a brand palette into a deck stylesheet, or asks how to convert an Open Artifact HTML deck into a PDF. Covers project layout, open-artifact.toml config, deck.md authoring with <slide/> breaks, HTML components, images, code blocks, the styles.css token contract, and the Chrome headless PDF command.
+description: Create a deck with Open Artifact. Use when the user mentions "open-artifact", "deck" or "slides", asks to build a slide deck from markdown, asks to convert a brand palette into a deck stylesheet, or asks how to convert an Open Artifact HTML deck into a PDF. Covers project layout, artifact.toml config, deck.md authoring with <slide/> breaks, HTML components, images, code blocks, the styles.css token contract, and the Chrome headless PDF command.
 ---
 
 # Open Artifact
@@ -22,7 +22,7 @@ The builder is the single script `backend/build.py` in that checkout. It needs P
 
 ```
 my-deck/
-├── open-artifact.toml          # config: title, theme, tabs, footer, paths (all optional)
+├── artifact.toml          # config: title, theme, tabs, footer, paths (all optional)
 ├── deck.md             # the slides
 ├── styles.css          # CSS variable overrides (optional)
 ├── components/         # optional HTML or SVG files pulled in with <component src="...">
@@ -37,7 +37,7 @@ python3 CHECKOUT/backend/build.py pdf          # build HTML, then ./dist/deck.pd
 
 `html` and `pdf` accept an optional output-path positional - e.g. `python3 CHECKOUT/backend/build.py pdf my-deck.pdf`. Use `--dir <dir>` to point at a deck directory other than the current one. To convert an existing HTML file to PDF without rebuilding, use `python3 CHECKOUT/backend/build.py html-to-pdf <input.html> <output.pdf>`.
 
-## `open-artifact.toml`
+## `artifact.toml`
 
 All fields are optional - a deck with only `deck.md` works.
 
@@ -122,14 +122,14 @@ Picks how the slide arranges its body. Adds a `.<value>-slide` class to the `.sl
 
 Per-slide palette override.
 
-- Omit (or pass `dark`) - the slide inherits the deck-level `theme` from `open-artifact.toml`.
+- Omit (or pass `dark`) - the slide inherits the deck-level `theme` from `artifact.toml`.
 - `light` - forces a single slide onto the light palette (`--bg-light`, `--color-text-light`, `--color-heading-light`) regardless of the deck theme. Useful when one slide needs to break out - e.g. a screenshot of a light-themed UI on an otherwise dark deck. Adds `.light-slide` to the slide.
 
 There is no inverse override: on a light deck, `theme="dark"` has no effect. If you need a single dark slide on a light deck, target it from CSS with a custom `id`.
 
 #### Other attributes
 
-- `tab` - string matching an `id` from the `tabs` array in `open-artifact.toml`. Replaces the plain topbar title with the tab bar, with this slide's tab highlighted. Clicking any tab in any slide jumps to the first slide whose `tab` matches. If `tabs` is not configured, the attribute is silently ignored.
+- `tab` - string matching an `id` from the `tabs` array in `artifact.toml`. Replaces the plain topbar title with the tab bar, with this slide's tab highlighted. Clicking any tab in any slide jumps to the first slide whose `tab` matches. If `tabs` is not configured, the attribute is silently ignored.
 - `title` - plain text rendered in the topbar when `tab` is not set. Also drives `document.title`, so the browser tab updates as the active slide changes. Ignored when `tab` is set.
 - `space` - `tight` reduces bullet/paragraph spacing (use when a slide is close to overflowing); `wide` increases padding and line-height (use for slides with very little text where you want generous breathing room).
 - `fontSize` - `large` bumps body text from 1.15rem to 1.35rem, and h1/h2 proportionally. Useful for slides that need to read from the back of a room.
@@ -286,7 +286,7 @@ Slide structure:
 - `.slide-topbar` - 48px window-chrome bar at the top of every slide.
 - `.slide-content` - padded body wrapper below the topbar (this is what `--slide-padding` applies to).
 - `.slide-body` - inner markdown content container, descendant of `.slide-content`.
-- `.slide-footer` - bottom-right footer text, rendered when `footer` is set in `open-artifact.toml`.
+- `.slide-footer` - bottom-right footer text, rendered when `footer` is set in `artifact.toml`.
 
 Slide modifiers (added to `.slide` based on attributes):
 
@@ -302,7 +302,7 @@ Topbar - left (traffic lights + title/tabs):
 - `.topbar-dot` plus `.topbar-dot--red` / `.topbar-dot--yellow` / `.topbar-dot--green` - individual dots.
 - `.topbar-title` - plain title text, shown when `<slide title="..."/>` is set without a `tab`.
 
-Topbar - tabs (rendered when `<slide tab="..."/>` is set and `tabs` are configured in `open-artifact.toml`):
+Topbar - tabs (rendered when `<slide tab="..."/>` is set and `tabs` are configured in `artifact.toml`):
 
 - `.topbar-tabs` - the tab bar container.
 - `.topbar-tab-group` - per-tab wrapper containing the link plus its leading separator.
@@ -316,7 +316,7 @@ Topbar - right (prev/next + counter):
 - `.topbar-nav-btn` plus `.topbar-nav-prev` / `.topbar-nav-next` - the nav buttons (auto-hidden in print).
 - `.topbar-nav-counter` - the `01/12` slide counter.
 
-Deck-level theme classes (applied to both `<html>` and `.deck-presenter` based on `theme` in `open-artifact.toml`):
+Deck-level theme classes (applied to both `<html>` and `.deck-presenter` based on `theme` in `artifact.toml`):
 
 - `.theme-light` / `.theme-dark` / `.theme-markdown-light` / `.theme-markdown-dark`
 

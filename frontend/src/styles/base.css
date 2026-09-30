@@ -914,7 +914,7 @@ body {
 }
 
 /* ========================================
-   SLIDE FOOTER - shown on every slide when `footer` is set in open-artifact.toml
+   SLIDE FOOTER - shown on every slide when `footer` is set in artifact.toml
    ======================================== */
 .slide-footer {
   position: absolute;

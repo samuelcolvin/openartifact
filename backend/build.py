@@ -2,7 +2,7 @@
 
 A deck directory looks like:
 
-    open-artifact.toml      title, theme, footer, tabs, path overrides (all optional)
+    artifact.toml      title, theme, footer, tabs, path overrides (all optional)
     deck.md         the slides, one `<slide .../>` line starting each slide
     styles.css      CSS variable overrides (optional)
     components/     HTML or SVG files pulled in with <component src="Name.html"></component>
@@ -66,7 +66,7 @@ class BuildError(Exception):
 
 @dataclass
 class Config:
-    """Resolved open-artifact.toml with defaults applied and paths made absolute."""
+    """Resolved artifact.toml with defaults applied and paths made absolute."""
 
     cwd: Path
     markdown_path: Path
@@ -89,9 +89,9 @@ class Config:
 
 
 def load_config(cwd: Path) -> Config:
-    """Load open-artifact.toml from `cwd` if present and validate it. A missing deck.md is fatal."""
+    """Load artifact.toml from `cwd` if present and validate it. A missing deck.md is fatal."""
     cwd = cwd.resolve()
-    toml_path = cwd / 'open-artifact.toml'
+    toml_path = cwd / 'artifact.toml'
     raw: dict[str, object] = {}
     if toml_path.is_file():
         try:
@@ -101,14 +101,14 @@ def load_config(cwd: Path) -> Config:
 
     for key in ('code_light_theme', 'code_dark_theme', 'mdx'):
         if key in raw:
-            raise BuildError(f'open-artifact.toml: `{key}` is no longer supported (code is highlighted in the browser)')
+            raise BuildError(f'artifact.toml: `{key}` is no longer supported (code is highlighted in the browser)')
 
     def optional_str(key: str) -> str | None:
         value = raw.get(key)
         if value is None:
             return None
         if not isinstance(value, str):
-            raise BuildError(f'open-artifact.toml: `{key}` must be a string, got {value!r}')
+            raise BuildError(f'artifact.toml: `{key}` must be a string, got {value!r}')
         return value
 
     markdown_path = cwd / (optional_str('markdown') or 'deck.md')
@@ -117,19 +117,19 @@ def load_config(cwd: Path) -> Config:
 
     theme = optional_str('theme') or 'light'
     if theme not in THEMES:
-        raise BuildError(f'open-artifact.toml: invalid theme {theme!r}. Valid values: {", ".join(THEMES)}')
+        raise BuildError(f'artifact.toml: invalid theme {theme!r}. Valid values: {", ".join(THEMES)}')
 
     raw_tabs = raw.get('tabs', [])
     if not isinstance(raw_tabs, list):
-        raise BuildError('open-artifact.toml: `tabs` must be an array of {id, label} tables')
+        raise BuildError('artifact.toml: `tabs` must be an array of {id, label} tables')
     tabs: list[dict[str, str]] = []
     for tab in raw_tabs:  # pyright: ignore[reportUnknownVariableType]
         if not isinstance(tab, dict):
-            raise BuildError(f'open-artifact.toml: every `tabs` entry needs string `id` and `label`, got {tab!r}')
+            raise BuildError(f'artifact.toml: every `tabs` entry needs string `id` and `label`, got {tab!r}')
         entry = cast('dict[str, object]', tab)
         tab_id, label = entry.get('id'), entry.get('label')
         if not (isinstance(tab_id, str) and isinstance(label, str)):
-            raise BuildError(f'open-artifact.toml: every `tabs` entry needs string `id` and `label`, got {tab!r}')
+            raise BuildError(f'artifact.toml: every `tabs` entry needs string `id` and `label`, got {tab!r}')
         tabs.append({'id': tab_id, 'label': label})
 
     favicon_path: Path | None = None

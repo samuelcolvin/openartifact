@@ -4,13 +4,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working in the 
 
 ## What this is
 
-Open Artifact builds a slide deck from one markdown file, a folder of HTML component files and a CSS file into a single HTML page. The page renders itself in the browser (markdown, slide navigation, code highlighting) and prints to PDF via Chrome headless. It is **the library**, not a deck. Don't add brand-specific content, custom slides, or example brand palettes into the library itself - those belong in user projects or in `examples/`.
+Open Artifact turns a small set of source files - one markdown file, an optional folder of HTML/SVG components, an optional CSS file and any images they reference - into a single self-contained HTML page that renders itself. The page needs no server and no network: it opens from `file://`, presents in a browser and prints to PDF with Chrome headless. That page is the "artifact". Today the only artifact type is a slide deck.
+
+The repo has two halves:
+
+- **`frontend/`** - the browser runtime, `deck.js`. This is the only thing with a JavaScript build step, and it exists solely to be embedded in the output page. All rendering (markdown, components, code highlighting, navigation, build steps, print layout) happens here, in the browser.
+- **`backend/build.py`** - the builder. A single Python script with no dependencies beyond the standard library. It does no rendering: it validates the inputs, packs them into a JSON blob, writes that blob plus `deck.js` into an HTML page, and optionally drives Chrome to print a PDF.
+
+The split is deliberate. The builder is thin enough to run anywhere Python 3.11 exists and to become a service later; the runtime is where the product lives.
+
+### Where it is going
+
+The next step is to run the builder as a standalone service in a Docker container, so callers (people or AI agents) can send source files and get an artifact back without a checkout of this repo. The shape of that service (HTTP API, what it returns, whether it stores anything, whether artifact types beyond slides exist) has **not been decided**. Do not add an HTTP layer, a framework, storage, or a second artifact type until asked. When that work starts, `build.py` should be reused, not rewritten: keep its functions importable and side-effect free apart from the explicit file writes.
+
+### Rules that follow from this
+
+- **The builder stays one dependency-free script.** No package, no console script, no third-party Python imports. `pyproject.toml` exists only to configure the dev tools.
+- **The runtime does the work, the builder packages it.** If a feature can be implemented in `frontend/src/` it goes there. The builder only mirrors runtime logic where it lets a build fail early with a good error (see `validate_slides`).
+- **Everything in the page is synchronous.** Headless Chrome prints at `load`, so the runtime must finish rendering before then. Never add async work to `main.ts`.
+- **Output is self-contained.** Components, styles and images are inlined; the page must never reference anything outside `index.html` and the `deck.js` beside it.
+- **This is the library, not a deck.** Don't add brand-specific content, custom slides or example brand palettes here; those belong in user projects or in `examples/`. `examples/pennylane/` is a real brand deck kept locally for testing and is gitignored.
+
+### Origin
+
+Forked on 2026-09-30 from the `markdown-runtime` branch of [deckx](https://github.com/samuelcolvin/deckx), keeping its history. deckx shipped a Python package with a `deckx` CLI and a `deckx.toml` config file; here those are the single script and `artifact.toml`. The slide vocabulary (`deck.md`, `deck.js`, `.deck`, `DeckData`) was kept because it names the artifact, not the tool.
 
 DO NOT use the em dash "—" in source files or docs; always use a plain hyphen "-".
 
 ## Commands
 
-Two toolchains. Use **pnpm** (never npm/yarn/bun) for the TypeScript browser runtime in `frontend/` and **uv** for the Python builder in `backend/`. There is no Python package or CLI: the builder is the single script `backend/build.py` (standard library only), and `pyproject.toml` at the repo root exists for the ruff / basedpyright / pytest config and the dev dependency group that holds those tools. The plan is to run the builder as a standalone service (Docker) later. The pnpm commands run from `frontend/` (or `pnpm -C frontend ...` from the root); the uv commands run from anywhere in the repo.
+Two toolchains. Use **pnpm** (never npm/yarn/bun) for the TypeScript browser runtime in `frontend/` and **uv** for the Python builder in `backend/`. `pyproject.toml` at the repo root holds the ruff / basedpyright / pytest config and the dev dependency group; uv installs nothing else. The pnpm commands run from `frontend/` (or `pnpm -C frontend ...` from the root); the uv commands run from anywhere in the repo.
 
 ```bash
 pnpm -C frontend install              # install JS dependencies
@@ -77,7 +100,7 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 **Builder (`backend/build.py`)**
 
 - One script, no package. `uv run backend/build.py ...` (or `python3 backend/build.py ...`) runs it; `main()` parses the `html` / `pdf` / `html-to-pdf` subcommands.
-- Loads and validates `open-artifact.toml` (`tomllib`), reads `deck.md`, collects every `<component src>` file (`.html` verbatim, `.svg` inlined with its XML prolog stripped; nesting, cycles, path escapes), inlines every referenced image as a data URI, writes the JSON blob into the `TEMPLATE` page (with `<` escaped as `\u003c`) and copies `frontend/dist/deck.js` next to the output. `pdf` and `html-to-pdf` run Chrome headless with the paper size from `base.css`.
+- Loads and validates `artifact.toml` (`tomllib`), reads `deck.md`, collects every `<component src>` file (`.html` verbatim, `.svg` inlined with its XML prolog stripped; nesting, cycles, path escapes), inlines every referenced image as a data URI, writes the JSON blob into the `TEMPLATE` page (with `<` escaped as `\u003c`) and copies `frontend/dist/deck.js` next to the output. `pdf` and `html-to-pdf` run Chrome headless with the paper size from `base.css`.
 - No third-party runtime Python dependencies. Keep it that way. The builder finds `deck.js` via the repo layout (`backend/` -> repo root -> `frontend/dist/`).
 
 **Supporting files**
