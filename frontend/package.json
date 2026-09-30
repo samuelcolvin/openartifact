@@ -1,15 +1,15 @@
 {
-  "name": "deckx",
+  "name": "open-artifact",
   "version": "0.1.0",
   "private": true,
   "description": "Markdown slide decks rendered in the browser, with a print stylesheet that makes PDF export work.",
   "type": "module",
   "license": "MIT",
   "author": "Samuel Colvin <s@muelcolvin.com>",
-  "homepage": "https://github.com/samuelcolvin/deckx#readme",
+  "homepage": "https://github.com/samuelcolvin/open-artifact#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/samuelcolvin/deckx.git"
+    "url": "git+https://github.com/samuelcolvin/open-artifact.git"
   },
   "packageManager": "pnpm@10.22.0",
   "scripts": {

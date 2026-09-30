@@ -1,28 +1,28 @@
 ---
-name: deckx
-description: Create a deck with deckx. Use when the user mentions "deckx", "deck" or "slides", asks to build a slide deck from markdown, asks to convert a brand palette into a deck stylesheet, or asks how to convert a deckx HTML deck into a PDF. Covers project layout, deckx.toml config, deck.md authoring with <slide/> breaks, HTML components, images, code blocks, the styles.css token contract, and the Chrome headless PDF command.
+name: open-artifact
+description: Create a deck with Open Artifact. Use when the user mentions "open-artifact", "deck" or "slides", asks to build a slide deck from markdown, asks to convert a brand palette into a deck stylesheet, or asks how to convert an Open Artifact HTML deck into a PDF. Covers project layout, open-artifact.toml config, deck.md authoring with <slide/> breaks, HTML components, images, code blocks, the styles.css token contract, and the Chrome headless PDF command.
 ---
 
-# deckx
+# Open Artifact
 
-`deckx` builds a single HTML slide deck from one markdown file plus a CSS theme, an optional folder of HTML components and any images they reference. The page renders itself in the browser and converts to PDF via Chrome headless. Building a deck needs Python (via `uv`) and nothing else.
+Open Artifact builds a single HTML slide deck from one markdown file plus a CSS theme, an optional folder of HTML components and any images they reference. The page renders itself in the browser and converts to PDF via Chrome headless. Building a deck needs Python (via `uv`) and nothing else.
 
 ## Installation
 
-deckx is not packaged yet. Clone the repo and build the browser runtime once (this is the only step that needs Node):
+Open Artifact is not packaged. Clone the repo and build the browser runtime once (this is the only step that needs Node):
 
 ```bash
-git clone https://github.com/samuelcolvin/deckx
-cd deckx && pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/deck.js
+git clone https://github.com/samuelcolvin/open-artifact
+cd open-artifact && pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/deck.js
 ```
 
-The builder is the `deckx` command defined by the checkout's `pyproject.toml`; `uv run --project <checkout> deckx ...` runs it from any directory (uv creates the checkout's `.venv` on first use). Below, `DECKX` stands for the path to that checkout.
+The builder is the single script `backend/build.py` in that checkout. It needs Python 3.11+ and nothing else, so run it with `python3` from any directory. Below, `CHECKOUT` stands for the path to that checkout.
 
 ## Project layout
 
 ```
 my-deck/
-├── deckx.toml          # config: title, theme, tabs, footer, paths (all optional)
+├── open-artifact.toml          # config: title, theme, tabs, footer, paths (all optional)
 ├── deck.md             # the slides
 ├── styles.css          # CSS variable overrides (optional)
 ├── components/         # optional HTML or SVG files pulled in with <component src="...">
@@ -31,13 +31,13 @@ my-deck/
 ```
 
 ```bash
-uv run --project DECKX deckx html         # build to ./dist/index.html (+ deck.js beside it)
-uv run --project DECKX deckx pdf          # build HTML, then ./dist/deck.pdf via Chrome headless
+python3 CHECKOUT/backend/build.py html         # build to ./dist/index.html (+ deck.js beside it)
+python3 CHECKOUT/backend/build.py pdf          # build HTML, then ./dist/deck.pdf via Chrome headless
 ```
 
-`html` and `pdf` accept an optional output-path positional - e.g. `uv run --project DECKX deckx pdf my-deck.pdf`. Use `--dir <dir>` to point at a deck directory other than the current one. To convert an existing HTML file to PDF without rebuilding, use `uv run --project DECKX deckx html-to-pdf <input.html> <output.pdf>`.
+`html` and `pdf` accept an optional output-path positional - e.g. `python3 CHECKOUT/backend/build.py pdf my-deck.pdf`. Use `--dir <dir>` to point at a deck directory other than the current one. To convert an existing HTML file to PDF without rebuilding, use `python3 CHECKOUT/backend/build.py html-to-pdf <input.html> <output.pdf>`.
 
-## `deckx.toml`
+## `open-artifact.toml`
 
 All fields are optional - a deck with only `deck.md` works.
 
@@ -122,14 +122,14 @@ Picks how the slide arranges its body. Adds a `.<value>-slide` class to the `.sl
 
 Per-slide palette override.
 
-- Omit (or pass `dark`) - the slide inherits the deck-level `theme` from `deckx.toml`.
+- Omit (or pass `dark`) - the slide inherits the deck-level `theme` from `open-artifact.toml`.
 - `light` - forces a single slide onto the light palette (`--bg-light`, `--color-text-light`, `--color-heading-light`) regardless of the deck theme. Useful when one slide needs to break out - e.g. a screenshot of a light-themed UI on an otherwise dark deck. Adds `.light-slide` to the slide.
 
 There is no inverse override: on a light deck, `theme="dark"` has no effect. If you need a single dark slide on a light deck, target it from CSS with a custom `id`.
 
 #### Other attributes
 
-- `tab` - string matching an `id` from the `tabs` array in `deckx.toml`. Replaces the plain topbar title with the tab bar, with this slide's tab highlighted. Clicking any tab in any slide jumps to the first slide whose `tab` matches. If `tabs` is not configured, the attribute is silently ignored.
+- `tab` - string matching an `id` from the `tabs` array in `open-artifact.toml`. Replaces the plain topbar title with the tab bar, with this slide's tab highlighted. Clicking any tab in any slide jumps to the first slide whose `tab` matches. If `tabs` is not configured, the attribute is silently ignored.
 - `title` - plain text rendered in the topbar when `tab` is not set. Also drives `document.title`, so the browser tab updates as the active slide changes. Ignored when `tab` is set.
 - `space` - `tight` reduces bullet/paragraph spacing (use when a slide is close to overflowing); `wide` increases padding and line-height (use for slides with very little text where you want generous breathing room).
 - `fontSize` - `large` bumps body text from 1.15rem to 1.35rem, and h1/h2 proportionally. Useful for slides that need to read from the back of a room.
@@ -286,7 +286,7 @@ Slide structure:
 - `.slide-topbar` - 48px window-chrome bar at the top of every slide.
 - `.slide-content` - padded body wrapper below the topbar (this is what `--slide-padding` applies to).
 - `.slide-body` - inner markdown content container, descendant of `.slide-content`.
-- `.slide-footer` - bottom-right footer text, rendered when `footer` is set in `deckx.toml`.
+- `.slide-footer` - bottom-right footer text, rendered when `footer` is set in `open-artifact.toml`.
 
 Slide modifiers (added to `.slide` based on attributes):
 
@@ -302,7 +302,7 @@ Topbar - left (traffic lights + title/tabs):
 - `.topbar-dot` plus `.topbar-dot--red` / `.topbar-dot--yellow` / `.topbar-dot--green` - individual dots.
 - `.topbar-title` - plain title text, shown when `<slide title="..."/>` is set without a `tab`.
 
-Topbar - tabs (rendered when `<slide tab="..."/>` is set and `tabs` are configured in `deckx.toml`):
+Topbar - tabs (rendered when `<slide tab="..."/>` is set and `tabs` are configured in `open-artifact.toml`):
 
 - `.topbar-tabs` - the tab bar container.
 - `.topbar-tab-group` - per-tab wrapper containing the link plus its leading separator.
@@ -316,11 +316,11 @@ Topbar - right (prev/next + counter):
 - `.topbar-nav-btn` plus `.topbar-nav-prev` / `.topbar-nav-next` - the nav buttons (auto-hidden in print).
 - `.topbar-nav-counter` - the `01/12` slide counter.
 
-Deck-level theme classes (applied to both `<html>` and `.deck-presenter` based on `theme` in `deckx.toml`):
+Deck-level theme classes (applied to both `<html>` and `.deck-presenter` based on `theme` in `open-artifact.toml`):
 
 - `.theme-light` / `.theme-dark` / `.theme-markdown-light` / `.theme-markdown-dark`
 
-Markdown inside `.slide-body` renders as plain HTML (`h1`-`h4`, `p`, `ul`, `ol`, `pre`, `code`, `table`, `blockquote`, `a`, `img`, `hr`) - target those tags directly with `.slide <tag>` selectors rather than expecting deckx to add wrapper classes.
+Markdown inside `.slide-body` renders as plain HTML (`h1`-`h4`, `p`, `ul`, `ol`, `pre`, `code`, `table`, `blockquote`, `a`, `img`, `hr`) - target those tags directly with `.slide <tag>` selectors rather than expecting open-artifact to add wrapper classes.
 
 ### Mapping a brand palette
 
@@ -358,9 +358,9 @@ Markdown inside `.slide-body` renders as plain HTML (`h1`-`h4`, `p`, `ul`, `ol`,
 
 ## Building & PDF
 
-`uv run --project DECKX deckx pdf` is the easy path: it builds the HTML, prints the exact Chrome command it's about to run, then runs it. Output lands at `./dist/deck.pdf`.
+`python3 CHECKOUT/backend/build.py pdf` is the easy path: it builds the HTML, prints the exact Chrome command it's about to run, then runs it. Output lands at `./dist/deck.pdf`.
 
-If Chrome / Chromium can't be found, copy the printed command and run it yourself with the right binary path. On Linux deckx auto-detects `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser`.
+If Chrome / Chromium can't be found, copy the printed command and run it yourself with the right binary path. On Linux the script auto-detects `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser`.
 
 Paper size in the printed command matches the slide dimensions (11in × 6.1875in = 16:9). If you override `--slide-width` / `--slide-height` in `styles.css`, edit the `--paper-*` flags to match before running.
 

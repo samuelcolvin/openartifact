@@ -1,4 +1,4 @@
-"""Tests for `deckx.build`. Run with `uv run pytest`."""
+"""Tests for `backend/build.py`. Run with `uv run pytest`."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from deckx import build
-from deckx.build import BuildError
+import build
+from build import BuildError
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -175,13 +175,13 @@ def test_build_reports_missing_deck_js(tmp_path: Path):
 
 def test_load_config_rejects_bad_theme(tmp_path: Path):
     write(tmp_path / 'deck.md', '<slide/>\n# hi\n')
-    write(tmp_path / 'deckx.toml', 'theme = "neon"\n')
+    write(tmp_path / 'open-artifact.toml', 'theme = "neon"\n')
     with pytest.raises(BuildError, match='invalid theme'):
         build.load_config(tmp_path)
 
 
 def test_load_config_rejects_dropped_keys(tmp_path: Path):
     write(tmp_path / 'deck.md', '<slide/>\n# hi\n')
-    write(tmp_path / 'deckx.toml', 'code_light_theme = "github-light"\n')
+    write(tmp_path / 'open-artifact.toml', 'code_light_theme = "github-light"\n')
     with pytest.raises(BuildError, match='no longer supported'):
         build.load_config(tmp_path)

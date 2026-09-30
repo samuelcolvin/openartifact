@@ -1,16 +1,16 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working in the deckx repository.
+This file provides guidance to Claude Code (claude.ai/code) when working in the Open Artifact repository.
 
 ## What this is
 
-`deckx` builds a slide deck from one markdown file, a folder of HTML component files and a CSS file into a single HTML page. The page renders itself in the browser (markdown, slide navigation, code highlighting) and prints to PDF via Chrome headless. It is **the library**, not a deck. Don't add brand-specific content, custom slides, or example brand palettes into the library itself - those belong in user projects or in `examples/`.
+Open Artifact builds a slide deck from one markdown file, a folder of HTML component files and a CSS file into a single HTML page. The page renders itself in the browser (markdown, slide navigation, code highlighting) and prints to PDF via Chrome headless. It is **the library**, not a deck. Don't add brand-specific content, custom slides, or example brand palettes into the library itself - those belong in user projects or in `examples/`.
 
 DO NOT use the em dash "—" in source files or docs; always use a plain hyphen "-".
 
 ## Commands
 
-Two toolchains. Use **pnpm** (never npm/yarn/bun) for the TypeScript browser runtime in `frontend/` and **uv** for the Python builder in `backend/`. `pyproject.toml` at the repo root defines the `deckx` package (`backend/deckx/`), the `deckx` script, and the ruff / basedpyright / pytest config; the dev dependency group holds those tools. The pnpm commands run from `frontend/` (or `pnpm -C frontend ...` from the root); the uv commands run from anywhere in the repo.
+Two toolchains. Use **pnpm** (never npm/yarn/bun) for the TypeScript browser runtime in `frontend/` and **uv** for the Python builder in `backend/`. There is no Python package or CLI: the builder is the single script `backend/build.py` (standard library only), and `pyproject.toml` at the repo root exists for the ruff / basedpyright / pytest config and the dev dependency group that holds those tools. The plan is to run the builder as a standalone service (Docker) later. The pnpm commands run from `frontend/` (or `pnpm -C frontend ...` from the root); the uv commands run from anywhere in the repo.
 
 ```bash
 pnpm -C frontend install              # install JS dependencies
@@ -21,15 +21,15 @@ pnpm -C frontend lint                 # biome check
 pnpm -C frontend format               # biome check --fix
 
 uv sync                               # create .venv with the dev tools (uv run does this on demand too)
-uv run deckx html --dir examples/starter   # -> examples/starter/dist/index.html + deck.js
-uv run deckx pdf --dir examples/starter    # html, then Chrome headless -> dist/deck.pdf
+uv run backend/build.py html --dir examples/starter   # -> examples/starter/dist/index.html + deck.js
+uv run backend/build.py pdf --dir examples/starter    # html, then Chrome headless -> dist/deck.pdf
 uv run ruff check                     # lint backend/ and tests/
 uv run ruff format                    # format them
 uv run basedpyright                   # strict type check of backend/ and tests/
 uv run pytest                         # run tests/
 ```
 
-`deckx` reads `frontend/dist/deck.js`, so run `pnpm -C frontend build` once after cloning or after changing anything in `frontend/src/`.
+`build.py` reads `frontend/dist/deck.js`, so run `pnpm -C frontend build` once after cloning or after changing anything in `frontend/src/`.
 
 **After every set of changes, before reporting work as done, run:**
 
@@ -74,17 +74,17 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 - **`src/types.ts`** - `DeckData` / `DeckConfig`, the JSON contract with `build.py`.
 - **`src/styles/base.css`** - layout, typography, `@page`, transitions, theme variants, the opt-in layout helpers (`.row`, `.col`, `.cols-2`, `.cols-3`, `.shrink`, `.small-code`, `.center`) and the build-step rules. Relies on CSS variables that user `styles.css` overrides. `src/hljs.css` maps highlight.js token classes onto those variables.
 
-**Builder (`backend/deckx/build.py` + `backend/deckx/template.html`)**
+**Builder (`backend/build.py`)**
 
-- `main()` is the `deckx` console script declared in `pyproject.toml`; `uv run deckx ...` is the CLI.
-- Loads and validates `deckx.toml` (`tomllib`), reads `deck.md`, collects every `<component src>` file (`.html` verbatim, `.svg` inlined with its XML prolog stripped; nesting, cycles, path escapes), inlines every referenced image as a data URI, writes the JSON blob into `template.html` (with `<` escaped as `\u003c`) and copies `frontend/dist/deck.js` next to the output. `pdf` and `html-to-pdf` run Chrome headless with the paper size from `base.css`.
-- No third-party runtime Python dependencies. Keep it that way. `deck.js` is not shipped inside the package yet; the builder finds it via the repo layout (`backend/deckx/` -> repo root -> `frontend/dist/`).
+- One script, no package. `uv run backend/build.py ...` (or `python3 backend/build.py ...`) runs it; `main()` parses the `html` / `pdf` / `html-to-pdf` subcommands.
+- Loads and validates `open-artifact.toml` (`tomllib`), reads `deck.md`, collects every `<component src>` file (`.html` verbatim, `.svg` inlined with its XML prolog stripped; nesting, cycles, path escapes), inlines every referenced image as a data URI, writes the JSON blob into the `TEMPLATE` page (with `<` escaped as `\u003c`) and copies `frontend/dist/deck.js` next to the output. `pdf` and `html-to-pdf` run Chrome headless with the paper size from `base.css`.
+- No third-party runtime Python dependencies. Keep it that way. The builder finds `deck.js` via the repo layout (`backend/` -> repo root -> `frontend/dist/`).
 
 **Supporting files**
 
-- `skills/deckx/SKILL.md` - the user-facing authoring guide. Update it whenever slide syntax, config keys or the CSS contract change.
+- `skills/open-artifact/SKILL.md` - the user-facing authoring guide. Update it whenever slide syntax, config keys or the CSS contract change.
 - `examples/starter/` - smoke-test deck exercising every feature (components, nesting, image, tabs, light slide, code).
-- `tests/test_build.py` - pytest for `deckx.build`.
+- `tests/test_build.py` - pytest for `backend/build.py` (imported as `build`; pytest adds `backend/` to `pythonpath`).
 
 ## The JSON contract
 

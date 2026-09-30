@@ -1,5 +1,5 @@
 [project]
-name = "deckx"
+name = "open-artifact"
 version = "0.1.0"
 description = "Markdown slide decks rendered in the browser, with a print stylesheet that makes PDF export work."
 readme = "README.md"
@@ -8,15 +8,9 @@ authors = [{ name = "Samuel Colvin", email = "s@muelcolvin.com" }]
 requires-python = ">=3.11"
 dependencies = []
 
-[project.scripts]
-deckx = "deckx.build:main"
-
-[build-system]
-requires = ["uv_build>=0.8"]
-build-backend = "uv_build"
-
-[tool.uv.build-backend]
-module-root = "backend"
+# Not a package: the builder is the single script backend/build.py, run with `uv run backend/build.py`.
+[tool.uv]
+package = false
 
 [dependency-groups]
 dev = [
@@ -41,7 +35,7 @@ mccabe = { max-complexity = 14 }
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
-known-first-party = ["deckx"]
+known-first-party = ["build"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -57,3 +51,4 @@ extraPaths = ["backend"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["backend"]

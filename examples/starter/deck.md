@@ -1,8 +1,8 @@
 <slide layout="title"/>
 
-### Deckx Starter
+### Open Artifact Starter
 
-# A minimal deckx deck
+# A minimal Open Artifact deck
 
 ## Built from markdown, HTML and CSS
 
@@ -55,7 +55,7 @@ Anything longer than a few lines of HTML goes in a file and is pulled in with a
 | Slide content | `deck.md`             |
 | Theme tokens  | `styles.css`          |
 | Components    | `components/*.html`   |
-| Config        | `deckx.toml`          |
+| Config        | `open-artifact.toml`          |
 
 <slide theme="light"/>
 
@@ -78,7 +78,7 @@ export function greet(name: string): string {
   return `hello, ${name}`;
 }
 
-console.log(greet("deckx"));
+console.log(greet("open-artifact"));
 ```
 
 <slide theme="light"/>
@@ -89,7 +89,7 @@ console.log(greet("deckx"));
 def greet(name: str) -> str:
     return f"hello, {name}"
 
-print(greet("deckx"))
+print(greet("open-artifact"))
 ```
 
 <slide layout="statement"/>

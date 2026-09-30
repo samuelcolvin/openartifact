@@ -2,7 +2,7 @@
 
 A deck directory looks like:
 
-    deckx.toml      title, theme, footer, tabs, path overrides (all optional)
+    open-artifact.toml      title, theme, footer, tabs, path overrides (all optional)
     deck.md         the slides, one `<slide .../>` line starting each slide
     styles.css      CSS variable overrides (optional)
     components/     HTML or SVG files pulled in with <component src="Name.html"></component>
@@ -14,11 +14,11 @@ blob, and `deck.js` (the browser runtime, built from frontend/src with `pnpm bui
 deck when the page loads. The output is `dist/index.html` plus a copy of `deck.js`, which
 works from `file://` and prints to PDF with Chrome headless.
 
-Usage:
+This is a single script with no dependencies beyond the standard library (Python 3.11+):
 
-    uv run deckx html [output] [--dir DIR]
-    uv run deckx pdf [output] [--dir DIR]
-    uv run deckx html-to-pdf input.html output.pdf
+    uv run backend/build.py html [output] [--dir DIR]
+    uv run backend/build.py pdf [output] [--dir DIR]
+    uv run backend/build.py html-to-pdf input.html output.pdf
 """
 
 from __future__ import annotations
@@ -40,10 +40,9 @@ from pathlib import Path
 from typing import cast
 
 HERE = Path(__file__).resolve().parent
-TEMPLATE_PATH = HERE / 'template.html'
-# The repo checkout: backend/deckx/build.py -> repo root. deck.js is not packaged yet, so it is read from the
-# frontend build output.
-ROOT = HERE.parent.parent
+# The repo checkout: backend/build.py -> repo root. deck.js is not packaged, so it is read from the frontend build
+# output.
+ROOT = HERE.parent
 FRONTEND_DIR = ROOT / 'frontend'
 DECK_JS_PATH = FRONTEND_DIR / 'dist' / 'deck.js'
 
@@ -67,7 +66,7 @@ class BuildError(Exception):
 
 @dataclass
 class Config:
-    """Resolved deckx.toml with defaults applied and paths made absolute."""
+    """Resolved open-artifact.toml with defaults applied and paths made absolute."""
 
     cwd: Path
     markdown_path: Path
@@ -90,9 +89,9 @@ class Config:
 
 
 def load_config(cwd: Path) -> Config:
-    """Load deckx.toml from `cwd` if present and validate it. A missing deck.md is fatal."""
+    """Load open-artifact.toml from `cwd` if present and validate it. A missing deck.md is fatal."""
     cwd = cwd.resolve()
-    toml_path = cwd / 'deckx.toml'
+    toml_path = cwd / 'open-artifact.toml'
     raw: dict[str, object] = {}
     if toml_path.is_file():
         try:
@@ -102,14 +101,14 @@ def load_config(cwd: Path) -> Config:
 
     for key in ('code_light_theme', 'code_dark_theme', 'mdx'):
         if key in raw:
-            raise BuildError(f'deckx.toml: `{key}` is no longer supported (code is highlighted in the browser)')
+            raise BuildError(f'open-artifact.toml: `{key}` is no longer supported (code is highlighted in the browser)')
 
     def optional_str(key: str) -> str | None:
         value = raw.get(key)
         if value is None:
             return None
         if not isinstance(value, str):
-            raise BuildError(f'deckx.toml: `{key}` must be a string, got {value!r}')
+            raise BuildError(f'open-artifact.toml: `{key}` must be a string, got {value!r}')
         return value
 
     markdown_path = cwd / (optional_str('markdown') or 'deck.md')
@@ -118,19 +117,19 @@ def load_config(cwd: Path) -> Config:
 
     theme = optional_str('theme') or 'light'
     if theme not in THEMES:
-        raise BuildError(f'deckx.toml: invalid theme {theme!r}. Valid values: {", ".join(THEMES)}')
+        raise BuildError(f'open-artifact.toml: invalid theme {theme!r}. Valid values: {", ".join(THEMES)}')
 
     raw_tabs = raw.get('tabs', [])
     if not isinstance(raw_tabs, list):
-        raise BuildError('deckx.toml: `tabs` must be an array of {id, label} tables')
+        raise BuildError('open-artifact.toml: `tabs` must be an array of {id, label} tables')
     tabs: list[dict[str, str]] = []
     for tab in raw_tabs:  # pyright: ignore[reportUnknownVariableType]
         if not isinstance(tab, dict):
-            raise BuildError(f'deckx.toml: every `tabs` entry needs string `id` and `label`, got {tab!r}')
+            raise BuildError(f'open-artifact.toml: every `tabs` entry needs string `id` and `label`, got {tab!r}')
         entry = cast('dict[str, object]', tab)
         tab_id, label = entry.get('id'), entry.get('label')
         if not (isinstance(tab_id, str) and isinstance(label, str)):
-            raise BuildError(f'deckx.toml: every `tabs` entry needs string `id` and `label`, got {tab!r}')
+            raise BuildError(f'open-artifact.toml: every `tabs` entry needs string `id` and `label`, got {tab!r}')
         tabs.append({'id': tab_id, 'label': label})
 
     favicon_path: Path | None = None
@@ -302,6 +301,24 @@ def data_uri(path: Path) -> str:
 # Page
 # ---------------------------------------------------------------------------
 
+# The whole output page. `{title}`, `{favicon}` and `{blob}` are replaced with plain string substitution (not
+# `str.format`, so braces in the substituted values are safe).
+TEMPLATE = """\
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>{favicon}
+</head>
+<body>
+<div id="root"></div>
+<script type="application/json" id="deck-data">{blob}</script>
+<script src="deck.js"></script>
+</body>
+</html>
+"""
+
 
 def build_deck_data(cfg: Config) -> dict[str, object]:
     """Assemble the JSON blob the runtime reads; shape matches `DeckData` in frontend/src/types.ts."""
@@ -320,7 +337,7 @@ def build_deck_data(cfg: Config) -> dict[str, object]:
 
 
 def render_page(title: str, favicon: Path | None, data: dict[str, object]) -> str:
-    """Fill template.html with the title, favicon link and JSON blob."""
+    """Fill TEMPLATE with the title, favicon link and JSON blob."""
     # `<` is escaped to the JSON sequence `\u003c`, which is still valid JSON. That defeats `</script>` and the
     # `<!--` sequence, which would otherwise put the HTML tokenizer into a state where the real
     # closing tag is ignored. Component HTML can contain both.
@@ -328,8 +345,7 @@ def render_page(title: str, favicon: Path | None, data: dict[str, object]) -> st
     favicon_tag = ''
     if favicon is not None:
         favicon_tag = f'\n<link rel="icon" href="{data_uri(favicon)}">'
-    template = TEMPLATE_PATH.read_text(encoding='utf-8')
-    return template.replace('{title}', html.escape(title)).replace('{favicon}', favicon_tag).replace('{blob}', blob)
+    return TEMPLATE.replace('{title}', html.escape(title)).replace('{favicon}', favicon_tag).replace('{blob}', blob)
 
 
 def build_html(cwd: Path, output: Path | None = None, deck_js: Path = DECK_JS_PATH) -> Path:
@@ -365,7 +381,7 @@ def find_chrome() -> str | None:
 
 
 def html_to_pdf(html_path: Path, pdf_path: Path) -> None:
-    """Print an HTML file to PDF with Chrome headless at deckx's slide page size.
+    """Print an HTML file to PDF with Chrome headless at open-artifact's slide page size.
 
     The exact command is printed first so it can be copied and edited if Chrome is not found
     or the conversion fails.
@@ -416,9 +432,7 @@ def relative(path: Path) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        prog='deckx', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='command')
 
     p_html = sub.add_parser('html', help='build the deck to a single HTML file (default: DIR/dist/index.html)')

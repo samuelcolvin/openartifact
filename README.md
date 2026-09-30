@@ -1,4 +1,4 @@
-# deckx
+# Open Artifact
 
 Markdown slide decks that render in the browser and print to PDF.
 
@@ -15,7 +15,7 @@ A deck is a directory:
 
 ```
 my-deck/
-├── deckx.toml          # title, theme, footer, tabs, paths (all optional)
+├── open-artifact.toml          # title, theme, footer, tabs, paths (all optional)
 ├── deck.md             # the slides
 ├── styles.css          # theme tokens (optional)
 ├── components/         # HTML files pulled in with <component src="...">
@@ -23,30 +23,30 @@ my-deck/
 └── assets/             # images
 ```
 
-`deckx` reads those files and writes `dist/index.html`: the markdown source, every referenced component, your CSS and every referenced image (as a data URI) go into the page as one JSON blob, next to `<script src="deck.js">`. When the page loads, `deck.js` splits the markdown into slides, renders it, expands the components, highlights code and wires up navigation. The output opens from `file://` and prints to PDF with Chrome headless.
+`backend/build.py` reads those files and writes `dist/index.html`: the markdown source, every referenced component, your CSS and every referenced image (as a data URI) go into the page as one JSON blob, next to `<script src="deck.js">`. When the page loads, `deck.js` splits the markdown into slides, renders it, expands the components, highlights code and wires up navigation. The output opens from `file://` and prints to PDF with Chrome headless.
 
 ## Quick start
 
-deckx is not yet packaged, so clone the repo and build the runtime once:
+Clone the repo and build the browser runtime once:
 
 ```bash
-git clone https://github.com/samuelcolvin/deckx
-cd deckx
+git clone https://github.com/samuelcolvin/open-artifact
+cd open-artifact
 pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/deck.js
 ```
 
 Then build the starter deck:
 
 ```bash
-uv run deckx html --dir examples/starter    # -> examples/starter/dist/index.html
-uv run deckx pdf --dir examples/starter     # -> examples/starter/dist/deck.pdf
+uv run backend/build.py html --dir examples/starter    # -> examples/starter/dist/index.html
+uv run backend/build.py pdf --dir examples/starter     # -> examples/starter/dist/deck.pdf
 ```
 
-`uv run` installs the `deckx` package from `backend/` into `.venv` on first use (Python 3.11+, no runtime dependencies). To build your own deck from outside the checkout, point uv at the project and `--dir` at the deck, or run from inside the deck directory:
+The builder is a single script with no dependencies beyond Python 3.11+, so it also runs with plain `python3`. To build your own deck, point `--dir` at it or run from inside the deck directory:
 
 ```bash
-uv run --project path/to/deckx deckx html --dir path/to/my-deck
-cd path/to/my-deck && uv run --project path/to/deckx deckx pdf
+python3 path/to/open-artifact/backend/build.py html --dir path/to/my-deck
+cd path/to/my-deck && python3 path/to/open-artifact/backend/build.py pdf
 ```
 
 ## Authoring
@@ -74,7 +74,7 @@ cd path/to/my-deck && uv run --project path/to/deckx deckx pdf
 # One bold statement.
 ```
 
-`deckx.toml`:
+`open-artifact.toml`:
 
 ```toml
 title = "My Deck"
@@ -97,21 +97,21 @@ The four built-in themes split on two axes: light vs dark backgrounds, and wheth
 }
 ```
 
-The full authoring guide - slide attributes, components, images, code blocks, the CSS variable contract and class hooks - lives at [`skills/deckx/SKILL.md`](skills/deckx/SKILL.md). It can be installed into Claude Code, Codex, Cursor, etc. via [skills.sh](https://skills.sh) (`bunx skills add samuelcolvin/deckx`).
+The full authoring guide - slide attributes, components, images, code blocks, the CSS variable contract and class hooks - lives at [`skills/open-artifact/SKILL.md`](skills/open-artifact/SKILL.md). It can be installed into Claude Code, Codex, Cursor, etc. via [skills.sh](https://skills.sh) (`bunx skills add samuelcolvin/open-artifact`).
 
-## CLI
+## Commands
 
-- `uv run deckx html [output] [--dir DIR]` - build to `<output>` (default: `DIR/dist/index.html`). `deck.js` is copied next to it.
-- `uv run deckx pdf [output] [--dir DIR]` - build HTML, then convert to `<output>` via Chrome (default: `DIR/dist/deck.pdf`).
-- `uv run deckx html-to-pdf <input.html> <output.pdf>` - convert an existing HTML file to PDF, no rebuild.
-- `uv run deckx --help`
+- `uv run backend/build.py html [output] [--dir DIR]` - build to `<output>` (default: `DIR/dist/index.html`). `deck.js` is copied next to it.
+- `uv run backend/build.py pdf [output] [--dir DIR]` - build HTML, then convert to `<output>` via Chrome (default: `DIR/dist/deck.pdf`).
+- `uv run backend/build.py html-to-pdf <input.html> <output.pdf>` - convert an existing HTML file to PDF, no rebuild.
+- `uv run backend/build.py --help`
 
 A subcommand is required - running with no arguments prints help and exits with status 1.
 
 ## Converting to PDF
 
 ```bash
-uv run deckx pdf
+uv run backend/build.py pdf
 ```
 
 This builds the HTML, prints the exact Chrome command it's about to run, then runs it. If Chrome isn't found, or the conversion fails, copy the printed command, fix the Chrome path or flags, and run it yourself. The default command looks like:
@@ -124,11 +124,11 @@ This builds the HTML, prints the exact Chrome command it's about to run, then ru
   --print-to-pdf=./dist/deck.pdf "file://$PWD/dist/index.html"
 ```
 
-(Use `google-chrome` or `chromium` on Linux - deckx looks for them automatically.)
+(Use `google-chrome` or `chromium` on Linux - the script looks for them automatically.)
 
-## Developing deckx itself
+## Developing Open Artifact itself
 
-The browser runtime is in `frontend/` (pnpm), the builder in `backend/deckx/` (uv, configured by the root `pyproject.toml`).
+The browser runtime is in `frontend/` (pnpm), the builder is `backend/build.py` (dev tools via uv, configured by the root `pyproject.toml`).
 
 ```bash
 pnpm -C frontend install
@@ -140,4 +140,4 @@ uv run basedpyright
 uv run pytest
 ```
 
-`pnpm -C frontend dev` rebuilds `frontend/dist/deck.js` on every change to `frontend/src/`; rerun `deckx` to pick it up. Headless Chrome (`--dump-dom`, `--screenshot`) is handy for checking the runtime without a browser session.
+`pnpm -C frontend dev` rebuilds `frontend/dist/deck.js` on every change to `frontend/src/`; rerun `build.py` to pick it up. Headless Chrome (`--dump-dom`, `--screenshot`) is handy for checking the runtime without a browser session.

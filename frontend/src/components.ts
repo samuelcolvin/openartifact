@@ -31,7 +31,7 @@ export function expandComponents(root: ParentNode, components: Record<string, st
       const src = tag.getAttribute('src') ?? ''
       const html = components[src]
       if (html === undefined) {
-        console.warn(`deckx: missing component ${src}`)
+        console.warn(`open-artifact: missing component ${src}`)
         tag.replaceWith(`[missing component: ${src}]`)
         continue
       }
@@ -40,7 +40,7 @@ export function expandComponents(root: ParentNode, components: Record<string, st
       tag.replaceWith(template.content)
     }
   }
-  console.warn(`deckx: component nesting deeper than ${MAX_COMPONENT_DEPTH}, giving up`)
+  console.warn(`open-artifact: component nesting deeper than ${MAX_COMPONENT_DEPTH}, giving up`)
 }
 
 /**

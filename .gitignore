@@ -15,3 +15,6 @@ __pycache__/
 
 # local scratch path
 /scratch/
+
+# brand-specific example kept out of the repo
+/examples/pennylane/

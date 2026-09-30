@@ -1,5 +1,5 @@
 /**
- * Presenter behaviour, a vanilla port of the React `Deck` component deckx used to ship:
+ * Presenter behaviour, a vanilla port of the React `Deck` component this project used to ship:
  *
  *  - the current slide lives in the URL hash (`#3` is the third slide, 1-indexed)
  *  - keyboard (arrows, space, page up/down), wheel and the topbar buttons navigate
