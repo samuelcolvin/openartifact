@@ -12,7 +12,7 @@
  * A slide's step count is derived from those attributes (the highest step mentioned, plus
  * one), so a slide with no stepped elements has exactly one step. The runtime only writes
  * state: `data-step-state` on every stepped element (`pending` | `active` | `done`) and
- * `data-step` on the slide. `base.css` turns that state into visibility, and a deck's own
+ * `data-step` on the slide. `deck.css` turns that state into visibility, and a deck's own
  * stylesheet can override it for fades, dimming or anything else.
  *
  * Printing shows every slide at its final step. That state is written once at load into

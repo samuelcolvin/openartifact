@@ -1,6 +1,6 @@
 /**
  * Build the DOM for one slide. The structure and class names are exactly what OpenArtifact's
- * React `<Slide>` used to render, so `styles/base.css` applies unchanged:
+ * React `<Slide>` used to render, so `styles/deck.css` applies unchanged:
  *
  *   section.slide[.title-slide|.statement-slide|.light-slide|.space-*|.font-large]
  *     .slide-topbar
@@ -12,7 +12,7 @@
  */
 
 import type { RawSlide } from './split.ts'
-import type { DeckConfig, DeckTab } from './types.ts'
+import type { ArtifactConfig, DeckTab } from './types.ts'
 
 /** Maps the `theme` attribute to its CSS class. Only `light` is an override; `dark` is the deck default. */
 const THEME_CLASS: Record<string, string> = { light: 'light-slide' }
@@ -31,7 +31,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node
 }
 
-export function buildSlide(raw: RawSlide, bodyHtml: string, config: DeckConfig): HTMLElement {
+export function buildSlide(raw: RawSlide, bodyHtml: string, config: ArtifactConfig): HTMLElement {
   const { layout, theme, tab, title, space, fontSize, id } = raw.attrs
 
   const section = el('section')

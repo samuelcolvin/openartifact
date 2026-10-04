@@ -15,7 +15,7 @@
  */
 
 import { initSteps } from './steps.ts'
-import type { DeckConfig } from './types.ts'
+import type { ArtifactConfig } from './types.ts'
 
 /** Transition style between slides: 'fade' for crossfade, 'slide' for directional slide. */
 const TRANSITION: 'fade' | 'slide' = 'fade'
@@ -29,7 +29,7 @@ function indexFromHash(total: number): number | null {
   return Math.min(n - 1, total - 1)
 }
 
-export function initDeck(presenter: HTMLElement, config: DeckConfig): void {
+export function initDeck(presenter: HTMLElement, config: ArtifactConfig): void {
   const slides = Array.from(presenter.querySelectorAll<HTMLElement>('.slide'))
   const total = slides.length
   if (total === 0) return

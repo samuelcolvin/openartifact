@@ -49,7 +49,7 @@ for (const [name, language] of Object.entries(LANGUAGES)) {
 const md = new MarkdownIt({
   html: true,
   // Returning '' tells markdown-it to escape the code itself; either way it wraps the
-  // result in <pre><code class="language-x">, which base.css styles via `pre:not(.shiki)`.
+  // result in <pre><code class="language-x">, which deck.css and prose.css style.
   highlight: (code, lang) => {
     if (lang && hljs.getLanguage(lang)) {
       return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value

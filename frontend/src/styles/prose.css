@@ -1,0 +1,327 @@
+/*
+ * OpenArtifact prose stylesheet: typography for the `document` and `page` types, which
+ * render the whole markdown into one `<article class="prose">`. It mirrors the deck's
+ * `.slide` typography on the same variables, at reading sizes rather than projection sizes,
+ * and adds print rules so headings stay with their text and blocks are not split.
+ * The markdown decorations (`#` prefixes, `**` markers, diamond bullets) follow the
+ * `markdown-*` themes exactly as they do on slides.
+ */
+
+.prose {
+  color: var(--slide-text);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+/* ========================================
+   HEADINGS
+   ======================================== */
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  font-family: var(--font-heading);
+  color: var(--slide-heading);
+  line-height: 1.25;
+  margin-top: 1.6em;
+  margin-bottom: 0.5em;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose h1 {
+  font-size: 2.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.prose h2 {
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+
+.prose h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.prose h4 {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+:is(.theme-markdown-light, .theme-markdown-dark) .prose h1::before {
+  content: '# ';
+  color: var(--color-muted);
+  font-weight: 400;
+}
+:is(.theme-markdown-light, .theme-markdown-dark) .prose h2::before {
+  content: '## ';
+  color: var(--color-muted);
+  font-weight: 400;
+}
+:is(.theme-markdown-light, .theme-markdown-dark) .prose h3::before {
+  content: '### ';
+  color: var(--color-muted);
+  font-weight: 400;
+}
+:is(.theme-markdown-light, .theme-markdown-dark) .prose h4::before {
+  content: '#### ';
+  color: var(--color-muted);
+  font-weight: 400;
+}
+
+/* ========================================
+   BODY TEXT
+   ======================================== */
+.prose p {
+  margin-bottom: 1em;
+}
+
+.prose ul,
+.prose ol {
+  margin-bottom: 1em;
+  padding-left: 1.6em;
+}
+
+.prose li {
+  margin-bottom: 0.3em;
+}
+
+.prose ul ul,
+.prose ol ul,
+.prose ul ol,
+.prose ol ol {
+  margin-top: 0.3em;
+  margin-bottom: 0.3em;
+}
+
+:is(.theme-markdown-light, .theme-markdown-dark) .prose ul,
+:is(.theme-markdown-light, .theme-markdown-dark) .prose ol {
+  padding-left: 0;
+  list-style: none;
+}
+
+:is(.theme-markdown-light, .theme-markdown-dark) .prose ol {
+  counter-reset: list-counter;
+}
+:is(.theme-markdown-light, .theme-markdown-dark) .prose ol li {
+  counter-increment: list-counter;
+}
+:is(.theme-markdown-light, .theme-markdown-dark) .prose ol li::before {
+  content: counter(list-counter);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 0.85em;
+  margin-right: 0.6em;
+}
+
+:is(.theme-markdown-light, .theme-markdown-dark) .prose ul li {
+  position: relative;
+  padding-left: 1.6em;
+}
+:is(.theme-markdown-light, .theme-markdown-dark) .prose ul li::before {
+  content: '\25C6';
+  position: absolute;
+  left: 0.5em;
+  top: 0.15em;
+  color: var(--accent);
+  font-size: 0.8em;
+}
+
+.prose strong {
+  font-weight: 700;
+  color: var(--slide-heading);
+}
+
+:is(.theme-markdown-light, .theme-markdown-dark) .prose strong::before,
+:is(.theme-markdown-light, .theme-markdown-dark) .prose strong::after {
+  content: '**';
+  color: var(--color-muted);
+  font-weight: 400;
+}
+
+:is(.theme-markdown-light, .theme-markdown-dark) .prose :is(td, th) strong::before,
+:is(.theme-markdown-light, .theme-markdown-dark) .prose :is(td, th) strong::after {
+  content: none;
+}
+
+.prose em {
+  font-style: italic;
+}
+
+.prose a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  transition: border-color 0.15s;
+}
+
+.prose a:hover {
+  color: var(--accent-secondary);
+  border-bottom-color: var(--accent-secondary);
+}
+
+/* ========================================
+   CODE
+   ======================================== */
+.prose code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: color-mix(in srgb, var(--slide-heading) 8%, transparent);
+  color: var(--slide-heading);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+
+:is(.theme-markdown-light, .theme-markdown-dark) .prose code {
+  background: var(--surface);
+  color: var(--accent-aqua);
+}
+
+.prose pre {
+  padding: 1em 1.2em;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--slide-heading) 10%, transparent);
+  background: color-mix(in srgb, var(--slide-heading) 6%, transparent);
+  color: var(--slide-heading);
+  overflow-x: auto;
+  margin-bottom: 1.2em;
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+:is(.theme-markdown-light, .theme-markdown-dark) .prose pre {
+  background: var(--bg-deck);
+  color: var(--color-heading);
+  border-color: color-mix(in srgb, var(--accent-aqua) 12%, transparent);
+}
+
+.prose pre code,
+:is(.theme-markdown-light, .theme-markdown-dark) .prose pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+/* ========================================
+   BLOCKS
+   ======================================== */
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.prose blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 0.6em 1.2em;
+  margin: 1.2em 0;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-radius: 0 6px 6px 0;
+  color: color-mix(in srgb, var(--slide-heading) 70%, transparent);
+  font-style: italic;
+}
+
+.prose blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.2em;
+  font-size: 0.9375rem;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid color-mix(in srgb, var(--slide-heading) 10%, transparent);
+  padding: 0.5em 0.8em;
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  background: color-mix(in srgb, var(--slide-heading) 6%, transparent);
+  font-weight: 700;
+  color: var(--slide-heading);
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+:is(.theme-markdown-dark) .prose th {
+  background: var(--surface);
+}
+
+.prose hr {
+  border: none;
+  height: 1px;
+  background: color-mix(in srgb, var(--slide-heading) 20%, transparent);
+  margin: 2em 0;
+}
+
+:is(.theme-markdown-light, .theme-markdown-dark) .prose hr {
+  background: linear-gradient(90deg, var(--accent), var(--accent-secondary), var(--accent-tertiary));
+  opacity: 0.5;
+}
+
+/* `footer` from artifact.toml, rendered once at the end. */
+.prose-footer {
+  margin-top: 3em;
+  padding-top: 1em;
+  border-top: 1px solid color-mix(in srgb, var(--slide-heading) 12%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  color: var(--topbar-muted);
+}
+
+/* ========================================
+   PRINT
+   ======================================== */
+@media print {
+  html,
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .prose {
+    orphans: 3;
+    widows: 3;
+  }
+
+  .prose h1,
+  .prose h2,
+  .prose h3,
+  .prose h4 {
+    break-after: avoid;
+  }
+
+  .prose pre,
+  .prose blockquote,
+  .prose table,
+  .prose img,
+  .prose figure,
+  .prose li {
+    break-inside: avoid;
+  }
+
+  .prose a {
+    border-bottom: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-shadow: none !important;
+  }
+}

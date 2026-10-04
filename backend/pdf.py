@@ -1,8 +1,9 @@
 """Print a served artifact page to PDF with Chrome headless.
 
-The page already carries its print stylesheet (`@page` in frontend/src/styles/base.css); this module only runs
-Chrome against its URL with the matching paper size. It takes a URL rather than a file because the page is not
-self-contained: it loads `openartifact.js` and its images from `server.py`. Standard library only, like `build.py`.
+The page carries its own print stylesheet, including the paper size: each artifact type's sheet sets `@page`
+(16:9 slides for a deck, A4 for a document or page), and Chrome honours it, so no paper flags are passed here.
+It takes a URL rather than a file because the page is not self-contained: it loads `openartifact.js` and its
+images from `server.py`. Standard library only, like `build.py`.
 """
 
 from __future__ import annotations
@@ -15,10 +16,6 @@ import sys
 from pathlib import Path
 
 from build import BuildError
-
-# Slide page size in inches, matching the @page rule in frontend/src/styles/base.css (16:9).
-PAPER_WIDTH_IN = 11
-PAPER_HEIGHT_IN = 6.1875
 
 
 def find_chrome() -> str | None:
@@ -33,7 +30,7 @@ def find_chrome() -> str | None:
 
 
 def print_to_pdf(url: str, pdf_path: Path) -> Path:
-    """Print the page at `url` to PDF with Chrome headless at the slide page size; returns `pdf_path` resolved.
+    """Print the page at `url` to PDF with Chrome headless; returns `pdf_path` resolved.
 
     When Chrome is missing or exits non-zero the `BuildError` carries the exact command, so it can be copied and
     run by hand.
@@ -44,10 +41,8 @@ def print_to_pdf(url: str, pdf_path: Path) -> Path:
     args = [
         '--headless=new',
         '--disable-gpu',
-        '--no-margins',
-        '--print-to-pdf-no-header',
-        f'--paper-width={PAPER_WIDTH_IN}',
-        f'--paper-height={PAPER_HEIGHT_IN}',
+        # The flag was `--print-to-pdf-no-header` before Chrome ~130; current builds silently ignore that one.
+        '--no-pdf-header-footer',
         f'--print-to-pdf={pdf_path}',
         url,
     ]

@@ -18,8 +18,9 @@ def test_missing_chrome_reports_command(tmp_path: Path, monkeypatch: pytest.Monk
         pdf.print_to_pdf(URL, tmp_path / 'out.pdf')
     message = str(exc_info.value)
     assert message.startswith('Chrome / Chromium not found')
-    assert f'--paper-width={pdf.PAPER_WIDTH_IN} --paper-height={pdf.PAPER_HEIGHT_IN}' in message
-    assert message.endswith(f' {URL}')
+    # No paper flags: each artifact type's stylesheet sets `@page`, which Chrome honours.
+    assert '--paper-' not in message
+    assert message.endswith(f' --print-to-pdf={tmp_path / "out.pdf"} {URL}')
 
 
 def test_chrome_failure_reports_command_and_stderr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

@@ -66,7 +66,9 @@ async def test_new_artifact_builds(artifacts_root: Path):
     assert out.endswith(f'page: http://127.0.0.1:8000/artifacts/{name}/\n')
     directory = artifacts_root / name
     assert (directory / 'deck.md').read_text() == '<slide/>\n# Hello\n'
-    assert (directory / 'artifact.toml').read_text() == 'title = "My Deck!"\ntheme = "dark"\nfooter = "ACME"\n'
+    assert (directory / 'artifact.toml').read_text() == (
+        'title = "My Deck!"\ntype = "deck"\ntheme = "dark"\nfooter = "ACME"\n'
+    )
     assert (directory / 'dist' / 'index.html').is_file()
     assert mcp_server.ARTIFACT_NAME_RE.fullmatch(name)
 
@@ -90,6 +92,22 @@ def test_new_artifact_id_handles_odd_titles():
 
 def test_theme_literal_matches_builder():
     assert set(mcp_server.THEMES) == set(build.THEMES)
+
+
+def test_type_literal_matches_builder():
+    assert set(mcp_server.TYPES) == set(build.TYPES)
+
+
+async def test_new_artifact_page_takes_plain_markdown(artifacts_root: Path):
+    out = await mcp_server.new_artifact('Notes', '# Notes\n\nSome text.\n', type='page')
+    name = artifact_id(out)
+    assert (artifacts_root / name / 'artifact.toml').read_text() == 'title = "Notes"\ntype = "page"\ntheme = "light"\n'
+    assert (artifacts_root / name / 'dist' / 'index.html').is_file()
+
+
+async def test_new_artifact_document_rejects_slide_markers(artifacts_root: Path):
+    with pytest.raises(ToolError, match=r'markers are only used when type = "deck"; this artifact is a document'):
+        await mcp_server.new_artifact('Doc', '<slide/>\n# Doc\n', type='document')
 
 
 def test_render_toml_escapes():
@@ -216,4 +234,8 @@ async def test_tools_over_mcp(artifacts_root: Path, pool: None):
             'new_artifact', {'title': 'T', 'content': '<slide/>\n', 'theme': 'neon'}, raise_on_error=False
         )
         assert bad_theme.is_error
+        bad_type = await client.call_tool(
+            'new_artifact', {'title': 'T', 'content': '# T\n', 'type': 'scroll'}, raise_on_error=False
+        )
+        assert bad_type.is_error
         assert [p.name for p in artifacts_root.iterdir()] == [name]

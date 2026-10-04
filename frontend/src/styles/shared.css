@@ -1,0 +1,80 @@
+/*
+ * OpenArtifact shared stylesheet: loaded for every artifact type before the type's own sheet.
+ *
+ * Brand colors and fonts are CSS variables on `:root`; override any of them from your
+ * styles.css. The theme classes (`.theme-light`, `.theme-dark`, `.theme-markdown-light`,
+ * `.theme-markdown-dark`) pick which raw tokens are active. They sit on <html> and on the
+ * artifact root, so `@media print` body rules can scope by theme too.
+ */
+
+:root {
+  /* Core palette - override in your deck's styles.css. */
+  --bg-deck: #0d0d0d;
+  --bg-slide: #1a1a1a;
+  --bg-light: #ffffff;
+  --surface: #2a2a2a;
+  --color-text: rgba(255, 255, 255, 0.85);
+  --color-heading: #ffffff;
+  --color-muted: #8f888e;
+  --color-text-light: #2a2230;
+  --color-heading-light: #1a1018;
+  --accent: #4a9eff;
+  --accent-secondary: #ff6b6b;
+  --accent-tertiary: #b388ff;
+  --accent-aqua: #4ad7c5;
+
+  /* Typography. */
+  --font-body: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-heading: var(--font-body);
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Menlo', monospace;
+  --font-terminal: var(--font-body);
+
+  /* Slide geometry: 16:9 landscape, 11in wide -> 6.1875in tall. */
+  --slide-width: 279.4mm;
+  --slide-height: 157.2mm;
+  --slide-padding: 36px 46px;
+  --title-font-size: 0.9rem;
+}
+
+/* ========================================
+   THEME COLOR ASSIGNMENTS
+   These two blocks pick which raw tokens are "active" for the current theme.
+   The presenter's outer background (--bg-deck) stays dark across all themes -
+   only the slide itself swaps. Applied on both <html> (so @media print body
+   bg works) and the .deck-presenter.
+   ======================================== */
+:is(.theme-light, .theme-markdown-light) {
+  --slide-bg: var(--bg-light);
+  --slide-text: var(--color-text-light);
+  --slide-heading: var(--color-heading-light);
+  --topbar-divider: color-mix(in srgb, var(--color-heading-light) 12%, transparent);
+  --topbar-muted: color-mix(in srgb, var(--color-heading-light) 45%, transparent);
+}
+
+:is(.theme-dark, .theme-markdown-dark) {
+  --slide-bg: var(--bg-slide);
+  --slide-text: var(--color-text);
+  --slide-heading: var(--color-heading);
+  --topbar-divider: rgba(255, 255, 255, 0.08);
+  --topbar-muted: var(--color-muted);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--slide-text);
+  line-height: 1.6;
+}

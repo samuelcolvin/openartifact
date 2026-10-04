@@ -39,11 +39,26 @@ PYTHONPATH=CHECKOUT/backend python3 -c 'from pathlib import Path; import pdf; pd
 
 The page is not self-contained: it loads `openartifact.js` from the server and its images relatively, so view and print it through the server rather than from `file://`. `build_html(directory, output=None, runtime_url='/openartifact.js')` takes an optional output path; `print_to_pdf(url, pdf_path)` prints a served page. Input problems raise `build.BuildError` naming the file and line.
 
+## Artifact types
+
+`type` in `artifact.toml` picks the overall form. It is independent of `theme`, which only picks colours.
+
+| `type`     | What it is                                                         | What `deck.md` contains                              | Printing                        |
+| ---------- | ------------------------------------------------------------------ | ---------------------------------------------------- | ------------------------------- |
+| `deck`     | Slides with next/previous navigation, tabs and build steps         | Markdown with a `<slide .../>` line starting each slide | one 16:9 slide per page         |
+| `document` | A fixed-width sheet, like a word processor, centred on the screen  | Plain markdown structured with headings; no slide markers | A4 pages, headings kept with their text, blocks unsplit |
+| `page`     | A continuous, fluid page, like a Notion page or a Claude artifact  | Plain markdown structured with headings; no slide markers | A4 pages with ordinary margins  |
+
+The default is `deck`. Everything below about slides, `<slide/>` attributes, tabs and build steps applies to decks only; components, images, code blocks, the CSS variables and the `markdown-*` decorations apply to all three. For a document or page, `footer` is rendered once at the end.
+
+Document and page add two variables to override in `styles.css`: `--document-width` / `--document-padding` (sheet size, default A4 with 20mm padding) and `--page-max-width` (column cap, default 52rem). To print a document on US paper, add `@page { size: letter; }` to `styles.css`. Hook type-specific rules on `.artifact-document` / `.artifact-page`; the rendered markdown sits in `article.prose`.
+
 ## `artifact.toml`
 
 All fields are optional - a deck with only `deck.md` works.
 
 ```toml
+type = "deck"                         # deck | document | page   (default: deck)
 title = "My Deck - April 2026"        # browser tab title
 
 # light | dark | markdown-light | markdown-dark   (default: light)
@@ -52,7 +67,7 @@ title = "My Deck - April 2026"        # browser tab title
 # mono slide counter, diamond bullets.
 theme = "light"
 
-# Small footer rendered bottom-right of every slide.
+# Small footer rendered bottom-right of every slide, or once at the end of a document or page.
 footer = "Confidential - do not share"
 
 # Relative path to a favicon for the browser tab. .svg / .png / .ico / .jpg.
@@ -64,7 +79,7 @@ markdown = "deck.md"
 styles = "styles.css"
 components = "components"
 
-# Optional tab nav. When present, <slide tab="..."/> highlights the matching tab.
+# Optional tab nav (decks only). When present, <slide tab="..."/> highlights the matching tab.
 tabs = [
   { id = "intro", label = "Intro" },
   { id = "details", label = "Details" },
@@ -250,7 +265,7 @@ Fonts:
 
 ### Layout helpers
 
-Markdown has no columns, so `base.css` ships a few opt-in classes for the wrapper HTML you write in `deck.md`. Leave a blank line between the wrapper tags and the markdown inside them, or the markdown is not rendered.
+Markdown has no columns, so `deck.css` ships a few opt-in classes for the wrapper HTML you write in `deck.md`. Leave a blank line between the wrapper tags and the markdown inside them, or the markdown is not rendered.
 
 - `.row` - a flex row of `.col` children, vertically centred, filling the remaining slide height. Add `.row-top` to align children to the top.
 - `.col` - an equal-width column inside `.row`. Override with inline `style="flex: 0 0 40%"` for an uneven split.

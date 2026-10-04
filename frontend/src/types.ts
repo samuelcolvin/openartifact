@@ -16,21 +16,29 @@ export interface DeckTab {
  */
 export type DeckTheme = 'light' | 'dark' | 'markdown-light' | 'markdown-dark'
 
-/** Deck-level config, parsed from `artifact.toml` by build.py. */
-export interface DeckConfig {
+/**
+ * The overall form of the artifact. `deck` is slides with navigation, one per page in
+ * print; `document` is a fixed-width sheet that prints to pages like a word processor;
+ * `page` is a continuous, fluid page like a Notion page.
+ */
+export type ArtifactType = 'deck' | 'document' | 'page'
+
+/** Artifact-level config, parsed from `artifact.toml` by build.py. */
+export interface ArtifactConfig {
+  type: ArtifactType
   /** Browser tab title; also the fallback when a slide has no title or h1. */
   title?: string
   theme: DeckTheme
   /** Optional footer text rendered bottom-right of every slide. */
   footer?: string
-  /** Tabs for the topbar nav bar; `<slide tab="...">` highlights the matching one. */
+  /** Tabs for the topbar nav bar; `<slide tab="...">` highlights the matching one. Decks only. */
   tabs: DeckTab[]
 }
 
-/** The JSON blob embedded in `<script type="application/json" id="deck-data">`. */
-export interface DeckData {
-  config: DeckConfig
-  /** Raw `deck.md` source; slides are split and rendered in the browser. */
+/** The JSON blob embedded in `<script type="application/json" id="artifact-data">`. */
+export interface ArtifactData {
+  config: ArtifactConfig
+  /** Raw `deck.md` source. For a deck it is split into slides in the browser; otherwise rendered whole. */
   markdown: string
   /** `<component src="X">` -> file contents, keyed by the `src` attribute. */
   components: Record<string, string>

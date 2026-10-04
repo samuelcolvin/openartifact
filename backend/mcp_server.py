@@ -5,7 +5,8 @@ holding the files `build.py` expects: `deck.md`, optional `artifact.toml`, `styl
 `assets/`. Three tools are exposed:
 
 - `new_artifact` creates the directory with a server-chosen identifier, writes `artifact.toml` and `deck.md` from
-  its arguments and builds once, so a simple deck is one call and a broken one fails immediately.
+  its arguments and builds once, so a simple artifact is one call and a broken one fails immediately. The `type`
+  picks the form: a slide `deck`, a paged `document` or a continuous `page`.
 - `run_code` runs agent-written Python in a pydantic-monty sandbox with the artifact directory mounted
   read-write at `/artifact`, so the agent edits files with ordinary `pathlib` calls. Nothing else on the host is
   visible to the sandbox.
@@ -53,6 +54,8 @@ ARTIFACT_NAME_RE = re.compile(r'[a-z0-9][a-z0-9_-]{0,63}')
 SLUG_MAX_LEN = 40
 SUFFIX_LEN = 6
 SUFFIX_ALPHABET = string.ascii_lowercase + string.digits
+ArtifactType = Literal['deck', 'document', 'page']
+TYPES: tuple[str, ...] = get_args(ArtifactType)
 Theme = Literal['light', 'dark', 'markdown-light', 'markdown-dark']
 THEMES: tuple[str, ...] = get_args(Theme)
 # Per-call sandbox limits: the agent is editing a handful of text files, nothing heavy.
@@ -61,10 +64,13 @@ LIMITS: ResourceLimits = {'max_feed_duration_secs': 30.0, 'max_memory': 256 * 10
 mcp = FastMCP(
     'openartifact',
     instructions=(
-        'Create a slide deck with `new_artifact`, which writes `deck.md` from `content`, builds it and returns the '
-        'identifier and page URL. Edit it with `run_code`, where the artifact directory is the working directory and is '
-        f'also mounted at `{VIRTUAL_PATH}` (`deck.md`, `artifact.toml`, `styles.css`, `components/*.html`, '
-        '`assets/*`), then call `build` to validate the files and refresh the page.'
+        'Create an artifact with `new_artifact`, which writes `deck.md` from `content`, builds it and returns the '
+        'identifier and page URL. Pick the `type` for the job: `deck` for slides (content is markdown with a '
+        '`<slide .../>` line starting each slide), `document` for a fixed-width document that prints to pages, or '
+        '`page` for a continuous web page (both take plain markdown with no slide markers). Edit it with '
+        f'`run_code`, where the artifact directory is the working directory and is also mounted at `{VIRTUAL_PATH}` '
+        '(`deck.md`, `artifact.toml`, `styles.css`, `components/*.html`, `assets/*`), then call `build` to validate '
+        'the files and refresh the page.'
     ),
 )
 
@@ -144,17 +150,22 @@ def format_output(streams: CollectStreams, result: object) -> str:
     return ''.join(parts)
 
 
-async def new_artifact(title: str, content: str, theme: Theme = 'light', footer: str | None = None) -> str:
-    """Create a slide deck artifact from markdown and build it.
+async def new_artifact(
+    title: str, content: str, type: ArtifactType = 'deck', theme: Theme = 'light', footer: str | None = None
+) -> str:
+    """Create an artifact from markdown and build it.
 
-    `content` becomes `deck.md`: slides separated by lines containing only `<slide .../>`, markdown in between.
-    `title`, `theme` and `footer` are written to `artifact.toml`. The deck is built straight away, so a problem in
-    `content` is returned as an error naming the line; the files are kept, so fix them with `run_code` and call
-    `build`. On success returns the artifact identifier to pass to the other tools, and the URL of the page.
+    `type` is the form of the artifact: `deck` is slides, where `content` has a line containing only
+    `<slide .../>` starting each slide; `document` is a fixed-width document that prints to A4 pages; `page` is a
+    continuous web page. For `document` and `page`, `content` is plain markdown with no slide markers, structured
+    with headings. `content` becomes `deck.md`; `title`, `type`, `theme` and `footer` are written to
+    `artifact.toml`. The artifact is built straight away, so a problem in `content` is returned as an error naming
+    the line; the files are kept, so fix them with `run_code` and call `build`. On success returns the artifact
+    identifier to pass to the other tools, and the URL of the page.
     """
     artifact = new_artifact_id(title)
     directory = artifact_dir(artifact, create=True)
-    config = {'title': title, 'theme': theme}
+    config = {'title': title, 'type': type, 'theme': theme}
     if footer is not None:
         config['footer'] = footer
     (directory / 'artifact.toml').write_text(render_toml(config), encoding='utf-8')

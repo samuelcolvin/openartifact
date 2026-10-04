@@ -1,0 +1,54 @@
+/*
+ * OpenArtifact document stylesheet (type = "document"), loaded after shared.css and
+ * prose.css. A fixed-width sheet, like a word processor: on screen it sits centred on the
+ * dark backdrop at paper width; in print the `@page` rule takes over and the sheet becomes
+ * the page. Override `--document-width` / `--document-padding` from styles.css, and add your
+ * own `@page { size: letter; }` there to change the paper.
+ */
+
+:root {
+  --document-width: 210mm;
+  --document-padding: 20mm;
+}
+
+body {
+  background: var(--bg-deck);
+}
+
+.artifact-document {
+  min-height: 100vh;
+  padding: 2.5rem 1rem;
+}
+
+.artifact-document .prose {
+  width: min(100%, var(--document-width));
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: var(--document-padding);
+  background: var(--slide-bg);
+  box-shadow: 0 2px 28px rgba(0, 0, 0, 0.35);
+}
+
+@page {
+  size: A4;
+  margin: 20mm;
+}
+
+@media print {
+  html,
+  body {
+    background: var(--slide-bg);
+  }
+
+  .artifact-document {
+    min-height: 0;
+    padding: 0;
+  }
+
+  .artifact-document .prose {
+    width: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+  }
+}

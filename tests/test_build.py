@@ -141,7 +141,7 @@ def test_check_images_rejects_escape(tmp_path: Path):
 
 def blob_of(page: str) -> str:
     """The raw text of the JSON blob embedded in a built page."""
-    match = re.search(r'id="deck-data">(.*?)</script>', page, re.DOTALL)
+    match = re.search(r'id="artifact-data">(.*?)</script>', page, re.DOTALL)
     assert match is not None
     return match.group(1)
 
@@ -174,6 +174,7 @@ def test_build_starter_example(tmp_path: Path):
     assert '<script src="/openartifact.js"></script>' in page
     blob = json.loads(blob_of(page))
     assert set(blob) == {'config', 'markdown', 'components', 'styles'}
+    assert blob['config']['type'] == 'deck'
     assert blob['config']['theme'] == 'markdown-dark'
     assert 'Hero.html' in blob['components'] and 'Callout.html' in blob['components']
     assert 'data:' not in page
@@ -197,6 +198,61 @@ def test_load_config_favicon(tmp_path: Path):
     write(tmp_path / 'artifact.toml', 'favicon = "assets/missing.svg"\n')
     with pytest.raises(BuildError, match='favicon not found'):
         build.load_config(tmp_path)
+
+
+# --- artifact types --------------------------------------------------------
+
+
+@pytest.mark.parametrize('name', ['document', 'page'])
+def test_build_prose_examples(tmp_path: Path, name: str):
+    out = build.build_html(ROOT / 'examples' / name, tmp_path / 'index.html')
+    blob = json.loads(blob_of(out.read_text()))
+    assert blob['config']['type'] == name
+    # The examples talk about slide markers in prose, but contain none.
+    assert not any(build.SLIDE_RE.match(line) for line in blob['markdown'].splitlines())
+
+
+def test_type_defaults_to_deck(tmp_path: Path):
+    write(tmp_path / 'deck.md', '<slide/>\n# hi\n')
+    assert build.load_config(tmp_path).type == 'deck'
+
+
+def test_load_config_rejects_bad_type(tmp_path: Path):
+    write(tmp_path / 'deck.md', '# hi\n')
+    write(tmp_path / 'artifact.toml', 'type = "scroll"\n')
+    with pytest.raises(BuildError, match='invalid type'):
+        build.load_config(tmp_path)
+
+
+def test_tabs_are_deck_only(tmp_path: Path):
+    write(tmp_path / 'deck.md', '# hi\n')
+    write(tmp_path / 'artifact.toml', 'type = "page"\ntabs = [{ id = "a", label = "A" }]\n')
+    with pytest.raises(BuildError, match='`tabs` are only used when type = "deck"'):
+        build.load_config(tmp_path)
+
+
+def test_prose_rejects_slide_markers():
+    with pytest.raises(BuildError, match=r'deck\.md:3: <slide .../> markers are only used when type = "deck"'):
+        build.validate_prose('# Title\n\n<slide/>\n', Path('deck.md'), 'document')
+
+
+def test_prose_allows_markers_in_fences_and_rejects_self_closing_components():
+    build.validate_prose('# Title\n```md\n<slide/>\n```\n', Path('deck.md'), 'page')
+    with pytest.raises(BuildError, match='self-closing'):
+        build.validate_prose('# Title\n<component src="X.html"/>\n', Path('deck.md'), 'page')
+    with pytest.raises(BuildError, match='no content'):
+        build.validate_prose('\n\n', Path('deck.md'), 'page')
+
+
+def test_build_document_from_plain_markdown(tmp_path: Path):
+    write(tmp_path / 'deck.md', '# Report\n\nBody text.\n')
+    write(tmp_path / 'artifact.toml', 'type = "document"\n')
+    page = build.build_html(tmp_path).read_text()
+    assert json.loads(blob_of(page))['config']['type'] == 'document'
+    # A deck with the same markdown fails: the marker rule is per type.
+    write(tmp_path / 'artifact.toml', 'type = "deck"\n')
+    with pytest.raises(BuildError, match='content before the first'):
+        build.build_html(tmp_path)
 
 
 def test_load_config_rejects_bad_theme(tmp_path: Path):

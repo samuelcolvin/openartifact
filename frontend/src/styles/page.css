@@ -1,0 +1,43 @@
+/*
+ * OpenArtifact page stylesheet (type = "page"), loaded after shared.css and prose.css.
+ * A continuous, fluid page in the manner of a Notion page or a Claude artifact: the paper
+ * colour fills the viewport, the text column is capped at a readable width and shrinks with
+ * the window. Override `--page-max-width` from styles.css. Printing falls back to A4 with
+ * ordinary margins.
+ */
+
+:root {
+  --page-max-width: 52rem;
+}
+
+body {
+  background: var(--slide-bg);
+}
+
+.artifact-page {
+  min-height: 100vh;
+}
+
+.artifact-page .prose {
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: 3.5rem 2rem 6rem;
+}
+
+@media (max-width: 640px) {
+  .artifact-page .prose {
+    padding: 1.75rem 1.25rem 4rem;
+  }
+}
+
+@page {
+  size: A4;
+  margin: 18mm;
+}
+
+@media print {
+  .artifact-page .prose {
+    max-width: none;
+    padding: 0;
+  }
+}

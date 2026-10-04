@@ -1,9 +1,9 @@
-"""Build a self-contained HTML slide deck from markdown, HTML components and CSS.
+"""Build an artifact page from markdown, HTML components and CSS.
 
-A deck directory looks like:
+An artifact directory looks like:
 
-    artifact.toml      title, theme, footer, tabs, path overrides (all optional)
-    deck.md         the slides, one `<slide .../>` line starting each slide
+    artifact.toml   type, title, theme, footer, tabs, path overrides (all optional)
+    deck.md         the content: for a deck one `<slide .../>` line starts each slide; a document or page is plain markdown
     styles.css      CSS variable overrides (optional)
     components/     HTML or SVG files pulled in with <component src="Name.html"></component>
     assets/         images referenced from the markdown, components or styles
@@ -27,6 +27,7 @@ import json
 import posixpath
 import re
 import tomllib
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
@@ -34,6 +35,9 @@ from typing import cast
 # Where the page loads the runtime from; `server.py` serves it there.
 DEFAULT_RUNTIME_URL = '/openartifact.js'
 
+# The overall form of the artifact; mirrors `ArtifactType` in frontend/src/types.ts. `deck` is slides, `document` a
+# fixed-width sheet that prints to pages, `page` a continuous fluid page.
+TYPES = 'deck', 'document', 'page'
 THEMES = 'light', 'dark', 'markdown-light', 'markdown-dark'
 IMAGE_EXTS = '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'
 FAVICON_EXTS = '.svg', '.png', '.ico', '.jpg', '.jpeg'
@@ -56,6 +60,7 @@ class Config:
     markdown_path: Path
     styles_path: Path
     components_dir: Path
+    type: str = 'deck'
     title: str | None = None
     theme: str = 'light'
     footer: str | None = None
@@ -64,8 +69,8 @@ class Config:
     tabs: list[dict[str, str]] = field(default_factory=list)
 
     def to_json(self) -> dict[str, object]:
-        """The `config` field of the JSON blob, matching `DeckConfig` in frontend/src/types.ts."""
-        data: dict[str, object] = {'theme': self.theme, 'tabs': self.tabs}
+        """The `config` field of the JSON blob, matching `ArtifactConfig` in frontend/src/types.ts."""
+        data: dict[str, object] = {'type': self.type, 'theme': self.theme, 'tabs': self.tabs}
         if self.title is not None:
             data['title'] = self.title
         if self.footer is not None:
@@ -100,11 +105,17 @@ def load_config(cwd: Path) -> Config:
     if not markdown_path.is_file():
         raise BuildError(f'markdown file not found: {markdown_path}')
 
+    artifact_type = optional_str('type') or 'deck'
+    if artifact_type not in TYPES:
+        raise BuildError(f'artifact.toml: invalid type {artifact_type!r}. Valid values: {", ".join(TYPES)}')
+
     theme = optional_str('theme') or 'light'
     if theme not in THEMES:
         raise BuildError(f'artifact.toml: invalid theme {theme!r}. Valid values: {", ".join(THEMES)}')
 
     raw_tabs = raw.get('tabs', [])
+    if artifact_type != 'deck' and raw_tabs:
+        raise BuildError(f'artifact.toml: `tabs` are only used when type = "deck", not {artifact_type!r}')
     if not isinstance(raw_tabs, list):
         raise BuildError('artifact.toml: `tabs` must be an array of {id, label} tables')
     tabs: list[dict[str, str]] = []
@@ -134,6 +145,7 @@ def load_config(cwd: Path) -> Config:
         markdown_path=markdown_path,
         styles_path=cwd / (optional_str('styles') or 'styles.css'),
         components_dir=cwd / (optional_str('components') or 'components'),
+        type=artifact_type,
         title=optional_str('title'),
         theme=theme,
         footer=optional_str('footer'),
@@ -152,13 +164,8 @@ FENCE_RE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
 SELF_CLOSING_COMPONENT_RE = re.compile(r'<component\b[^>]*/>', re.IGNORECASE)
 
 
-def validate_slides(source: str, path: Path) -> int:
-    """Check the slide structure the way the runtime will read it; returns the slide count.
-
-    Errors: content before the first `<slide/>` line, no slides at all, or a self-closing
-    `<component .../>` (the HTML parser would swallow everything after it).
-    """
-    count = 0
+def unfenced_lines(source: str) -> Iterator[tuple[int, str]]:
+    """Yield `(line number, line)` for every line outside a fenced code block, fence lines excluded."""
     fence: str | None = None
     for number, line in enumerate(source.splitlines(), start=1):
         fence_match = FENCE_RE.match(line)
@@ -166,22 +173,49 @@ def validate_slides(source: str, path: Path) -> int:
             if fence_match:
                 fence = fence_match.group(1)
                 continue
-            if SLIDE_RE.match(line):
-                count += 1
-                continue
-            if count == 0 and line.strip():
-                raise BuildError(f'{path}:{number}: content before the first <slide .../> line: {line.strip()!r}')
-            if SELF_CLOSING_COMPONENT_RE.search(line):
-                raise BuildError(
-                    f'{path}:{number}: self-closing <component .../> is not valid HTML; '
-                    'write <component src="Name.html"></component>'
-                )
+            yield number, line
         elif fence_match and fence_match.group(1)[0] == fence[0] and len(fence_match.group(1)) >= len(fence):
             if not line[fence_match.end() :].strip():
                 fence = None
+
+
+def check_components_closed(line: str, path: Path, number: int) -> None:
+    """A self-closing `<component .../>` is not valid HTML: the parser would swallow everything after it."""
+    if SELF_CLOSING_COMPONENT_RE.search(line):
+        raise BuildError(
+            f'{path}:{number}: self-closing <component .../> is not valid HTML; write <component src="Name.html"></component>'
+        )
+
+
+def validate_slides(source: str, path: Path) -> int:
+    """Check a deck's slide structure the way the runtime will read it; returns the slide count.
+
+    Errors: content before the first `<slide/>` line, no slides at all, or a self-closing `<component .../>`.
+    """
+    count = 0
+    for number, line in unfenced_lines(source):
+        if SLIDE_RE.match(line):
+            count += 1
+            continue
+        if count == 0 and line.strip():
+            raise BuildError(f'{path}:{number}: content before the first <slide .../> line: {line.strip()!r}')
+        check_components_closed(line, path, number)
     if count == 0:
         raise BuildError(f'{path}: no slides found; start each slide with a <slide .../> line')
     return count
+
+
+def validate_prose(source: str, path: Path, artifact_type: str) -> None:
+    """Check a document or page: the markdown is rendered whole, so slide markers are a mistake."""
+    if not source.strip():
+        raise BuildError(f'{path}: no content')
+    for number, line in unfenced_lines(source):
+        if SLIDE_RE.match(line):
+            raise BuildError(
+                f'{path}:{number}: <slide .../> markers are only used when type = "deck"; this artifact is a '
+                f'{artifact_type}, so write plain markdown'
+            )
+        check_components_closed(line, path, number)
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +330,7 @@ TEMPLATE = """\
 </head>
 <body>
 <div id="root"></div>
-<script type="application/json" id="deck-data">{blob}</script>
+<script type="application/json" id="artifact-data">{blob}</script>
 <script src="{runtime}"></script>
 </body>
 </html>
@@ -304,9 +338,12 @@ TEMPLATE = """\
 
 
 def build_deck_data(cfg: Config) -> dict[str, object]:
-    """Assemble the JSON blob the runtime reads; shape matches `DeckData` in frontend/src/types.ts."""
+    """Assemble the JSON blob the runtime reads; shape matches `ArtifactData` in frontend/src/types.ts."""
     markdown = cfg.markdown_path.read_text(encoding='utf-8')
-    validate_slides(markdown, cfg.markdown_path)
+    if cfg.type == 'deck':
+        validate_slides(markdown, cfg.markdown_path)
+    else:
+        validate_prose(markdown, cfg.markdown_path, cfg.type)
     components = collect_components(markdown, cfg.components_dir)
     styles = cfg.styles_path.read_text(encoding='utf-8') if cfg.styles_path.is_file() else ''
     check_images([markdown, *components.values(), styles], cfg.cwd)

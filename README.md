@@ -9,6 +9,16 @@ Why?
 * Good support for PDF generation - configure `page` css property properly
 * No JavaScript toolchain needed to build a deck: the runtime is one prebuilt `openartifact.js`, the builder is one Python module with no dependencies
 
+## Artifact types
+
+`type` in `artifact.toml` picks the form of the artifact; `theme` picks the colours.
+
+- `deck` (default) - slides with navigation, one 16:9 slide per PDF page. The markdown has a `<slide .../>` line starting each slide.
+- `document` - a fixed-width sheet that prints to A4 pages like a word processor. Plain markdown, structured with headings.
+- `page` - a continuous, fluid page in the manner of a Notion page. Plain markdown.
+
+`examples/starter`, `examples/document` and `examples/page` show one of each.
+
 ## How it works
 
 A deck is a directory:
@@ -115,13 +125,11 @@ If Chrome isn't found, or the conversion fails, the error carries the exact comm
 
 ```bash
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
-  --headless=new --disable-gpu \
-  --no-margins --print-to-pdf-no-header \
-  --paper-width=11 --paper-height=6.1875 \
+  --headless=new --disable-gpu --no-pdf-header-footer \
   --print-to-pdf=./deck.pdf "http://127.0.0.1:8000/artifacts/<id>/"
 ```
 
-(Use `google-chrome` or `chromium` on Linux - `pdf.find_chrome` looks for them automatically.)
+There are no paper-size flags: each artifact type's stylesheet sets `@page` (16:9 for a deck, A4 for a document or page) and Chrome honours it. (Use `google-chrome` or `chromium` on Linux - `pdf.find_chrome` looks for them automatically.)
 
 ## Developing OpenArtifact itself
 
