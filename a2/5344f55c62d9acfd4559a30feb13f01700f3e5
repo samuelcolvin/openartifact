@@ -1,0 +1,57 @@
+docker-compose.yml
+  s_3d99f581f2340b::t_682f318605c29a 7-10,13-14,16,21-24,43
+  s_3d99f581f2340b::t_db940379a8e4da 1,3,11
+  s_3d99f581f2340b::t_78bea2e64f5557 12,15
+tests/test_workspace.py
+  s_3d99f581f2340b::t_25ca75b0799c2e 113-128
+tests/test_pdf.py
+  s_3d99f581f2340b::t_78bea2e64f5557 12
+backend/server.py
+  s_3d99f581f2340b::t_78bea2e64f5557 167
+backend/config.py
+  s_3d99f581f2340b::t_78bea2e64f5557 14
+CLAUDE.md
+  s_3d99f581f2340b::t_78bea2e64f5557 59
+  s_3d99f581f2340b::t_25ca75b0799c2e 150
+  s_3d99f581f2340b::t_36ea7908362272 17
+  s_3d99f581f2340b::t_db940379a8e4da 55-57,66,151,160
+tests/test_server.py
+  s_3d99f581f2340b::t_78bea2e64f5557 194
+skills/openartifact/SKILL.md
+  s_3d99f581f2340b::t_36ea7908362272 19
+  s_3d99f581f2340b::t_78bea2e64f5557 37
+.dockerignore
+  s_3d99f581f2340b::t_682f318605c29a 1-10
+backend/workspace.py
+  s_3d99f581f2340b::t_25ca75b0799c2e 170-177
+Dockerfile
+  s_3d99f581f2340b::t_682f318605c29a 1-33,37-39,41-48,50-52,54-56
+  s_3d99f581f2340b::t_78bea2e64f5557 49,53
+  s_3d99f581f2340b::t_ff51d7f1fc4c4b 34-36
+tests/conftest.py
+  s_3d99f581f2340b::t_db940379a8e4da 57
+  s_3d99f581f2340b::t_4de1d2c00b9064 23
+tests/test_mcp_server.py
+  s_3d99f581f2340b::t_78bea2e64f5557 70,191,208-209
+Makefile
+  s_3d99f581f2340b::t_db940379a8e4da 1-5,33,36-38,43-44,47-49,51-65
+README.md
+  s_3d99f581f2340b::t_78bea2e64f5557 125,133
+  s_3d99f581f2340b::t_db940379a8e4da 52-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a25344f55c62d9acfd4559a30feb13f01700f3e5",
+  "prompts": {},
+  "sessions": {
+    "s_3d99f581f2340b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2de96c71-f17d-4b9b-8005-d83a59e0b331",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
