@@ -45,12 +45,15 @@ cd openartifact
 pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/openartifact.js
 ```
 
-Then start the server and let an agent (or `mcp_demo.py`) drive it over MCP:
+Then start Postgres and the server, and let an agent drive it over MCP:
 
 ```bash
 uv sync
-make serve                                    # http://127.0.0.1:8000, MCP at /mcp/
+make postgres                                 # Postgres 17 in Docker
+OPENARTIFACT_DEV_TOKEN=dev make serve         # http://127.0.0.1:8000, MCP at /mcp/ with bearer token `dev`
 ```
+
+Artifacts are stored as git repositories (one per user, one directory per artifact), bundled into an object store under `data/store/` locally or an `s3://` URL in production, with Postgres holding users and artifact metadata. In production set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `OPENARTIFACT_SECRET_KEY` instead of the dev token and the MCP endpoint is behind Google login.
 
 The builder itself is a library, `backend/build.py`, with no dependencies beyond Python 3.11+. To build a deck directory by hand:
 

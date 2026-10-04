@@ -16,7 +16,7 @@ git clone https://github.com/samuelcolvin/openartifact
 cd openartifact && pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/openartifact.js
 ```
 
-The builder is the module `backend/build.py` in that checkout, with PDF printing in `backend/pdf.py`. Both need Python 3.11+ and nothing else. The usual way to use them is through the MCP server (`make serve`, tools `new_artifact`, `run_code`, `build`); by hand, import them with `PYTHONPATH=CHECKOUT/backend`. Below, `CHECKOUT` stands for the path to that checkout.
+The builder is the module `backend/build.py` in that checkout, with PDF printing in `backend/pdf.py`. Both need Python 3.11+ and nothing else. The usual way to use them is through the MCP server (`make postgres`, then `OPENARTIFACT_DEV_TOKEN=dev make serve`; tools `new_artifact`, `run_code`, `build`, `list_artifacts`; artifacts are identified by the UUID `new_artifact` returns); by hand, import them with `PYTHONPATH=CHECKOUT/backend`. Below, `CHECKOUT` stands for the path to that checkout.
 
 ## Project layout
 
