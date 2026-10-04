@@ -1,0 +1,36 @@
+backend/db.py
+  s_3d99f581f2340b::t_79a2e095de7b66 16,19,28-31
+  s_3d99f581f2340b::t_3ad1c70bd57bdb 77-79,105
+  s_3d99f581f2340b::t_6ad0a4fdb8b497 1-15,17-18,20-27,32-76,80-104,106-109
+backend/migrations/0001_initial.sql
+  s_3d99f581f2340b::t_6ad0a4fdb8b497 1-48
+tests/conftest.py
+  s_3d99f581f2340b::t_3ad1c70bd57bdb 13,90,92-93
+  s_3d99f581f2340b::t_6ad0a4fdb8b497 1-12,14-89,91,94-95
+tests/test_db.py
+  s_3d99f581f2340b::t_3ad1c70bd57bdb 50-56
+  s_3d99f581f2340b::t_6ad0a4fdb8b497 1-49,57-80
+pyproject.toml
+  s_3d99f581f2340b::t_6ad0a4fdb8b497 49
+  s_3d99f581f2340b::t_04dceedf1defb1 10,13-15,27
+docker-compose.yml
+  s_3d99f581f2340b::t_c696f6a4e66c4c 1-21
+Makefile
+  s_3d99f581f2340b::t_6ad0a4fdb8b497 36-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "44a11b550ad5b1a236d25c6728e1257dc74818f2",
+  "prompts": {},
+  "sessions": {
+    "s_3d99f581f2340b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2de96c71-f17d-4b9b-8005-d83a59e0b331",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
