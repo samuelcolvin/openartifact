@@ -2,13 +2,13 @@
  * Presenter behaviour, a vanilla port of the React `Deck` component this project used to ship:
  *
  *  - the current slide lives in the URL hash (`#3` is the third slide, 1-indexed)
- *  - keyboard (arrows, space, page up/down), wheel and the topbar buttons navigate
+ *  - keyboard (arrows, space, page up/down), wheel and any `[data-nav]` element in a page component navigate
  *  - "next" and "previous" step through a slide's build steps (`data-step`, see steps.ts)
  *    before moving between slides; a slide entered backwards opens on its last step
  *  - shift + left/right jump a whole slide, skipping build steps
  *  - the slide stream is scaled to fit the viewport via `--slide-scale`
- *  - `document.title` follows the active slide
- *  - traffic-light dots jump to slide 1, topbar tabs jump to the first slide of that tab
+ *  - `document.title` follows the active slide's `PAGE_TITLE`
+ *  - `#N` links work as they do anywhere, so a page component can link to a slide
  *
  * Everything here runs synchronously at load, before first paint, so headless Chrome's
  * print-to-PDF sees the counters and every slide.
@@ -41,18 +41,8 @@ export function initDeck(presenter: HTMLElement, config: ArtifactConfig): void {
   let prev: number | null = null
   if (!window.location.hash) window.history.replaceState(null, '', `#${current + 1}`)
 
-  // Inject the buttons + counter into every slide once: print CSS hides the buttons but
-  // keeps the counter, and every slide is visible in print.
-  const totalStr = String(total).padStart(2, '0')
   slides.forEach((slide, i) => {
     slide.dataset.slideIndex = String(i)
-    const nav = slide.querySelector('.topbar-nav')
-    if (!nav) return
-    const num = String(i + 1).padStart(2, '0')
-    nav.innerHTML =
-      `<button class="topbar-nav-btn topbar-nav-prev" ${i === 0 ? 'disabled' : ''} aria-label="Previous slide">←</button>` +
-      `<span class="topbar-nav-counter">${num}/${totalStr}</span>` +
-      `<button class="topbar-nav-btn topbar-nav-next" ${i === total - 1 ? 'disabled' : ''} aria-label="Next slide">→</button>`
   })
 
   /** Mark the active slide, apply transition classes and update the document title. */
@@ -61,8 +51,8 @@ export function initDeck(presenter: HTMLElement, config: ArtifactConfig): void {
       slide.classList.remove(...STATE_CLASSES)
       if (i === current) {
         slide.classList.add('slide--active')
-        // Title from the slide's attribute, else its first h1, else the deck title.
-        const title = slide.dataset.slideTitle || slide.querySelector('h1')?.textContent?.trim() || config.title
+        // The page's PAGE_TITLE (its title directive, else its first h1), else the deck title.
+        const title = slide.dataset.pageTitle || config.title
         if (title) document.title = title
         if (prev !== null && TRANSITION === 'slide') {
           slide.classList.add(dir === 1 ? 'slide--enter-fwd' : 'slide--enter-back')
@@ -158,28 +148,24 @@ export function initDeck(presenter: HTMLElement, config: ArtifactConfig): void {
     }
   })
 
-  // Click delegation: nav buttons, traffic-light home link, tab links.
+  // Click delegation for a page component's own controls: `data-nav="prev" | "next" | "first" | "last"`.
   presenter.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement
-    const btn = target.closest<HTMLButtonElement>('.topbar-nav-btn')
-    if (btn && !btn.disabled) {
-      if (btn.classList.contains('topbar-nav-prev')) go(-1)
-      if (btn.classList.contains('topbar-nav-next')) go(1)
-      return
-    }
-    if (target.closest('[data-nav-home]')) {
-      e.preventDefault()
-      setCurrent(0, -1)
-      return
-    }
-    const tabLink = target.closest<HTMLElement>('[data-tab-target]')
-    if (tabLink) {
-      e.preventDefault()
-      const first = presenter.querySelector<HTMLElement>(`.slide[data-tab="${tabLink.dataset.tabTarget}"]`)
-      if (first) {
-        const idx = Number.parseInt(first.dataset.slideIndex ?? '0', 10)
-        setCurrent(idx, idx > current ? 1 : -1)
-      }
+    const control = (e.target as HTMLElement).closest<HTMLElement>('[data-nav]')
+    if (!control) return
+    e.preventDefault()
+    switch (control.dataset.nav) {
+      case 'prev':
+        go(-1)
+        break
+      case 'next':
+        go(1)
+        break
+      case 'first':
+        setCurrent(0, -1)
+        break
+      case 'last':
+        setCurrent(total - 1, 1)
+        break
     }
   })
 

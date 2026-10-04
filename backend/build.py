@@ -2,7 +2,7 @@
 
 An artifact directory looks like:
 
-    artifact.toml   type, title, theme, footer, tabs, path overrides (all optional)
+    artifact.toml   type, title, theme, page_component, [context], path overrides (all optional)
     main.md         the content: for a deck one `<slide .../>` line starts each slide; a document or page is plain markdown
     styles.css      CSS variable overrides (optional)
     components/     HTML or SVG files pulled in with <component src="Name.html"></component>
@@ -63,20 +63,20 @@ class Config:
     type: str = 'deck'
     title: str | None = None
     theme: str = 'light'
-    footer: str | None = None
     # Relative to `cwd`, as written in artifact.toml; the page links it relatively, so the server resolves it.
     favicon: str | None = None
-    tabs: list[dict[str, str]] = field(default_factory=list)
+    # A component file (in `components_dir`) rendered once around every page's body, with `{{ CONTENT }}`.
+    page_component: str | None = None
     # The `[context]` table: uppercase keys available as `{{ KEY }}` everywhere a built-in is.
     context: dict[str, str] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, object]:
         """The `config` data block, matching `ArtifactConfig` in frontend/src/types.ts."""
-        data: dict[str, object] = {'type': self.type, 'theme': self.theme, 'tabs': self.tabs}
+        data: dict[str, object] = {'type': self.type, 'theme': self.theme}
         if self.title is not None:
             data['title'] = self.title
-        if self.footer is not None:
-            data['footer'] = self.footer
+        if self.page_component is not None:
+            data['page_component'] = self.page_component
         if self.context:
             data['context'] = self.context
         return data
@@ -117,6 +117,12 @@ def load_config(cwd: Path) -> Config:
     for key in ('code_light_theme', 'code_dark_theme', 'mdx'):
         if key in raw:
             raise BuildError(f'artifact.toml: `{key}` is no longer supported (code is highlighted in the browser)')
+    for key in ('footer', 'tabs'):
+        if key in raw:
+            raise BuildError(
+                f'artifact.toml: `{key}` is no longer supported; render it from a `page_component` instead, '
+                'which can use {{ PAGE_NUMBER }}, {{ PAGE_COUNT }} and {{ PAGE_TITLE }}'
+            )
 
     def optional_str(key: str) -> str | None:
         value = raw.get(key)
@@ -138,20 +144,11 @@ def load_config(cwd: Path) -> Config:
     if theme not in THEMES:
         raise BuildError(f'artifact.toml: invalid theme {theme!r}. Valid values: {", ".join(THEMES)}')
 
-    raw_tabs = raw.get('tabs', [])
-    if artifact_type != 'deck' and raw_tabs:
-        raise BuildError(f'artifact.toml: `tabs` are only used when type = "deck", not {artifact_type!r}')
-    if not isinstance(raw_tabs, list):
-        raise BuildError('artifact.toml: `tabs` must be an array of {id, label} tables')
-    tabs: list[dict[str, str]] = []
-    for tab in raw_tabs:  # pyright: ignore[reportUnknownVariableType]
-        if not isinstance(tab, dict):
-            raise BuildError(f'artifact.toml: every `tabs` entry needs string `id` and `label`, got {tab!r}')
-        entry = cast('dict[str, object]', tab)
-        tab_id, label = entry.get('id'), entry.get('label')
-        if not (isinstance(tab_id, str) and isinstance(label, str)):
-            raise BuildError(f'artifact.toml: every `tabs` entry needs string `id` and `label`, got {tab!r}')
-        tabs.append({'id': tab_id, 'label': label})
+    page_component = optional_str('page_component') or None
+    if page_component and not page_component.lower().endswith('.html'):
+        raise BuildError(
+            f'artifact.toml: `page_component` must be an .html file in components/, got {page_component!r}'
+        )
 
     favicon = optional_str('favicon') or None
     if favicon:
@@ -173,9 +170,8 @@ def load_config(cwd: Path) -> Config:
         type=artifact_type,
         title=optional_str('title'),
         theme=theme,
-        footer=optional_str('footer'),
         favicon=favicon,
-        tabs=tabs,
+        page_component=page_component,
         context=load_context(raw.get('context')),
     )
 
@@ -458,9 +454,10 @@ def check_block_component_lines(
 
 
 def collect_components(
-    roots: list[tuple[str, Path]], components_dir: Path, names: frozenset[str]
+    roots: list[tuple[str, Path]], components_dir: Path, names: frozenset[str], page_component: str | None = None
 ) -> dict[str, ComponentSpec]:
-    """Load every component reachable from the markdown `roots`, checking each file and each use; keyed by `src`.
+    """Load every component reachable from the markdown `roots` and the page component, checking each file and
+    each use; keyed by `src`.
 
     `names` are the uppercase placeholders that are valid everywhere: the built-ins plus the `[context]` keys.
     """
@@ -480,7 +477,27 @@ def collect_components(
 
     for text, path in roots:
         visit(text, path, (), markdown=True)
+    if page_component is not None:
+        spec = specs.get(page_component)
+        if spec is None:
+            spec = load_component(page_component, components_dir, ())
+            check_component_file(spec, names)
+            specs[page_component] = spec
+            visit(spec.body, spec.path, (page_component,), markdown=False)
+        check_page_component(spec)
     return specs
+
+
+def check_page_component(spec: ComponentSpec) -> None:
+    """A page component wraps the body exactly once and is rendered with no attributes."""
+    slots = spec.content_slots()
+    if slots != 1:
+        raise BuildError(f'{spec.path}: a page component must contain exactly one {{{{ CONTENT }}}}, found {slots}')
+    for name, default in spec.params.items():
+        if default is None:
+            raise BuildError(
+                f'{spec.path}:1: a page component is rendered without attributes, so parameter {name!r} needs a default'
+            )
 
 
 def load_component(src: str, components_dir: Path, chain: tuple[str, ...]) -> ComponentSpec:
@@ -669,7 +686,7 @@ def build_page_data(cfg: Config) -> dict[str, object]:
         validate_prose(markdown, cfg.markdown_path, cfg.type)
     names = BUILTINS | frozenset(cfg.context)
     check_body_placeholders(markdown, cfg.markdown_path, names)
-    specs = collect_components([(markdown, cfg.markdown_path)], cfg.components_dir, names)
+    specs = collect_components([(markdown, cfg.markdown_path)], cfg.components_dir, names, cfg.page_component)
     components = {src: spec.source for src, spec in specs.items()}
     styles = cfg.styles_path.read_text(encoding='utf-8') if cfg.styles_path.is_file() else ''
     check_styles(styles, cfg.styles_path)

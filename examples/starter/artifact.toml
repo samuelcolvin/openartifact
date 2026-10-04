@@ -1,10 +1,8 @@
 title = "OpenArtifact Starter"
 theme = "markdown-dark"
 
-tabs = [
-  { id = "intro", label = "Intro" },
-  { id = "details", label = "Details" },
-]
+# Rendered once around every page: a header with the title and a counter, then the body.
+page_component = "Page.html"
 
 # Uppercase keys here are available as {{ KEY }} in the markdown and in every component.
 [context]

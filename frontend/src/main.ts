@@ -7,19 +7,15 @@
  * DOM complete before `load`, which is when headless Chrome prints to PDF.
  */
 
-import { buildArticle } from './article.ts'
-import { expandComponents } from './components.ts'
 import { initDeck } from './deck.ts'
 import hljsCss from './hljs.css'
-import { renderMarkdown } from './render.ts'
-import { buildSlide } from './slide.ts'
-import { splitSlides } from './split.ts'
+import { buildPage, type PageInput } from './page.ts'
+import { type RawSlide, splitSlides } from './split.ts'
 import deckCss from './styles/deck.css'
 import documentCss from './styles/document.css'
 import pageCss from './styles/page.css'
 import proseCss from './styles/prose.css'
 import sharedCss from './styles/shared.css'
-import { substituteText } from './substitute.ts'
 import type { ArtifactConfig, ArtifactData, ArtifactType } from './types.ts'
 
 /** Stylesheets per type, injected after shared.css and before hljs.css and the user's styles.css. */
@@ -28,6 +24,11 @@ const TYPE_STYLES: Record<ArtifactType, string[]> = {
   document: [proseCss, documentCss],
   page: [proseCss, pageCss],
 }
+
+/** Maps the `theme` attribute to its CSS class. Only `light` is an override; `dark` is the deck default. */
+const THEME_CLASS: Record<string, string> = { light: 'light-slide' }
+/** Maps the `layout` attribute to its CSS class. `content` is the default and adds nothing. */
+const LAYOUT_CLASS: Record<string, string> = { title: 'title-slide', statement: 'statement-slide' }
 
 /**
  * Reverse `encode_block` in build.py: the only sequences that can end a data block early are `</script`, `<script`
@@ -70,13 +71,27 @@ function showError(root: HTMLElement, message: string): void {
   root.replaceChildren(pre)
 }
 
+/** The `<slide .../>` attributes as page classes and title. */
+function slideToPage(raw: RawSlide): PageInput {
+  const { layout, theme, title, space, fontSize, id } = raw.attrs
+  const classes = [
+    theme && THEME_CLASS[theme],
+    layout && LAYOUT_CLASS[layout],
+    space && `space-${space}`,
+    fontSize && `font-${fontSize}`,
+    id && `id-${id}`,
+  ].filter((c): c is string => Boolean(c))
+  const page: PageInput = { classes, body: raw.body }
+  if (title) page.title = title
+  return page
+}
+
 function main(): void {
   const data = readData()
   const config: ArtifactConfig = {
     ...data.config,
     type: data.config.type ?? 'deck',
     theme: data.config.theme ?? 'light',
-    tabs: data.config.tabs ?? [],
   }
   const root = document.getElementById('root') ?? document.body
 
@@ -91,7 +106,13 @@ function main(): void {
   document.documentElement.classList.add(`theme-${config.theme}`)
 
   if (config.type !== 'deck') {
-    root.replaceChildren(buildArticle(data, config))
+    const wrapper = document.createElement('div')
+    wrapper.className = `artifact artifact-${config.type} theme-${config.theme}`
+    const page = buildPage({ classes: [], body: data.markdown }, 0, 1, data, config)
+    wrapper.append(page)
+    root.replaceChildren(wrapper)
+    const title = config.title || page.dataset.pageTitle
+    if (title) document.title = title
     return
   }
 
@@ -109,13 +130,9 @@ function main(): void {
   presenter.className = `artifact artifact-deck deck-presenter theme-${config.theme}`
   const deck = document.createElement('div')
   deck.className = 'deck'
-  const context = config.context ?? {}
-  for (const raw of slides) {
-    const section = buildSlide(raw, renderMarkdown(raw.body), config)
-    expandComponents(section, data.components, context)
-    substituteText(section, context)
-    deck.append(section)
-  }
+  slides.forEach((raw, i) => {
+    deck.append(buildPage(slideToPage(raw), i, slides.length, data, config))
+  })
   presenter.append(deck)
   root.replaceChildren(presenter)
 

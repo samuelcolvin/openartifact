@@ -491,11 +491,63 @@ def test_load_config_rejects_bad_type(tmp_path: Path):
         build.load_config(tmp_path)
 
 
-def test_tabs_are_deck_only(tmp_path: Path):
-    write(tmp_path / 'main.md', '# hi\n')
-    write(tmp_path / 'artifact.toml', 'type = "page"\ntabs = [{ id = "a", label = "A" }]\n')
-    with pytest.raises(BuildError, match='`tabs` are only used when type = "deck"'):
+@pytest.mark.parametrize('toml', ['footer = "x"\n', 'tabs = [{ id = "a", label = "A" }]\n'])
+def test_footer_and_tabs_are_gone(tmp_path: Path, toml: str):
+    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'artifact.toml', toml)
+    with pytest.raises(BuildError, match='is no longer supported; render it from a `page_component`'):
         build.load_config(tmp_path)
+
+
+# --- page component ------------------------------------------------------------
+
+
+def page_component_dir(tmp_path: Path, frame: str, toml: str = '') -> Path:
+    write(tmp_path / 'main.md', '<slide/>\n# Hi\n\nPage {{ PAGE_NUMBER }}.\n')
+    write(tmp_path / 'artifact.toml', f'page_component = "Page.html"\n{toml}')
+    write(tmp_path / 'components' / 'Page.html', frame)
+    return tmp_path
+
+
+def test_page_component_is_collected_and_checked(tmp_path: Path):
+    frame = (
+        '<!-- params: brand="Acme" -->\n<header>{{ brand }} - {{ PAGE_TITLE }} - {{ PAGE_NUMBER }}/{{ PAGE_COUNT }}'
+        '<component src="Logo.html"></component></header>\n{{ CONTENT }}\n'
+    )
+    page_component_dir(tmp_path, frame)
+    write(tmp_path / 'components' / 'Logo.html', '<b>logo</b>')
+    page = build.build_html(tmp_path).read_text()
+    assert config_of(page)['page_component'] == 'Page.html'
+    assert build.decode_block(block_of(page, 'data-component="Page.html"')) == frame
+    assert 'data-component="Logo.html"' in page
+
+
+@pytest.mark.parametrize(
+    ('frame', 'message'),
+    [
+        ('<header></header>', r'Page\.html: a page component must contain exactly one \{\{ CONTENT \}\}, found 0'),
+        ('{{ CONTENT }}{{ CONTENT }}', r'may appear only once'),
+        (
+            '<!-- params: brand -->\n{{ brand }} {{ CONTENT }}',
+            r"rendered without attributes, so parameter 'brand' needs a default",
+        ),
+        ('{{ nope }} {{ CONTENT }}', r'unknown placeholder \{\{ nope \}\}'),
+    ],
+)
+def test_page_component_errors(tmp_path: Path, frame: str, message: str):
+    page_component_dir(tmp_path, frame)
+    with pytest.raises(BuildError, match=message):
+        build.build_html(tmp_path)
+
+
+def test_page_component_must_be_html(tmp_path: Path):
+    page_component_dir(tmp_path, '{{ CONTENT }}', toml='')
+    write(tmp_path / 'artifact.toml', 'page_component = "Page.svg"\n')
+    with pytest.raises(BuildError, match=r'`page_component` must be an \.html file'):
+        build.load_config(tmp_path)
+    write(tmp_path / 'artifact.toml', 'page_component = "Missing.html"\n')
+    with pytest.raises(BuildError, match='component not found'):
+        build.build_html(tmp_path)
 
 
 def test_prose_rejects_slide_markers():

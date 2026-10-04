@@ -152,24 +152,19 @@ def format_output(streams: CollectStreams, result: object) -> str:
     return ''.join(parts)
 
 
-async def new_artifact(
-    title: str, content: str, type: ArtifactType = 'deck', theme: Theme = 'light', footer: str | None = None
-) -> str:
+async def new_artifact(title: str, content: str, type: ArtifactType = 'deck', theme: Theme = 'light') -> str:
     """Create an artifact from markdown and build it.
 
     `type` is the form of the artifact: `deck` is slides, where `content` has a line containing only
     `<slide .../>` starting each slide; `document` is a fixed-width document that prints to A4 pages; `page` is a
     continuous web page. For `document` and `page`, `content` is plain markdown with no slide markers, structured
-    with headings. `content` becomes `main.md`; `title`, `type`, `theme` and `footer` are written to
-    `artifact.toml`. The artifact is built straight away, so a problem in `content` is returned as an error naming
+    with headings. `content` becomes `main.md`; `title`, `type` and `theme` are written to `artifact.toml`. The artifact is built straight away, so a problem in `content` is returned as an error naming
     the line; the files are kept, so fix them with `run_code` and call `build`. On success returns the artifact
     identifier (a UUID) to pass to the other tools, and the URL of the page.
     """
     principal = await auth.current_principal()
     artifact_id = uuid.uuid4()
     config = {'title': title, 'type': type, 'theme': theme}
-    if footer is not None:
-        config['footer'] = footer
     async with editing(principal.workspace_id, f'new_artifact: {artifact_id}') as tx:
         directory = tx.artifact_dir(artifact_id)
         directory.mkdir(parents=True)

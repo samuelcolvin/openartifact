@@ -3,12 +3,6 @@
  * and the browser runtime (which reads them). Keep in sync with `render_page` in build.py.
  */
 
-/** A single tab entry shown in the slide topbar tab navigation. */
-export interface DeckTab {
-  id: string
-  label: string
-}
-
 /**
  * Built-in deck theme. `light` / `dark` pick the palette; the `markdown-*`
  * variants add source-style decorations (heading `#` prefixes, `**` markers,
@@ -26,13 +20,11 @@ export type ArtifactType = 'deck' | 'document' | 'page'
 /** Artifact-level config, parsed from `artifact.toml` by build.py. */
 export interface ArtifactConfig {
   type: ArtifactType
-  /** Browser tab title; also the fallback when a slide has no title or h1. */
+  /** Browser tab title; also the fallback when a page has no title or h1. */
   title?: string
   theme: DeckTheme
-  /** Optional footer text rendered bottom-right of every slide. */
-  footer?: string
-  /** Tabs for the topbar nav bar; `<slide tab="...">` highlights the matching one. Decks only. */
-  tabs: DeckTab[]
+  /** A component rendered once per page around the body (`{{ CONTENT }}`); keyed like `components`. */
+  page_component?: string
   /** The `[context]` table of artifact.toml: uppercase keys substituted as `{{ KEY }}` everywhere. */
   context?: Record<string, string>
 }

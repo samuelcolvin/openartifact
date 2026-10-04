@@ -1,0 +1,11 @@
+
+/* The page component (components/Frame.html) adds this footer inside the sheet. */
+.doc-footer {
+  margin-top: 3em;
+  padding-top: 1em;
+  border-top: 1px solid color-mix(in srgb, var(--slide-heading) 12%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  color: var(--topbar-muted);
+}

@@ -18,6 +18,59 @@
   --accent-aqua: #4ad7c5;
 }
 
+/* The page component (components/Page.html): a window-chrome header on every page. */
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 48px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--topbar-divider);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--topbar-muted);
+}
+.page-header-dots {
+  display: flex;
+  gap: 7px;
+}
+.page-header-dots span {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--topbar-muted);
+  opacity: 0.6;
+}
+.page-header-dots span:nth-child(1) { background: #ff5f57; }
+.page-header-dots span:nth-child(2) { background: #febc2e; }
+.page-header-dots span:nth-child(3) { background: #28c840; }
+.page-header-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.page-header-nav {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.page-header-nav button {
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 2px 6px;
+  color: inherit;
+  cursor: pointer;
+}
+.page-header-nav button:hover {
+  color: var(--slide-heading);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
 /* The Card component (components/Card.html). */
 .card {
   padding: 16px 20px;

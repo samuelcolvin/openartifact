@@ -64,15 +64,13 @@ async def head_sha(ws: uuid.UUID) -> str | None:
 
 
 async def test_new_artifact_builds_and_commits(me: auth.Principal):
-    out = await mcp_server.new_artifact('My Deck!', '<slide/>\n# Hello\n', theme='dark', footer='ACME')
+    out = await mcp_server.new_artifact('My Deck!', '<slide/>\n# Hello\n', theme='dark')
     artifact = artifact_id(out)
     assert re.fullmatch(UUID_RE, artifact)
     assert out.endswith(f'page: http://127.0.0.1:8765/artifacts/{artifact}/\n')
     directory = files_of(me, artifact)
     assert (directory / 'main.md').read_text() == '<slide/>\n# Hello\n'
-    assert (directory / 'artifact.toml').read_text() == (
-        'title = "My Deck!"\ntype = "deck"\ntheme = "dark"\nfooter = "ACME"\n'
-    )
+    assert (directory / 'artifact.toml').read_text() == ('title = "My Deck!"\ntype = "deck"\ntheme = "dark"\n')
     assert (directory / 'dist' / 'index.html').is_file()
     # One commit, recorded as the head, bundled; the build output is not in it.
     path = workspace.checkout_path(me.workspace_id)

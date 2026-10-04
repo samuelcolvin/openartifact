@@ -18,14 +18,14 @@ body {
   min-height: 100vh;
 }
 
-.artifact-page .prose {
+.artifact-page .page {
   max-width: var(--page-max-width);
   margin: 0 auto;
   padding: 3.5rem 2rem 6rem;
 }
 
 @media (max-width: 640px) {
-  .artifact-page .prose {
+  .artifact-page .page {
     padding: 1.75rem 1.25rem 4rem;
   }
 }
@@ -36,7 +36,7 @@ body {
 }
 
 @media print {
-  .artifact-page .prose {
+  .artifact-page .page {
     max-width: none;
     padding: 0;
   }

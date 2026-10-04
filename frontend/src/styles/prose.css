@@ -1,6 +1,6 @@
 /*
- * OpenArtifact prose stylesheet: typography for the `document` and `page` types, which
- * render the whole markdown into one `<article class="prose">`. It mirrors the deck's
+ * OpenArtifact prose stylesheet: typography for the `document` and `page` types, whose
+ * pages render the markdown into an `<article class="prose">`. It mirrors the deck's
  * `.slide` typography on the same variables, at reading sizes rather than projection sizes,
  * and adds print rules so headings stay with their text and blocks are not split.
  * The markdown decorations (`#` prefixes, `**` markers, diamond bullets) follow the
@@ -271,17 +271,6 @@
 :is(.theme-markdown-light, .theme-markdown-dark) .prose hr {
   background: linear-gradient(90deg, var(--accent), var(--accent-secondary), var(--accent-tertiary));
   opacity: 0.5;
-}
-
-/* `footer` from artifact.toml, rendered once at the end. */
-.prose-footer {
-  margin-top: 3em;
-  padding-top: 1em;
-  border-top: 1px solid color-mix(in srgb, var(--slide-heading) 12%, transparent);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  letter-spacing: 0.05em;
-  color: var(--topbar-muted);
 }
 
 /* ========================================
