@@ -67,7 +67,7 @@ async def test_new_artifact_builds_and_commits(me: auth.Principal):
     out = await mcp_server.new_artifact('My Deck!', '<slide/>\n# Hello\n', theme='dark', footer='ACME')
     artifact = artifact_id(out)
     assert re.fullmatch(UUID_RE, artifact)
-    assert out.endswith(f'page: http://127.0.0.1:8000/artifacts/{artifact}/\n')
+    assert out.endswith(f'page: http://127.0.0.1:8765/artifacts/{artifact}/\n')
     directory = files_of(me, artifact)
     assert (directory / 'main.md').read_text() == '<slide/>\n# Hello\n'
     assert (directory / 'artifact.toml').read_text() == (
@@ -188,7 +188,7 @@ async def test_build_missing_artifact(me: auth.Principal):
 async def test_build_imported_starter(me: auth.Principal, pool: None):
     row = await workspace.import_directory(me.workspace_id, 'Starter', 'deck', STARTER)
     out = await mcp_server.build_artifact(str(row.id))
-    assert out.endswith(f'page: http://127.0.0.1:8000/artifacts/{row.id}/\n')
+    assert out.endswith(f'page: http://127.0.0.1:8765/artifacts/{row.id}/\n')
     # The sandbox sees the output under the mount.
     listing = await mcp_server.run_code(str(row.id), "import os\nprint(sorted(os.listdir('/artifact/dist')))")
     assert listing == "['index.html']\n"
@@ -205,8 +205,8 @@ async def test_list_artifacts(me: auth.Principal):
     first = artifact_id(await mcp_server.new_artifact('First', '<slide/>\n# 1\n'))
     second = artifact_id(await mcp_server.new_artifact('Second', '# 2\n', type='page'))
     assert await mcp_server.list_artifacts() == (
-        f'{first}  deck  First  http://127.0.0.1:8000/artifacts/{first}/\n'
-        f'{second}  page  Second  http://127.0.0.1:8000/artifacts/{second}/\n'
+        f'{first}  deck  First  http://127.0.0.1:8765/artifacts/{first}/\n'
+        f'{second}  page  Second  http://127.0.0.1:8765/artifacts/{second}/\n'
     )
 
 

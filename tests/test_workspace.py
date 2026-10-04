@@ -110,6 +110,22 @@ async def test_upload_failure_rolls_back(principal: auth.Principal, monkeypatch:
     assert await git_log(workspace.checkout_path(ws)) == [f'new_artifact: {artifact.id}']
 
 
+async def test_missing_bundle_is_a_clear_error(
+    principal: auth.Principal, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A database pointing at a bundle the store does not have, as when the two come from different deployments."""
+    ws = principal.workspace_id
+    artifact = await write_artifact(ws)
+    sha = await head_sha(ws)
+    assert sha is not None
+    await store.store().delete(workspace.bundle_key(ws, sha))
+    monkeypatch.setenv('OPENARTIFACT_CACHE_DIR', str(tmp_path / 'cache-b'))
+    workspace.reset_state()
+    with pytest.raises(workspace.GitError, match='missing from the object store'):
+        async with workspace.open_artifact(artifact):
+            pass
+
+
 async def test_second_cache_syncs_from_bundle(
     principal: auth.Principal, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

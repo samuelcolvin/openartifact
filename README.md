@@ -49,8 +49,9 @@ Then start Postgres and the server, and let an agent drive it over MCP:
 
 ```bash
 uv sync
-make postgres                                 # Postgres 17 in Docker
-OPENARTIFACT_DEV_TOKEN=dev make serve         # http://127.0.0.1:8000, MCP at /mcp/ with bearer token `dev`
+make pg-start                                 # Postgres 17 in Docker
+make dev                                      # http://127.0.0.1:8765, MCP at /mcp/ with bearer token `dev`
+make docker-up                                # or build the Docker image and run server and database together
 ```
 
 Artifacts are stored as git repositories (one per user, one directory per artifact), bundled into an object store under `data/store/` locally or an `s3://` URL in production, with Postgres holding users and artifact metadata. In production set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `OPENARTIFACT_SECRET_KEY` instead of the dev token and the MCP endpoint is behind Google login.
@@ -121,7 +122,7 @@ The full authoring guide - slide attributes, components, images, code blocks, th
 With the server running:
 
 ```bash
-PYTHONPATH=backend python3 -c 'from pathlib import Path; import pdf; pdf.print_to_pdf("http://127.0.0.1:8000/artifacts/<id>/", Path("deck.pdf"))'
+PYTHONPATH=backend python3 -c 'from pathlib import Path; import pdf; pdf.print_to_pdf("http://127.0.0.1:8765/artifacts/<id>/", Path("deck.pdf"))'
 ```
 
 If Chrome isn't found, or the conversion fails, the error carries the exact command so you can fix the Chrome path or flags and run it yourself. It looks like:
@@ -129,7 +130,7 @@ If Chrome isn't found, or the conversion fails, the error carries the exact comm
 ```bash
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
   --headless=new --disable-gpu --no-pdf-header-footer \
-  --print-to-pdf=./deck.pdf "http://127.0.0.1:8000/artifacts/<id>/"
+  --print-to-pdf=./deck.pdf "http://127.0.0.1:8765/artifacts/<id>/"
 ```
 
 There are no paper-size flags: each artifact type's stylesheet sets `@page` (16:9 for a deck, A4 for a document or page) and Chrome honours it. (Use `google-chrome` or `chromium` on Linux - `pdf.find_chrome` looks for them automatically.)

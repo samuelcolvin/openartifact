@@ -1,4 +1,8 @@
-.DEFAULT_GOAL := help
+.DEFAULT_GOAL := main
+
+# Bearer token the dev server and `docker-up` accept when Google login is not configured.
+OPENARTIFACT_DEV_TOKEN ?= dev
+export OPENARTIFACT_DEV_TOKEN
 
 .PHONY: .uv
 .uv:
@@ -26,23 +30,39 @@ lint: ## Lint Python with ruff and basedpyright (strict), TypeScript with biome 
 	pnpm -C frontend typecheck
 
 .PHONY: test
-test: ## Run the Python tests
+test: ## Run the Python tests (needs `make pg-start`)
 	uv run pytest
+
+.PHONY: main
+main: format lint test ## Run formatting, linting and tests
 
 .PHONY: build
 build: ## Bundle the browser runtime to frontend/dist/openartifact.js
 	pnpm -C frontend build
 
-.PHONY: postgres
-postgres: ## Start Postgres in Docker (docker-compose.yml); the server and tests use it at DATABASE_URL
+.PHONY: pg-start
+pg-start: ## Run Postgres in Docker on port 5432 (docker-compose.yml; required by `make dev` and `make test`)
 	docker compose up -d --wait postgres
 
-.PHONY: serve
-serve: ## Run the HTTP server (MCP endpoint, openartifact.js and built artifacts) on http://127.0.0.1:8000
-	uv run backend/server.py
+.PHONY: pg-stop
+pg-stop: ## Stop the database
+	docker compose stop postgres
 
-.PHONY: main
-main: format lint test ## Run formatting, linting and tests
+.PHONY: dev
+dev: ## Start the server on the host at http://127.0.0.1:8765 with reload, MCP at /mcp/ with the dev token
+	uv run uvicorn --app-dir backend server:app --reload --port 8765
+
+.PHONY: docker-up
+docker-up: ## Build the image and start the server and database via docker compose
+	docker compose up --build -d --wait
+
+.PHONY: docker-down
+docker-down: ## Stop the server and database
+	docker compose down
+
+.PHONY: docker-logs
+docker-logs: ## Tail logs from all services
+	docker compose logs -f
 
 # (must stay last!)
 .PHONY: help

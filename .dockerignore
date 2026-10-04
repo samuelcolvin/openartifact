@@ -1,0 +1,10 @@
+# Only backend/, pyproject.toml, uv.lock and the frontend sources go into the image (see Dockerfile).
+*
+!backend/
+!frontend/package.json
+!frontend/pnpm-lock.yaml
+!frontend/tsconfig.json
+!frontend/src/
+!pyproject.toml
+!uv.lock
+**/__pycache__/

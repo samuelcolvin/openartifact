@@ -20,7 +20,7 @@ import pytest
 # The MCP server builds its auth provider at import time; give it the static development token before any test
 # module imports it. Tests that need a second user register more tokens on the same verifier.
 DEV_TOKEN = 'test-dev-token'
-os.environ.setdefault('OPENARTIFACT_DEV_TOKEN', DEV_TOKEN)
+os.environ['OPENARTIFACT_DEV_TOKEN'] = DEV_TOKEN  # not setdefault: the Makefile exports a dev token of its own
 # The server configures Logfire at import; keep its console output out of pytest's captured stdout.
 os.environ.setdefault('LOGFIRE_CONSOLE', 'false')
 
@@ -54,7 +54,7 @@ def test_database_url() -> Iterator[str]:
         try:
             conn = await asyncpg.connect(maintenance)
         except (OSError, asyncpg.PostgresError) as exc:
-            pytest.exit(f'cannot reach Postgres at {maintenance} ({exc}); run `make postgres`', returncode=1)
+            pytest.exit(f'cannot reach Postgres at {maintenance} ({exc}); run `make pg-start`', returncode=1)
         try:
             await conn.execute(f'CREATE DATABASE {name}')
         finally:

@@ -16,7 +16,7 @@ git clone https://github.com/samuelcolvin/openartifact
 cd openartifact && pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/openartifact.js
 ```
 
-The builder is the module `backend/build.py` in that checkout, with PDF printing in `backend/pdf.py`. Both need Python 3.11+ and nothing else. The usual way to use them is through the MCP server (`make postgres`, then `OPENARTIFACT_DEV_TOKEN=dev make serve`; tools `new_artifact`, `run_code`, `build`, `list_artifacts`; artifacts are identified by the UUID `new_artifact` returns); by hand, import them with `PYTHONPATH=CHECKOUT/backend`. Below, `CHECKOUT` stands for the path to that checkout.
+The builder is the module `backend/build.py` in that checkout, with PDF printing in `backend/pdf.py`. Both need Python 3.11+ and nothing else. The usual way to use them is through the MCP server (`make pg-start`, then `make dev`; tools `new_artifact`, `run_code`, `build`, `list_artifacts`; artifacts are identified by the UUID `new_artifact` returns); by hand, import them with `PYTHONPATH=CHECKOUT/backend`. Below, `CHECKOUT` stands for the path to that checkout.
 
 ## Project layout
 
@@ -34,7 +34,7 @@ my-deck/
 # build to ./dist/index.html
 PYTHONPATH=CHECKOUT/backend python3 -c 'from pathlib import Path; import build; build.build_html(Path("."))'
 # then a PDF via Chrome headless, from the page the server is serving
-PYTHONPATH=CHECKOUT/backend python3 -c 'from pathlib import Path; import pdf; pdf.print_to_pdf("http://127.0.0.1:8000/artifacts/<id>/", Path("deck.pdf"))'
+PYTHONPATH=CHECKOUT/backend python3 -c 'from pathlib import Path; import pdf; pdf.print_to_pdf("http://127.0.0.1:8765/artifacts/<id>/", Path("deck.pdf"))'
 ```
 
 The page is not self-contained: it loads `openartifact.js` from the server and its images relatively, so view and print it through the server rather than from `file://`. `build_html(directory, output=None, runtime_url='/openartifact.js')` takes an optional output path; `print_to_pdf(url, pdf_path)` prints a served page. Input problems raise `build.BuildError` naming the file and line.

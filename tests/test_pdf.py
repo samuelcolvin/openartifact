@@ -9,7 +9,7 @@ import pytest
 import pdf
 from build import BuildError
 
-URL = 'http://127.0.0.1:8000/artifacts/demo-abc123/'
+URL = 'http://127.0.0.1:8765/artifacts/demo-abc123/'
 
 
 def test_missing_chrome_reports_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

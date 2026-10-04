@@ -1,6 +1,27 @@
-# Local services for development and tests. `make postgres` starts the database;
+# Local services for development and tests. `make pg-start` starts the database;
 # the server and tests reach it at DATABASE_URL=postgresql://postgres:postgres@localhost:5432/openartifact.
+# `make docker-up` builds the application image (Dockerfile) and runs it against that database on
+# http://127.0.0.1:8765 (OPENARTIFACT_PORT overrides the host port) with the dev token; its checkout cache lives
+# in the `data` volume and its object store in ./data/store, shared with `make dev`.
 services:
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/openartifact
+      OPENARTIFACT_DEV_TOKEN: ${OPENARTIFACT_DEV_TOKEN:-dev}
+      OPENARTIFACT_BASE_URL: http://127.0.0.1:${OPENARTIFACT_PORT:-8765}
+      LOGFIRE_TOKEN: ${LOGFIRE_TOKEN:-}
+    ports:
+      - '${OPENARTIFACT_PORT:-8765}:8765'
+    volumes:
+      # The object store is the directory the host server uses too, so `make dev` and `make docker-up` share the
+      # database above and the bundles it points at. The checkout cache stays private to the container.
+      - ./data/store:/data/store
+      - data:/data/cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:17
     environment:
@@ -19,3 +40,4 @@ services:
 
 volumes:
   postgres:
+  data:

@@ -191,7 +191,7 @@ async def test_mcp_over_http(live_server: str):
         )
         assert result.data == '9\n'
         built = await client.call_tool('build', {'artifact': name})
-        assert built.data.endswith(f'page: http://127.0.0.1:8000/artifacts/{name}/\n')
+        assert built.data.endswith(f'page: http://127.0.0.1:8765/artifacts/{name}/\n')
         listed = await client.call_tool('list_artifacts', {})
         assert listed.data.startswith(f'{name}  deck  Demo  ')
     # The page the tool pointed at is served by the same process.

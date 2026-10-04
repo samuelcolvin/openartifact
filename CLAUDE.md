@@ -14,7 +14,7 @@ The repo has two halves:
 - **`backend/build.py`** - the builder, a library module with no dependencies beyond the standard library and no CLI. It does no rendering: it validates the inputs (including that every referenced image exists), packs markdown, components and CSS into a JSON blob and writes an HTML page that loads `openartifact.js` by URL. **`backend/pdf.py`** drives Chrome headless to print the served page to PDF.
 - **`backend/mcp_server.py`** - an MCP server for agents, built on `fastmcp` and `pydantic-monty`. `new_artifact` creates an artifact from markdown and builds it; `run_code` runs agent-written Python in a monty sandbox with the artifact's directory mounted read-write at `/artifact`, which is how the agent edits files; `build` calls `build.py` on that directory; `list_artifacts` lists the caller's. Artifact identifiers are UUIDs. PDF export is not an MCP concern; it will be a download button on the served artifact.
 - **`backend/workspace.py`, `db.py`, `store.py`, `auth.py`** - storage and identity. Each user has a workspace: a git repository with one directory per artifact (`artifacts/<uuid>/`), kept as a working clone in a local cache, serialised as a `git bundle` into an object store (local directory or S3) under an immutable key per commit, with Postgres holding the current head and the users / workspaces / artifacts tables. The MCP endpoint is behind Google login (a static token for local development); artifact pages are public by UUID.
-- **`backend/server.py`** - the FastAPI app that runs it all: the MCP server mounted at `/mcp/`, `openartifact.js` at `/openartifact.js`, and each artifact's page and media at `/artifacts/{uuid}/`, built on demand from the workspace checkout. `uv run backend/server.py` (or `make serve`) starts it with uvicorn.
+- **`backend/server.py`** - the FastAPI app that runs it all: the MCP server mounted at `/mcp/`, `openartifact.js` at `/openartifact.js`, and each artifact's page and media at `/artifacts/{uuid}/`, built on demand from the workspace checkout. `make dev` (uvicorn with reload) or `uv run backend/server.py` starts it.
 
 The split is deliberate. The builder is thin enough to run anywhere Python 3.11 exists and to become a service later; the runtime is where the product lives.
 
@@ -52,16 +52,18 @@ pnpm -C frontend lint                 # biome check
 pnpm -C frontend format               # biome check --fix
 
 uv sync                               # create .venv with the dependencies and dev tools (uv run does this on demand too)
-make postgres                         # Postgres 17 in Docker (docker-compose.yml) at DATABASE_URL\'s default
+make pg-start                         # Postgres 17 in Docker (docker-compose.yml) at DATABASE_URL's default; `make pg-stop` stops it
+make dev                              # the server on the host at :8765 with reload, dev token `dev` (OPENARTIFACT_DEV_TOKEN overrides)
+make docker-up                        # build the image (Dockerfile) and run server and database with compose; docker-down, docker-logs
 PYTHONPATH=backend uv run python -c 'from pathlib import Path; import build; build.build_html(Path("examples/starter"))'  # by hand
-OPENARTIFACT_DEV_TOKEN=dev uv run backend/server.py   # HTTP server on :8000: MCP at /mcp/ (bearer token `dev`), openartifact.js, artifact pages
+OPENARTIFACT_DEV_TOKEN=dev uv run backend/server.py   # HTTP server on :8765: MCP at /mcp/ (bearer token `dev`), openartifact.js, artifact pages
 uv run ruff check                     # lint backend/ and tests/
 uv run ruff format                    # format them
 uv run basedpyright                   # strict type check of backend/ and tests/
 uv run pytest                         # run tests/
 ```
 
-The `Makefile` wraps these: `make install`, `make format`, `make lint`, `make test`, `make main` (all three), `make serve`.
+The `Makefile` wraps these: `make install`, `make format`, `make lint`, `make test`, `make main` (all three, the default goal), `make build`, plus the `pg-*`, `dev` and `docker-*` recipes above; `make help` lists them.
 
 `server.py` serves `frontend/dist/openartifact.js`, so run `pnpm -C frontend build` once after cloning or after changing anything in `frontend/src/`.
 
@@ -145,7 +147,8 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 
 - `mcp.http_app(path='/')` mounted at `/mcp`. The app's `lifespan` enters FastMCP's lifespan (its session manager will not start otherwise), `db.db_pool()`, `store.object_store()` and `mcp_server.monty_pool()`, then runs migrations. The MCP endpoint is `/mcp/`.
 - `/openartifact.js` serves `frontend/dist/openartifact.js` (`RUNTIME_JS_PATH`); every built page loads it from there. `/artifacts/{uuid}/` looks the artifact up (any workspace: pages are public by UUID), syncs the checkout under `open_artifact`, builds `dist/index.html` if missing (a `BuildError` is a 422) and returns the HTML read under the lock. `/artifacts/{uuid}/{path}` serves images and fonts (`SERVED_EXTS`) from the artifact directory after the containment and extension check in `contained_file`. A non-UUID is a 404. `main.md`, `artifact.toml`, `styles.css` and components are not served as files. `/` returns a JSON index without artifacts; `list_artifacts` is per user.
-- Configuration is by environment: `HOST`, `PORT`, `DATABASE_URL`, `OPENARTIFACT_STORE_URL`, `OPENARTIFACT_CACHE_DIR`, `OPENARTIFACT_BASE_URL`, the auth variables above, and `LOGFIRE_TOKEN` to send telemetry. The deployment image needs `git`.
+- Configuration is by environment: `HOST`, `PORT` (default 8765), `DATABASE_URL`, `OPENARTIFACT_STORE_URL`, `OPENARTIFACT_CACHE_DIR`, `OPENARTIFACT_BASE_URL`, the auth variables above, and `LOGFIRE_TOKEN` to send telemetry.
+- `Dockerfile` builds the application image (`make docker-up` builds and runs it): a node stage bundles `openartifact.js`, a uv stage installs the locked dependencies, and the final `python:3.14-slim` image adds `git`, runs as a non-root user and defaults the cache and local store to `/data`. Chrome is not in it; PDF export gets its own image or a sidecar later. `make docker-up` runs the image against the compose Postgres on :8765 with the dev token (`OPENARTIFACT_PORT` moves the host port). The compose database and the image's `/data` volume belong together: a `head_sha` whose bundle is not in the configured store is reported as such by `sync_checkout`.
 - Observability: `configure_telemetry()` calls `logfire.configure()`, `logfire.instrument_asyncpg()`, and hands monty its tracer, meter and logger via `pydantic_monty.instrument_telemetry`. FastAPI's built-in telemetry and FastMCP's native spans pick up Logfire's global providers on their own, so do not add `logfire.instrument_fastapi` or `logfire.instrument_mcp`; they would duplicate spans. FastAPI is created with `telemetry={'auto_configure': False}` so it never adds OTLP exporters of its own.
 
 **Supporting files**
@@ -154,7 +157,7 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 - `examples/starter/` - smoke-test deck exercising every feature (components, nesting, image, tabs, light slide, code). `examples/document/` and `examples/page/` are the same for the other two types.
 - `tests/test_build.py` - pytest for `backend/build.py` (imported as `build`; pytest adds `backend/` to `pythonpath`).
 - `tests/test_pdf.py` - pytest for `backend/pdf.py`; Chrome is stubbed, the command assembly and error paths are checked.
-- `tests/conftest.py` - creates a throwaway database per session on the server at `DATABASE_URL` (`make postgres` first), migrates it, and provides `db_pool`, `storage` (file store and cache in `tmp_path`), `principal` and `server_env` (for tests that run the whole app). Tests needing Postgres are the ones using those fixtures; `test_build.py` and `test_pdf.py` run without it.
+- `tests/conftest.py` - creates a throwaway database per session on the server at `DATABASE_URL` (`make pg-start` first), migrates it, and provides `db_pool`, `storage` (file store and cache in `tmp_path`), `principal` and `server_env` (for tests that run the whole app). Tests needing Postgres are the ones using those fixtures; `test_build.py` and `test_pdf.py` run without it.
 - `tests/test_db.py`, `test_store.py`, `test_workspace.py` - the storage layer, including the edit protocol's failure paths (body error, upload failure, a second cache syncing from the bundle, stale `dist/` removal).
 - `tests/test_mcp_server.py` - the tool functions directly as a signed-in user (`auth.as_principal`), plus one in-memory `fastmcp.Client` round trip.
 - `tests/test_server.py` - the HTTP routes with `TestClient` (seeding through `client.portal` so rows and checkouts belong to the app's loop), plus MCP over real HTTP against a uvicorn thread with the dev token.

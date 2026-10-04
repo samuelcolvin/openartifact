@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def base_url() -> str:
     """Public URL of the server, from `OPENARTIFACT_BASE_URL`; defaults to uvicorn's local default."""
-    return (os.environ.get('OPENARTIFACT_BASE_URL') or 'http://127.0.0.1:8000').rstrip('/')
+    return (os.environ.get('OPENARTIFACT_BASE_URL') or 'http://127.0.0.1:8765').rstrip('/')
 
 
 def cache_dir() -> Path:

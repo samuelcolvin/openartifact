@@ -167,7 +167,14 @@ async def sync_checkout(workspace_id: uuid.UUID, head_sha: str | None) -> Path:
     if code != 0:
         # `git fetch <file>` reads a bundle without recording a remote, unlike `git clone <bundle>`.
         bundle = cache_dir() / f'{workspace_id}.{head_sha}.bundle'
-        bundle.write_bytes(await store.store().get(bundle_key(workspace_id, head_sha)))
+        try:
+            data = await store.store().get(bundle_key(workspace_id, head_sha))
+        except store.StoreMissing as exc:
+            raise GitError(
+                f'workspace {workspace_id}: the bundle for head {head_sha} is missing from the object store; '
+                'DATABASE_URL and OPENARTIFACT_STORE_URL do not describe the same deployment'
+            ) from exc
+        bundle.write_bytes(data)
         try:
             await git('fetch', '-q', str(bundle), 'main', cwd=path)
         finally:
