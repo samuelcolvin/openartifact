@@ -31,6 +31,27 @@ Anything longer than a few lines of HTML goes in a file and is pulled in with a
 
 <slide tab="intro"/>
 
+# Components with parameters
+
+Attributes on the tag become `{{ name }}` placeholders in the file; the markdown between the tags becomes `{{ CONTENT }}`.
+Updated {{ DATE }}, from `[context]` in `artifact.toml`.
+
+<div class="cols-3">
+<component src="Card.html" title="Parameters" icon="1">
+
+`Card.html` declares `<!-- params: title, icon="*" -->`; `title` is required, `icon` has a default.
+
+</component>
+<component src="Card.html" title="Children" icon="2">
+
+Leave a blank line after the opening tag and before the closing one, so this text is **markdown**.
+
+</component>
+<component src="Card.html" title="Defaults"></component>
+</div>
+
+<slide tab="intro"/>
+
 # Columns and an SVG component
 
 <div class="row">

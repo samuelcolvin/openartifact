@@ -19,6 +19,7 @@ import documentCss from './styles/document.css'
 import pageCss from './styles/page.css'
 import proseCss from './styles/prose.css'
 import sharedCss from './styles/shared.css'
+import { substituteText } from './substitute.ts'
 import type { ArtifactConfig, ArtifactData, ArtifactType } from './types.ts'
 
 /** Stylesheets per type, injected after shared.css and before hljs.css and the user's styles.css. */
@@ -108,9 +109,11 @@ function main(): void {
   presenter.className = `artifact artifact-deck deck-presenter theme-${config.theme}`
   const deck = document.createElement('div')
   deck.className = 'deck'
+  const context = config.context ?? {}
   for (const raw of slides) {
     const section = buildSlide(raw, renderMarkdown(raw.body), config)
-    expandComponents(section, data.components)
+    expandComponents(section, data.components, context)
+    substituteText(section, context)
     deck.append(section)
   }
   presenter.append(deck)

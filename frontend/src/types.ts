@@ -33,6 +33,8 @@ export interface ArtifactConfig {
   footer?: string
   /** Tabs for the topbar nav bar; `<slide tab="...">` highlights the matching one. Decks only. */
   tabs: DeckTab[]
+  /** The `[context]` table of artifact.toml: uppercase keys substituted as `{{ KEY }}` everywhere. */
+  context?: Record<string, string>
 }
 
 /**

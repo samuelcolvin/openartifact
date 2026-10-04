@@ -5,3 +5,7 @@ tabs = [
   { id = "intro", label = "Intro" },
   { id = "details", label = "Details" },
 ]
+
+# Uppercase keys here are available as {{ KEY }} in the markdown and in every component.
+[context]
+DATE = "October 2026"

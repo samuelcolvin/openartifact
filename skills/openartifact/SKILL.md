@@ -79,6 +79,12 @@ markdown = "main.md"
 styles = "styles.css"
 components = "components"
 
+# Global variables. Keys must be UPPERCASE; values are strings, numbers or booleans.
+# Available as {{ KEY }} in the markdown and in every component, next to the built-ins.
+[context]
+AUTHOR = "Jane Doe"
+DATE = "October 2026"
+
 # Optional tab nav (decks only). When present, <slide tab="..."/> highlights the matching tab.
 tabs = [
   { id = "intro", label = "Intro" },
@@ -161,12 +167,38 @@ Short HTML can sit directly in the markdown - a `<mark>`, a small `<div class="n
 ```
 
 - The closing `</component>` is required. The self-closing form is not real HTML (the parser would swallow everything after it) and the build rejects it.
-- Put the tag on its own line with blank lines around it.
 - `src` is relative to the `components` directory and may not escape it.
-- Components are plain HTML files. They may contain other `<component>` tags (nesting is resolved at load time; cycles fail the build) and may reference images the same way the markdown does.
+- Components are plain HTML files. They may contain other `<component>` tags (nesting is resolved in the browser; cycles fail the build) and may reference images the same way the markdown does.
 - A component can also be an `.svg` file. It is inlined as SVG markup rather than as an image, so it can use the deck's CSS variables (`fill="var(--accent)"`, `font-family="var(--font-mono)"`) and follows the theme. Any XML prolog or doctype is stripped. Use `![](assets/x.svg)` instead when the SVG is a fixed picture that should not pick up the theme.
-- Components take no parameters. Two cards with different text are two files.
 - Scripts inside components do not run. Components see the same CSS variables your `styles.css` defines, so read from variables (`color: var(--accent)`) rather than hard-coding colors.
+
+#### Parameters and children
+
+A component takes parameters as attributes on the tag and its children as the markdown between the tags:
+
+```markdown
+<component src="Card.html" title="Fast builds" icon="1">
+
+Body text, rendered as **markdown** because of the blank lines.
+
+</component>
+```
+
+```html
+<!-- params: title, icon="*" -->
+<div class="card">
+  <h3>{{ icon }} {{ title }}</h3>
+  {{ CONTENT }}
+</div>
+```
+
+- The first line of the component declares its parameters: `<!-- params: title, icon="*" -->`. A name without a default is required; `icon="*"` has a default. Names are lowercase (`[a-z_][a-z0-9_]*`), because the HTML parser lowercases attribute names. `src` is reserved.
+- `{{ title }}` is replaced by the attribute's value as escaped text, so it is safe in text and inside attribute values alike (`<a href="{{ href }}">`).
+- `{{ CONTENT }}` is replaced by the tag's children as markup, at most once per component. A component without it cannot take children; a component with it can still be used empty (`<component src="Card.html" title="x"></component>`).
+- Uppercase placeholders are global: the `[context]` keys from `artifact.toml` plus the built-ins `PAGE_NUMBER`, `PAGE_COUNT` and `PAGE_TITLE`. They work in components and in the markdown itself, except inside code. Lowercase `{{ x }}` in the markdown is plain text.
+- When the tag holds children, put it on its own line, leave a blank line after the opening tag and a blank line before `</component>`. Without them CommonMark does not render the children as markdown and the browser drops the closing tag, so the component swallows the rest of the page. Without children, `<component src="X.html"></component>` can sit on one line, or inline in a sentence.
+- Substitution is plain text replacement: no expressions, loops or conditionals. Generate repeated markup with code in `run_code` and write the tags out.
+- The build checks everything and names the file and line: a parameter the tag passes but the component does not declare (listing the declared ones), a required parameter that is missing, an undeclared `{{ name }}` in the component, a declared parameter that is never used, children on a component without `{{ CONTENT }}`, an uppercase name that is neither built-in nor in `[context]`, and the missing blank lines above.
 
 ### Build steps
 

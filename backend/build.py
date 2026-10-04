@@ -67,15 +67,40 @@ class Config:
     # Relative to `cwd`, as written in artifact.toml; the page links it relatively, so the server resolves it.
     favicon: str | None = None
     tabs: list[dict[str, str]] = field(default_factory=list)
+    # The `[context]` table: uppercase keys available as `{{ KEY }}` everywhere a built-in is.
+    context: dict[str, str] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, object]:
-        """The `config` field of the JSON blob, matching `ArtifactConfig` in frontend/src/types.ts."""
+        """The `config` data block, matching `ArtifactConfig` in frontend/src/types.ts."""
         data: dict[str, object] = {'type': self.type, 'theme': self.theme, 'tabs': self.tabs}
         if self.title is not None:
             data['title'] = self.title
         if self.footer is not None:
             data['footer'] = self.footer
+        if self.context:
+            data['context'] = self.context
         return data
+
+
+def load_context(raw: object) -> dict[str, str]:
+    """Validate the `[context]` table: uppercase names that are not built-ins, with scalar values stringified."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise BuildError('artifact.toml: [context] must be a table of UPPERCASE keys')
+    context: dict[str, str] = {}
+    for key, value in cast('dict[str, object]', raw).items():
+        if not CONTEXT_NAME_RE.match(key):
+            raise BuildError(f'artifact.toml: [context] key {key!r} must be uppercase ([A-Z][A-Z0-9_]*)')
+        if key in BUILTINS:
+            raise BuildError(f'artifact.toml: [context] key {key!r} is a built-in')
+        if isinstance(value, bool):
+            context[key] = 'true' if value else 'false'
+        elif isinstance(value, (str, int, float)):
+            context[key] = str(value)
+        else:
+            raise BuildError(f'artifact.toml: [context] value for {key!r} must be a string, number or boolean')
+    return context
 
 
 def load_config(cwd: Path) -> Config:
@@ -151,6 +176,7 @@ def load_config(cwd: Path) -> Config:
         footer=optional_str('footer'),
         favicon=favicon,
         tabs=tabs,
+        context=load_context(raw.get('context')),
     )
 
 
@@ -219,35 +245,245 @@ def validate_prose(source: str, path: Path, artifact_type: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Placeholders: parameters, built-ins and context
+# ---------------------------------------------------------------------------
+
+# Mirrors PLACEHOLDER_RE in frontend/src/substitute.ts. Lowercase names are a component's parameters, uppercase
+# names are built-ins or `[context]` keys; the runtime substitutes, the builder only checks.
+PLACEHOLDER_RE = re.compile(r'\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}')
+PARAM_NAME_RE = re.compile(r'^[a-z_][a-z0-9_]*$')
+CONTEXT_NAME_RE = re.compile(r'^[A-Z][A-Z0-9_]*$')
+# `CONTENT` is the markup a component wraps; the `PAGE_*` values describe the page being rendered.
+BUILTINS = frozenset({'CONTENT', 'PAGE_NUMBER', 'PAGE_COUNT', 'PAGE_TITLE'})
+# The optional first line of a component file, `<!-- params: title, icon="x" -->`, and one declaration in it.
+PARAMS_DIRECTIVE_RE = re.compile(r'^\s*<!--\s*params:\s*(?P<decl>.*?)\s*-->[ \t]*\r?\n?', re.DOTALL)
+PARAM_DECL_RE = re.compile(r"""\s*(?P<name>[^\s,=]+)(?:\s*=\s*(?:"(?P<dq>[^"]*)"|'(?P<sq>[^']*)'))?\s*(?:,|$)""")
+# `{{ CONTENT }}` inside a quoted attribute value: it inserts markup, which an attribute cannot hold.
+CONTENT_IN_ATTR_RE = re.compile(r"""=\s*(?:"[^"]*\{\{\s*CONTENT\s*\}\}|'[^']*\{\{\s*CONTENT\s*\}\})""")
+
+
+def parse_params(source: str, path: Path) -> tuple[dict[str, str | None], str]:
+    """Split a component file into its declared parameters (`None` = required) and the body that follows."""
+    match = PARAMS_DIRECTIVE_RE.match(source)
+    if not match:
+        return {}, source
+    params: dict[str, str | None] = {}
+    decl, pos = match.group('decl'), 0
+    while pos < len(decl):
+        item = PARAM_DECL_RE.match(decl, pos)
+        if not item or item.end() == pos:
+            raise BuildError(
+                f'{path}:1: cannot parse <!-- params: ... --> at {decl[pos:]!r}; '
+                'write names separated by commas, with optional defaults: title, icon="x"'
+            )
+        name = item.group('name')
+        if not PARAM_NAME_RE.match(name):
+            raise BuildError(f'{path}:1: parameter {name!r} must match [a-z_][a-z0-9_]*')
+        if name == 'src':
+            raise BuildError(f"{path}:1: parameter name 'src' is reserved for the component file")
+        if name in params:
+            raise BuildError(f'{path}:1: parameter {name!r} is declared twice')
+        default = item.group('dq') if item.group('dq') is not None else item.group('sq')
+        params[name] = default
+        pos = item.end()
+    return params, source[match.end() :]
+
+
+def describe_params(params: dict[str, str | None]) -> str:
+    """`title, icon='x'`: how a component's parameters are listed in error messages."""
+    return ', '.join(name if default is None else f'{name}={default!r}' for name, default in params.items()) or '(none)'
+
+
+def line_of(text: str, pos: int) -> int:
+    """1-based line number of offset `pos` in `text`."""
+    return text.count('\n', 0, pos) + 1
+
+
+# ---------------------------------------------------------------------------
 # Components
 # ---------------------------------------------------------------------------
 
-COMPONENT_RE = re.compile(r"""<component\s+src=(["'])(?P<src>[^"']+)\1\s*>\s*</component>""", re.IGNORECASE)
+# An opening tag with its raw attribute text (so attribute case is visible), or a closing tag. Mirrors what the
+# browser's parser will see; the builder is deliberately stricter about the surrounding lines.
+COMPONENT_TAG_RE = re.compile(
+    r'<component\b(?P<attrs>(?:\s+[^\s=/>]+(?:\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s"\'=<>`]+))?)*)\s*(?P<self>/?)>'
+    r'|</component\s*>',
+    re.IGNORECASE,
+)
+ATTR_RE = re.compile(r"""([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?""")
+COMPONENT_START_RE = re.compile(r'<component\b[^>]*>', re.IGNORECASE)
 COMPONENT_EXTS = '.html', '.svg'
 # The XML prolog and doctype that editors put at the top of an SVG file. They are meaningless once the
 # SVG is inline in an HTML document and the HTML parser would turn them into a bogus comment.
 SVG_PROLOG_RE = re.compile(r'^\s*(?:<\?xml[^>]*\?>\s*|<!DOCTYPE[^>]*>\s*)*', re.IGNORECASE)
+INLINE_CODE_RE = re.compile(r'(`+)(.+?)\1(?!`)')
 
 
-def collect_components(body: str, components_dir: Path) -> dict[str, str]:
-    """Load every component reachable from `body`, following nested references; keyed by `src`."""
-    components: dict[str, str] = {}
+@dataclass
+class ComponentUse:
+    """One `<component src="...">...</component>` in a file."""
 
-    def visit(source_html: str, chain: tuple[str, ...]) -> None:
-        for match in COMPONENT_RE.finditer(source_html):
-            src = match.group('src')
-            if src in chain:
-                raise BuildError(f'component cycle: {" -> ".join((*chain, src))}')
-            if src in components:
-                continue
-            components[src] = load_component(src, components_dir, chain)
-            visit(components[src], (*chain, src))
+    src: str
+    attrs: dict[str, str]
+    path: Path
+    line: int
+    has_content: bool
 
-    visit(body, ())
-    return components
+    def describe(self) -> str:
+        return f'{self.path}:{self.line}: <component src="{self.src}">'
 
 
-def load_component(src: str, components_dir: Path, chain: tuple[str, ...]) -> str:
+@dataclass
+class ComponentSpec:
+    """A component file as loaded: what is embedded in the page, plus what the checks need."""
+
+    src: str
+    path: Path
+    source: str
+    params: dict[str, str | None]
+    body: str
+    # Line number of the first body line in the file (2 when there is a declaration).
+    body_offset: int
+
+    def placeholders(self) -> list[tuple[str, int]]:
+        """`(name, line)` for every `{{ name }}` in the body."""
+        return [
+            (m.group(1), self.body_offset + line_of(self.body, m.start()) - 1)
+            for m in PLACEHOLDER_RE.finditer(self.body)
+        ]
+
+    def content_slots(self) -> int:
+        return sum(1 for name, _line in self.placeholders() if name == 'CONTENT')
+
+
+def fenced_line_numbers(source: str) -> set[int]:
+    """The complement of `unfenced_lines`: every line inside a fenced block, fence lines included."""
+    unfenced = {number for number, _line in unfenced_lines(source)}
+    return {number for number in range(1, source.count('\n') + 2) if number not in unfenced}
+
+
+def blank_code(source: str) -> str:
+    """`source` with fenced blocks and inline code spans replaced by whitespace, line numbers preserved.
+
+    Tags and placeholders shown in code are examples, not references, and must not be checked as such.
+    """
+    fenced = fenced_line_numbers(source)
+    lines = ['' if number in fenced else line for number, line in enumerate(source.split('\n'), start=1)]
+    return INLINE_CODE_RE.sub(lambda m: ' ' * len(m.group(0)), '\n'.join(lines))
+
+
+def find_component_uses(text: str, path: Path, *, markdown: bool) -> list[ComponentUse]:
+    """Every component tag in `text`, with the checks that need the raw source.
+
+    `markdown=True` (main.md) also blanks code and enforces the blank lines CommonMark needs around a block-level
+    tag: without a blank line after the opening tag the children are not rendered as markdown, and without one
+    before the closing tag the browser drops it and the component swallows the rest of the page.
+    """
+    if markdown:
+        text = blank_code(text)
+    lowered = text.lower()
+    uses: list[ComponentUse] = []
+    stack: list[tuple[re.Match[str], str, dict[str, str], int]] = []
+    seen_end = 0
+    for match in COMPONENT_TAG_RE.finditer(text):
+        # A `<component` the regex could not read as a tag (an unterminated quote, say) is left between matches.
+        if (stray := lowered.find('<component', seen_end, match.start())) != -1:
+            raise BuildError(f'{path}:{line_of(text, stray)}: cannot parse this <component> tag; check its quotes')
+        seen_end = match.end()
+        number = line_of(text, match.start())
+        if match.group(0).startswith('</'):
+            if not stack:
+                raise BuildError(f'{path}:{number}: </component> without an opening <component> tag')
+            opening, src, attrs, open_line = stack.pop()
+            inner = text[opening.end() : match.start()]
+            if markdown and open_line != number:
+                check_block_component_lines(text, opening, match, src, path, open_line)
+            uses.append(ComponentUse(src, attrs, path, open_line, has_content=inner.strip() != ''))
+            continue
+        if match.group('self'):
+            raise BuildError(
+                f'{path}:{number}: self-closing <component .../> is not valid HTML; '
+                'write <component src="Name.html"></component>'
+            )
+        if '\n' in match.group(0):
+            raise BuildError(f'{path}:{number}: the opening <component> tag must be on one line')
+        attrs: dict[str, str] = {}
+        for attr in ATTR_RE.finditer(match.group('attrs')):
+            name = attr.group(1)
+            value = next((v for v in attr.groups()[1:] if v is not None), '')
+            if name != 'src' and not PARAM_NAME_RE.match(name):
+                raise BuildError(
+                    f'{path}:{number}: attribute {name!r} on <component> must match [a-z_][a-z0-9_]* '
+                    '(the HTML parser lowercases attribute names)'
+                )
+            if name in attrs:
+                raise BuildError(f'{path}:{number}: attribute {name!r} given twice on <component>')
+            if markdown and PLACEHOLDER_RE.search(value):
+                raise BuildError(
+                    f'{path}:{number}: {value!r} in an attribute of <component> is not substituted; '
+                    'use the placeholder inside the component file instead'
+                )
+            attrs[name] = value
+        src = attrs.pop('src', None)
+        if src is None:
+            raise BuildError(f'{path}:{number}: <component> needs a src attribute')
+        stack.append((match, src, attrs, number))
+    if (stray := lowered.find('<component', seen_end)) != -1:
+        raise BuildError(f'{path}:{line_of(text, stray)}: cannot parse this <component> tag; check its quotes')
+    if stack:
+        _opening, src, _attrs, open_line = stack[-1]
+        raise BuildError(f'{path}:{open_line}: <component src="{src}"> is never closed')
+    return uses
+
+
+def check_block_component_lines(
+    text: str, opening: re.Match[str], closing: re.Match[str], src: str, path: Path, open_line: int
+) -> None:
+    """For a tag alone on its line with its closing tag on a later line, require the blank lines CommonMark needs."""
+    before_open = text[: opening.start()].rsplit('\n', 1)[-1]
+    after_open = text[opening.end() :].split('\n', 1)[0]
+    if before_open.strip() or after_open.strip():
+        return  # inline use inside a paragraph: ordinary inline HTML, no block rules
+    inner_lines = text[opening.end() : closing.start()].split('\n')
+    # inner_lines[0] is the rest of the opening line (blank), [1] the next line, [-1] the start of the closing line.
+    if len(inner_lines) < 3 or inner_lines[1].strip():
+        raise BuildError(
+            f'{path}:{open_line}: put a blank line after <component src="{src}"> so its children are rendered as markdown'
+        )
+    if inner_lines[-2].strip():
+        raise BuildError(
+            f'{path}:{line_of(text, closing.start())}: put a blank line before </component>, otherwise the browser '
+            'treats it as text and the component swallows the rest of the page'
+        )
+
+
+def collect_components(
+    roots: list[tuple[str, Path]], components_dir: Path, names: frozenset[str]
+) -> dict[str, ComponentSpec]:
+    """Load every component reachable from the markdown `roots`, checking each file and each use; keyed by `src`.
+
+    `names` are the uppercase placeholders that are valid everywhere: the built-ins plus the `[context]` keys.
+    """
+    specs: dict[str, ComponentSpec] = {}
+
+    def visit(text: str, path: Path, chain: tuple[str, ...], *, markdown: bool) -> None:
+        for use in find_component_uses(text, path, markdown=markdown):
+            if use.src in chain:
+                raise BuildError(f'component cycle: {" -> ".join((*chain, use.src))}')
+            spec = specs.get(use.src)
+            if spec is None:
+                spec = load_component(use.src, components_dir, chain)
+                check_component_file(spec, names)
+                specs[use.src] = spec
+                visit(spec.body, spec.path, (*chain, use.src), markdown=False)
+            check_component_use(use, spec)
+
+    for text, path in roots:
+        visit(text, path, (), markdown=True)
+    return specs
+
+
+def load_component(src: str, components_dir: Path, chain: tuple[str, ...]) -> ComponentSpec:
     """Read one component file, refusing paths that leave the components directory.
 
     `.html` files are used verbatim. `.svg` files are inlined as SVG markup (so they can use the deck's CSS
@@ -264,13 +500,65 @@ def load_component(src: str, components_dir: Path, chain: tuple[str, ...]) -> st
     if path.suffix.lower() not in COMPONENT_EXTS:
         raise BuildError(f'component {src!r} must be one of {", ".join(COMPONENT_EXTS)}{referenced_from}')
     source = path.read_text(encoding='utf-8')
-    if SELF_CLOSING_COMPONENT_RE.search(source):
-        raise BuildError(f'{path}: self-closing <component .../> is not valid HTML')
     if path.suffix.lower() == '.svg':
         source = SVG_PROLOG_RE.sub('', source, count=1)
         if not source.lstrip().lower().startswith('<svg'):
             raise BuildError(f'{path}: expected an <svg> root element')
-    return source
+    params, body = parse_params(source, path)
+    body_offset = source[: len(source) - len(body)].count('\n') + 1
+    return ComponentSpec(src=src, path=path, source=source, params=params, body=body, body_offset=body_offset)
+
+
+def check_component_file(spec: ComponentSpec, names: frozenset[str]) -> None:
+    """Every placeholder in a component is a declared parameter or a known uppercase name, and vice versa."""
+    used: set[str] = set()
+    for name, line in spec.placeholders():
+        if name in spec.params:
+            used.add(name)
+        elif name not in names:
+            raise BuildError(
+                f'{spec.path}:{line}: unknown placeholder {{{{ {name} }}}}; declared parameters: '
+                f'{describe_params(spec.params)}; built-ins and [context]: {", ".join(sorted(names))}'
+            )
+    for name in spec.params:
+        if name not in used:
+            raise BuildError(f'{spec.path}:1: parameter {name!r} is declared but never used')
+    if spec.content_slots() > 1:
+        raise BuildError(f'{spec.path}: {{{{ CONTENT }}}} may appear only once')
+    if (attr := CONTENT_IN_ATTR_RE.search(spec.body)) is not None:
+        line = spec.body_offset + line_of(spec.body, attr.start()) - 1
+        raise BuildError(
+            f'{spec.path}:{line}: {{{{ CONTENT }}}} is markup and cannot be used inside an attribute value'
+        )
+
+
+def check_component_use(use: ComponentUse, spec: ComponentSpec) -> None:
+    """The tag passes only declared parameters, all required ones, and children only where there is a slot."""
+    for name in use.attrs:
+        if name not in spec.params:
+            raise BuildError(f'{use.describe()} has no parameter {name!r}; declared: {describe_params(spec.params)}')
+    for name, default in spec.params.items():
+        if default is None and name not in use.attrs:
+            raise BuildError(f'{use.describe()} is missing required parameter {name!r}')
+    if use.has_content and spec.content_slots() == 0:
+        raise BuildError(f'{use.describe()} has children but {spec.src} has no {{{{ CONTENT }}}}')
+
+
+def check_body_placeholders(markdown: str, path: Path, names: frozenset[str]) -> None:
+    """Uppercase placeholders in the markdown must be known; lowercase ones are ordinary text and left alone."""
+    text = blank_code(markdown)
+    for match in PLACEHOLDER_RE.finditer(text):
+        name = match.group(1)
+        if not name[0].isupper():
+            continue
+        number = line_of(text, match.start())
+        if name == 'CONTENT':
+            raise BuildError(f'{path}:{number}: {{{{ CONTENT }}}} is only available inside a component')
+        if name not in names:
+            raise BuildError(
+                f'{path}:{number}: unknown placeholder {{{{ {name} }}}}; '
+                f'built-ins and [context]: {", ".join(sorted(names))}'
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -296,8 +584,8 @@ def check_images(texts: list[str], base: Path) -> list[str]:
     """
     found: list[str] = []
     for text in texts:
-        # A <component src="X.svg"> is a component reference, not an image.
-        text = COMPONENT_RE.sub('', text)
+        # A <component src="X.svg"> is a component reference, not an image; its children may still hold images.
+        text = COMPONENT_START_RE.sub('', text)
         for regex in HTML_SRC_RE, MD_IMAGE_RE, CSS_URL_RE:
             for match in regex.finditer(text):
                 raw = match.group('path')
@@ -379,7 +667,10 @@ def build_page_data(cfg: Config) -> dict[str, object]:
         validate_slides(markdown, cfg.markdown_path)
     else:
         validate_prose(markdown, cfg.markdown_path, cfg.type)
-    components = collect_components(markdown, cfg.components_dir)
+    names = BUILTINS | frozenset(cfg.context)
+    check_body_placeholders(markdown, cfg.markdown_path, names)
+    specs = collect_components([(markdown, cfg.markdown_path)], cfg.components_dir, names)
+    components = {src: spec.source for src, spec in specs.items()}
     styles = cfg.styles_path.read_text(encoding='utf-8') if cfg.styles_path.is_file() else ''
     check_styles(styles, cfg.styles_path)
     check_images([markdown, *components.values(), styles], cfg.cwd)

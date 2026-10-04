@@ -49,12 +49,20 @@ def test_validate_slides_rejects_self_closing_component():
 
 # --- components ------------------------------------------------------------
 
+MD = Path('main.md')
+NAMES = build.BUILTINS
+
+
+def collect(body: str, comps: Path, names: frozenset[str] = NAMES) -> dict[str, str]:
+    """`collect_components` for one markdown root, reduced to the embedded sources."""
+    return {src: spec.source for src, spec in build.collect_components([(body, MD)], comps, names).items()}
+
 
 def test_collect_components_follows_nesting(tmp_path: Path):
     comps = tmp_path / 'components'
     write(comps / 'A.html', '<div>a<component src="B.html"></component></div>')
     write(comps / 'B.html', '<p>b</p>')
-    found = build.collect_components('<component src="A.html"></component>', comps)
+    found = collect('<component src="A.html"></component>', comps)
     assert set(found) == {'A.html', 'B.html'}
     assert found['B.html'] == '<p>b</p>'
 
@@ -64,7 +72,7 @@ def test_collect_components_detects_cycle(tmp_path: Path):
     write(comps / 'A.html', '<component src="B.html"></component>')
     write(comps / 'B.html', '<component src="A.html"></component>')
     with pytest.raises(BuildError, match=re.escape('component cycle: A.html -> B.html -> A.html')):
-        build.collect_components('<component src="A.html"></component>', comps)
+        collect('<component src="A.html"></component>', comps)
 
 
 def test_svg_component_is_inlined_without_prolog(tmp_path: Path):
@@ -74,7 +82,7 @@ def test_svg_component_is_inlined_without_prolog(tmp_path: Path):
         '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "x.dtd">\n'
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0L10 10" stroke="var(--accent)"/></svg>\n',
     )
-    found = build.collect_components('<component src="Arrow.svg"></component>', comps)
+    found = collect('<component src="Arrow.svg"></component>', comps)
     assert found['Arrow.svg'].startswith('<svg xmlns=')
     assert 'var(--accent)' in found['Arrow.svg']
 
@@ -83,18 +91,23 @@ def test_svg_component_must_be_svg(tmp_path: Path):
     comps = tmp_path / 'components'
     write(comps / 'Nope.svg', '<div>not svg</div>')
     with pytest.raises(BuildError, match='expected an <svg> root element'):
-        build.collect_components('<component src="Nope.svg"></component>', comps)
+        collect('<component src="Nope.svg"></component>', comps)
 
 
 def test_component_extension_is_checked(tmp_path: Path):
     comps = tmp_path / 'components'
     write(comps / 'Card.txt', '<div/>')
     with pytest.raises(BuildError, match=r'must be one of \.html, \.svg'):
-        build.collect_components('<component src="Card.txt"></component>', comps)
+        collect('<component src="Card.txt"></component>', comps)
 
 
 def test_svg_component_reference_is_not_an_image(tmp_path: Path):
     assert build.check_images(['<component src="Arrow.svg"></component>'], tmp_path) == []
+
+
+def test_images_inside_component_children_are_checked(tmp_path: Path):
+    with pytest.raises(BuildError, match='image not found'):
+        build.check_images(['<component src="Card.html" title="x">\n\n![x](assets/nope.png)\n\n</component>'], tmp_path)
 
 
 def test_collect_components_rejects_escape(tmp_path: Path):
@@ -102,14 +115,216 @@ def test_collect_components_rejects_escape(tmp_path: Path):
     comps.mkdir()
     write(tmp_path / 'secret.html', 'x')
     with pytest.raises(BuildError, match='escapes'):
-        build.collect_components('<component src="../secret.html"></component>', comps)
+        collect('<component src="../secret.html"></component>', comps)
 
 
 def test_collect_components_missing(tmp_path: Path):
     comps = tmp_path / 'components'
     comps.mkdir()
     with pytest.raises(BuildError, match='component not found'):
-        build.collect_components('<component src="Nope.html"></component>', comps)
+        collect('<component src="Nope.html"></component>', comps)
+
+
+# --- component tags in markdown ----------------------------------------------
+
+
+def uses(text: str, *, markdown: bool = True) -> list[build.ComponentUse]:
+    return build.find_component_uses(text, MD, markdown=markdown)
+
+
+def test_find_component_uses_reads_attributes_and_children():
+    text = (
+        '# Title\n\n<component src="Card.html" title="Fast builds" icon=\'x\' flag>\n\n'
+        'Body with **markdown**.\n\n</component>\n\n<component src="Icon.svg"></component>\n'
+    )
+    [card, icon] = uses(text)
+    assert (card.src, card.line, card.has_content) == ('Card.html', 3, True)
+    assert card.attrs == {'title': 'Fast builds', 'icon': 'x', 'flag': ''}
+    assert (icon.src, icon.line, icon.has_content, icon.attrs) == ('Icon.svg', 9, False, {})
+
+
+def test_find_component_uses_handles_nesting_and_inline_use():
+    text = (
+        '<component src="Outer.html">\n\n<component src="Inner.html">\n\ninner\n\n</component>\n\n</component>\n'
+        'Fast <component src="Tag.html">beta</component> text\n'
+    )
+    found = uses(text)
+    assert [(u.src, u.line, u.has_content) for u in found] == [
+        ('Inner.html', 3, True),
+        ('Outer.html', 1, True),
+        ('Tag.html', 10, True),
+    ]
+
+
+def test_find_component_uses_ignores_code():
+    text = '```html\n<component src="Shown.html"></component>\n```\n\nUse `<component src="Inline.html">` like this.\n'
+    assert uses(text) == []
+    # Inside a component file nothing is markdown, so a tag in what looks like code still counts.
+    assert [u.src for u in uses('<pre>`<component src="X.html"></component>`</pre>', markdown=False)] == ['X.html']
+
+
+@pytest.mark.parametrize(
+    ('text', 'message'),
+    [
+        ('<component src="X.html"/>', r'main\.md:1: self-closing <component \.\.\./>'),
+        ('a\n</component>', r'main\.md:2: </component> without an opening'),
+        ('<component src="X.html">\n\nbody\n', r'main\.md:1: <component src="X\.html"> is never closed'),
+        ('<component\n  src="X.html"></component>', r'main\.md:1: the opening <component> tag must be on one line'),
+        ('<component title="x"></component>', r'main\.md:1: <component> needs a src attribute'),
+        ('<component src="X.html" fontSize="1"></component>', r"attribute 'fontSize' on <component> must match"),
+        ('<component src="X.html" a="1" a="2"></component>', r"attribute 'a' given twice"),
+        (
+            '<component src="X.html" t="{{ PAGE_NUMBER }}"></component>',
+            r'in an attribute of <component> is not substituted',
+        ),
+        ('<component src="X.html" t="unterminated></component>', r'main\.md:1: cannot parse this <component> tag'),
+        (
+            '<component src="X.html">\nbody\n\n</component>',
+            r'main\.md:1: put a blank line after <component src="X\.html">',
+        ),
+        ('<component src="X.html">\n\nbody\n</component>', r'main\.md:4: put a blank line before </component>'),
+    ],
+)
+def test_find_component_uses_errors(text: str, message: str):
+    with pytest.raises(BuildError, match=message):
+        uses(text)
+
+
+# --- parameters --------------------------------------------------------------
+
+
+def test_parse_params():
+    params, body = build.parse_params(
+        '<!-- params: title, icon="x", href=\'a, b\', flag="" -->\n<div>{{ title }}</div>\n', MD
+    )
+    assert params == {'title': None, 'icon': 'x', 'href': 'a, b', 'flag': ''}
+    assert body == '<div>{{ title }}</div>\n'
+    assert build.parse_params('<div>plain</div>', MD) == ({}, '<div>plain</div>')
+
+
+@pytest.mark.parametrize(
+    ('decl', 'message'),
+    [
+        ('title, Title', r"parameter 'Title' must match"),
+        ('font-size', r"parameter 'font-size' must match"),
+        ('src', r"'src' is reserved"),
+        ('title, title', r"parameter 'title' is declared twice"),
+        ('title icon', r'cannot parse <!-- params: \.\.\. -->'),
+        ('title="unterminated', r'cannot parse <!-- params: \.\.\. -->'),
+    ],
+)
+def test_parse_params_errors(decl: str, message: str):
+    with pytest.raises(BuildError, match=message):
+        build.parse_params(f'<!-- params: {decl} -->\n', Path('components/Card.html'))
+
+
+def card_dir(
+    tmp_path: Path,
+    card: str = '<!-- params: title, icon="*" -->\n<div class="card"><b>{{ icon }} {{ title }}</b>\n{{ CONTENT }}</div>\n',
+) -> Path:
+    comps = tmp_path / 'components'
+    write(comps / 'Card.html', card)
+    return comps
+
+
+def test_component_parameters_pass_checks(tmp_path: Path):
+    comps = card_dir(tmp_path)
+    body = '<component src="Card.html" title="Fast"></component>\n\n<component src="Card.html" title="x" icon="y">\n\ntext\n\n</component>\n'
+    assert set(collect(body, comps)) == {'Card.html'}
+
+
+@pytest.mark.parametrize(
+    ('body', 'message'),
+    [
+        (
+            '<component src="Card.html"></component>',
+            r"<component src=\"Card\.html\"> is missing required parameter 'title'",
+        ),
+        (
+            '<component src="Card.html" title="x" colour="red"></component>',
+            r"has no parameter 'colour'; declared: title, icon='\*'",
+        ),
+    ],
+)
+def test_component_use_errors(tmp_path: Path, body: str, message: str):
+    comps = card_dir(tmp_path)
+    with pytest.raises(BuildError, match=message):
+        collect(body, comps)
+
+
+def test_component_children_need_a_content_slot(tmp_path: Path):
+    comps = card_dir(tmp_path, '<!-- params: title -->\n<b>{{ title }}</b>\n')
+    with pytest.raises(
+        BuildError,
+        match=r'main\.md:1: <component src="Card\.html"> has children but Card\.html has no \{\{ CONTENT \}\}',
+    ):
+        collect('<component src="Card.html" title="x">\n\ntext\n\n</component>', comps)
+    # The other way round is fine: an empty tag just renders nothing where CONTENT is.
+    comps = card_dir(tmp_path)
+    assert collect('<component src="Card.html" title="x"></component>', comps)
+
+
+@pytest.mark.parametrize(
+    ('card', 'message'),
+    [
+        ('<b>{{ title }}</b>', r'Card\.html:1: unknown placeholder \{\{ title \}\}; declared parameters: \(none\)'),
+        (
+            '<!-- params: title -->\n<b>{{ title }} {{ Title }}</b>',
+            r'Card\.html:2: unknown placeholder \{\{ Title \}\}',
+        ),
+        (
+            '<!-- params: title -->\n<b>{{ title }} {{ AUTHOR }}</b>',
+            r'Card\.html:2: unknown placeholder \{\{ AUTHOR \}\}; .*built-ins and \[context\]: CONTENT, PAGE_COUNT',
+        ),
+        (
+            '<!-- params: title, icon -->\n<b>{{ title }}</b>',
+            r"Card\.html:1: parameter 'icon' is declared but never used",
+        ),
+        (
+            '<!-- params: title -->\n{{ title }}{{ CONTENT }}\n{{ CONTENT }}',
+            r'Card\.html: \{\{ CONTENT \}\} may appear only once',
+        ),
+        (
+            '<!-- params: title -->\n<b>{{ title }}</b>\n<i data-x="{{ CONTENT }}"></i>',
+            r'Card\.html:3: \{\{ CONTENT \}\} is markup and cannot be used inside an attribute',
+        ),
+    ],
+)
+def test_component_file_errors(tmp_path: Path, card: str, message: str):
+    comps = card_dir(tmp_path, card)
+    with pytest.raises(BuildError, match=message):
+        collect('<component src="Card.html" title="x"></component>', comps)
+
+
+def test_context_names_are_valid_everywhere(tmp_path: Path):
+    comps = card_dir(tmp_path, '<!-- params: title -->\n<b>{{ title }} by {{ AUTHOR }} on {{ PAGE_NUMBER }}</b>\n')
+    names = NAMES | {'AUTHOR'}
+    assert collect('<component src="Card.html" title="x"></component>', comps, names)
+    build.check_body_placeholders('Written by {{ AUTHOR }}, page {{ PAGE_NUMBER }}; `{{ NOPE }}` is code', MD, names)
+    with pytest.raises(BuildError, match=r'main\.md:1: unknown placeholder \{\{ NOPE \}\}'):
+        build.check_body_placeholders('{{ NOPE }}', MD, names)
+    with pytest.raises(BuildError, match=r'main\.md:2: \{\{ CONTENT \}\} is only available inside a component'):
+        build.check_body_placeholders('ok\n{{ CONTENT }}', MD, names)
+    # Lowercase placeholders in prose are text, as are mixed-case ones that do not start with a capital.
+    build.check_body_placeholders('a {{ jinja_var }} and {{ camelCase }}', MD, names)
+
+
+def test_load_context(tmp_path: Path):
+    write(tmp_path / 'main.md', '<slide/>\n# hi {{ DATE }} {{ N }} {{ FLAG }}\n')
+    write(tmp_path / 'artifact.toml', '[context]\nDATE = "April 2026"\nN = 3\nFLAG = true\n')
+    cfg = build.load_config(tmp_path)
+    assert cfg.context == {'DATE': 'April 2026', 'N': '3', 'FLAG': 'true'}
+    assert cfg.to_json()['context'] == cfg.context
+    assert build.build_html(tmp_path).is_file()
+    for toml, message in (
+        ('[context]\nauthor = "x"\n', r"\[context\] key 'author' must be uppercase"),
+        ('[context]\nPAGE_COUNT = "x"\n', r"\[context\] key 'PAGE_COUNT' is a built-in"),
+        ('[context]\nDATE = ["x"]\n', r"\[context\] value for 'DATE' must be a string, number or boolean"),
+        ('context = "x"\n', r'\[context\] must be a table'),
+    ):
+        write(tmp_path / 'artifact.toml', toml)
+        with pytest.raises(BuildError, match=message):
+            build.load_config(tmp_path)
 
 
 # --- images ----------------------------------------------------------------

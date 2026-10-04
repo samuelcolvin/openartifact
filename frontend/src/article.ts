@@ -6,6 +6,7 @@
 
 import { expandComponents } from './components.ts'
 import { renderMarkdown } from './render.ts'
+import { substituteText } from './substitute.ts'
 import type { ArtifactConfig, ArtifactData } from './types.ts'
 
 export function buildArticle(data: ArtifactData, config: ArtifactConfig): HTMLElement {
@@ -15,7 +16,9 @@ export function buildArticle(data: ArtifactData, config: ArtifactConfig): HTMLEl
   const article = document.createElement('article')
   article.className = 'prose'
   article.innerHTML = renderMarkdown(data.markdown)
-  expandComponents(article, data.components)
+  const context = config.context ?? {}
+  expandComponents(article, data.components, context)
+  substituteText(article, context)
 
   if (config.footer) {
     const footer = document.createElement('footer')
