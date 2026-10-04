@@ -1,0 +1,25 @@
+CLAUDE.md
+  s_43f07e2c10821d::t_81c27535f8c829 157
+examples/create_examples.py
+  s_43f07e2c10821d::t_81c27535f8c829 22,54
+  s_43f07e2c10821d::t_f400940849e4d4 64-69,76-78
+  s_43f07e2c10821d::t_23d40742f9f4e3 1-2,4-21,23-53,55-63,70-75,79-87,89-97
+pyproject.toml
+  s_43f07e2c10821d::t_f400940849e4d4 35,60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3076b033110b60f2ea12cdad088a598d4c9cc0c9",
+  "prompts": {},
+  "sessions": {
+    "s_43f07e2c10821d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fb6f58d9-2e73-4053-b834-d4f0f433543c",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
