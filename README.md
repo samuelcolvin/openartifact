@@ -33,7 +33,7 @@ my-deck/
 └── assets/             # images
 ```
 
-`backend/build.py` reads those files and writes `dist/index.html`: the markdown source, every referenced component and your CSS go into the page as one JSON blob, next to `<script src="/openartifact.js">`. `backend/server.py` serves that page at `/artifacts/<id>/` along with `openartifact.js` and the deck's images, which the page references relatively. When the page loads, `openartifact.js` splits the markdown into slides, renders it, expands the components, highlights code and wires up navigation. Chrome headless prints the served page to PDF.
+`backend/build.py` reads those files and writes `dist/index.html`: the markdown source, every referenced component and your CSS go into the page verbatim as data blocks (so the page reads as source), next to `<script src="/openartifact.js">`. `backend/server.py` serves that page at `/artifacts/<id>/` along with `openartifact.js` and the deck's images, which the page references relatively. When the page loads, `openartifact.js` splits the markdown into slides, renders it, expands the components, highlights code and wires up navigation. Chrome headless prints the served page to PDF.
 
 ## Quick start
 

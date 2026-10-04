@@ -8,8 +8,9 @@ Routes:
     /artifacts/{id}/{path}      an image or font from the artifact directory, referenced relatively by the page
     /                           JSON index of the above
 
-Pages are public to anyone holding the artifact's UUID. Only the page and its media are exposed; `main.md`,
-`artifact.toml`, `styles.css` and components are already in the page's JSON blob and are not served as files.
+Pages are public to anyone holding the artifact's UUID, and so are their sources: `main.md`, `artifact.toml`,
+`styles.css` and `components/*` are served as text next to the page (they are in the page anyway), so an agent can
+read the markdown directly. Only `dist/` is withheld.
 
 Run with `uv run backend/server.py` (`HOST` and `PORT` override the bind address). Configuration is by
 environment: `DATABASE_URL`, `OPENARTIFACT_STORE_URL`, `OPENARTIFACT_CACHE_DIR` (one per process, never shared),
@@ -48,9 +49,19 @@ import workspace
 
 # openartifact.js is not packaged; it is read from the frontend build output in this checkout.
 RUNTIME_JS_PATH = config.ROOT / 'frontend' / 'dist' / 'openartifact.js'
-# What `/artifacts/{id}/{path}` will hand out from the artifact directory: images the build checked, plus fonts
-# that `styles.css` may declare with `@font-face`.
-SERVED_EXTS = (*build.IMAGE_EXTS, '.woff', '.woff2')
+# What `/artifacts/{id}/{path}` will hand out from the artifact directory: images the build checked, fonts that
+# `styles.css` may declare with `@font-face`, and the source files themselves (`main.md`, `artifact.toml`,
+# `styles.css`, `components/*`), so a reader can fetch the markdown instead of parsing the page. The build output
+# under `dist/` is not served this way: the page itself is `/artifacts/{id}/`.
+SOURCE_EXTS = ('.md', '.toml', '.css', '.html')
+SERVED_EXTS = (*build.IMAGE_EXTS, '.woff', '.woff2', *SOURCE_EXTS)
+# Source files are sent as text so a browser shows them rather than rendering an HTML fragment.
+SOURCE_MEDIA_TYPES = {
+    '.md': 'text/markdown; charset=utf-8',
+    '.toml': 'text/plain; charset=utf-8',
+    '.css': 'text/plain; charset=utf-8',
+    '.html': 'text/plain; charset=utf-8',
+}
 
 
 def configure_telemetry() -> None:
@@ -110,8 +121,11 @@ def contained_file(directory: Path, relative: str, allowed: tuple[str, ...]) -> 
     `relative` comes from the URL, so the resolved path must stay inside the directory: `..` segments and
     symlinks pointing elsewhere are rejected by the containment check.
     """
+    root = directory.resolve()
     path = (directory / relative).resolve()
-    if directory.resolve() not in path.parents or path.suffix.lower() not in allowed or not path.is_file():
+    if root not in path.parents or path.suffix.lower() not in allowed or not path.is_file():
+        raise HTTPException(404, f'{relative!r} not found')
+    if path.relative_to(root).parts[0] == 'dist':
         raise HTTPException(404, f'{relative!r} not found')
     return path
 
@@ -154,12 +168,12 @@ async def artifact_index(artifact_id: str) -> HTMLResponse:
 
 @app.get('/artifacts/{artifact_id}/{path:path}')
 async def artifact_media(artifact_id: str, path: str) -> Response:
-    """An image or font the page references relatively, served from the artifact directory."""
+    """An image or font the page references relatively, or one of the source files, from the artifact directory."""
     found = await load_artifact(artifact_id)
     async with workspace.open_artifact(found) as directory:
         file = contained_file(directory, path, SERVED_EXTS)
         data = file.read_bytes()
-    media_type, _ = mimetypes.guess_type(file.name)
+    media_type = SOURCE_MEDIA_TYPES.get(file.suffix.lower()) or mimetypes.guess_type(file.name)[0]
     return Response(data, media_type=media_type or 'application/octet-stream')
 
 

@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working in the 
 
 ## What this is
 
-OpenArtifact turns a small set of source files - one markdown file, an optional folder of HTML/SVG components, an optional CSS file and any images they reference - into one HTML page that renders itself in the browser. The page carries the markdown, components and CSS as a JSON blob, loads the runtime `openartifact.js` from the server and references its images relatively, so it is served by `backend/server.py` at `/artifacts/<id>/`, presents in a browser and prints to PDF with Chrome headless against that URL. That page is the "artifact".
+OpenArtifact turns a small set of source files - one markdown file, an optional folder of HTML/SVG components, an optional CSS file and any images they reference - into one HTML page that renders itself in the browser. The page carries the markdown, components and CSS verbatim as data blocks, so it reads as source to anyone who fetches it, loads the runtime `openartifact.js` from the server and references its images relatively, so it is served by `backend/server.py` at `/artifacts/<id>/`, presents in a browser and prints to PDF with Chrome headless against that URL. That page is the "artifact".
 
 An artifact has a **type**, set in `artifact.toml` and orthogonal to `theme`: `deck` (slides with navigation, one per page in print; the markdown has a `<slide .../>` line starting each slide), `document` (plain markdown rendered as a fixed-width sheet that prints to A4 pages) or `page` (plain markdown rendered as a continuous, fluid page like a Notion page). The type decides which stylesheets the runtime injects and whether it splits slides or renders the markdown whole.
 
 The repo has two halves:
 
 - **`frontend/`** - the browser runtime, `openartifact.js`. This is the only thing with a JavaScript build step, and it exists solely to be loaded by the output page. All rendering (markdown, components, code highlighting, navigation, build steps, print layout, the per-type layouts) happens here, in the browser.
-- **`backend/build.py`** - the builder, a library module with no dependencies beyond the standard library and no CLI. It does no rendering: it validates the inputs (including that every referenced image exists), packs markdown, components and CSS into a JSON blob and writes an HTML page that loads `openartifact.js` by URL. **`backend/pdf.py`** drives Chrome headless to print the served page to PDF.
+- **`backend/build.py`** - the builder, a library module with no dependencies beyond the standard library and no CLI. It does no rendering: it validates the inputs (including that every referenced image exists), writes markdown, components and CSS verbatim into an HTML page as data blocks and links `openartifact.js` by URL. **`backend/pdf.py`** drives Chrome headless to print the served page to PDF.
 - **`backend/mcp_server.py`** - an MCP server for agents, built on `fastmcp` and `pydantic-monty`. `new_artifact` creates an artifact from markdown and builds it; `run_code` runs agent-written Python in a monty sandbox with the artifact's directory mounted read-write at `/artifact`, which is how the agent edits files; `build` calls `build.py` on that directory; `list_artifacts` lists the caller's. Artifact identifiers are UUIDs. PDF export is not an MCP concern; it will be a download button on the served artifact.
 - **`backend/workspace.py`, `db.py`, `store.py`, `auth.py`** - storage and identity. Each user has a workspace: a git repository with one directory per artifact (`artifacts/<uuid>/`), kept as a working clone in a local cache, serialised as a `git bundle` into an object store (local directory or S3) under an immutable key per commit, with Postgres holding the current head and the users / workspaces / artifacts tables. The MCP endpoint is behind Google login (a static token for local development); artifact pages are public by UUID.
 - **`backend/server.py`** - the FastAPI app that runs it all: the MCP server mounted at `/mcp/`, `openartifact.js` at `/openartifact.js`, and each artifact's page and media at `/artifacts/{uuid}/`, built on demand from the workspace checkout. `make dev` (uvicorn with reload) or `uv run backend/server.py` starts it.
@@ -91,13 +91,13 @@ prek run typecheck           # run a single hook by id
 
 ## Architecture
 
-Two halves joined by a JSON blob.
+Two halves joined by the page's data blocks.
 
 **Browser runtime (`frontend/src/`, bundled by esbuild to `frontend/dist/openartifact.js`)**
 
 Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `biome.jsonc` live there too.
 
-- **`src/main.ts`** - entry. Reads the blob from `<script type="application/json" id="artifact-data">`, injects `shared.css`, the type's sheets (`TYPE_STYLES`), `hljs.css` and the user's CSS as `<style>` elements, then dispatches on `config.type`: a deck is split and rendered into `.deck-presenter > .deck` and navigation starts; a document or page goes to `article.ts`. Everything runs synchronously so the DOM is complete before `load` (headless Chrome prints at `load`). Never add async work here.
+- **`src/main.ts`** - entry. `readData()` assembles `ArtifactData` from the page's data blocks (`#artifact-config` JSON, `#artifact-markdown`, one `script[type="text/html"][data-component]` per component), reversing `encode_block` with `decodeBlock`; injects `shared.css`, the type's sheets (`TYPE_STYLES`) and `hljs.css` as `<style>` elements, then moves the page's own `<style id="artifact-styles">` (the user's CSS) to the end of `<head>` so it wins; then dispatches on `config.type`: a deck is split and rendered into `.deck-presenter > .deck` and navigation starts; a document or page goes to `article.ts`. Everything runs synchronously so the DOM is complete before `load` (headless Chrome prints at `load`). Never add async work here.
 - **`src/article.ts`** - the `document` and `page` types: the whole markdown rendered into `.artifact-<type> > article.prose`, components expanded, the `footer` appended once, `document.title` from the config or the first h1. No navigation and no build steps.
 - **`src/split.ts`** - splits raw markdown into slides on `<slide .../>` lines (fence-aware) and parses the tag's attributes. This is the source of truth for slide syntax; `build.py` mirrors the scan only to fail early.
 - **`src/render.ts`** - markdown-it (default preset, `html: true`) with highlight.js `lib/core` plus a curated language list.
@@ -105,7 +105,7 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 - **`src/components.ts`** - replaces `<component src>` tags from the blob (looping for nesting, unwrapping the `<p>` markdown-it puts around an inline tag). Images are untouched: relative `src` and CSS `url()` resolve against the page URL, which the server answers.
 - **`src/deck.ts`** - navigation: `#N` hash routing (1-indexed), keyboard, wheel, prev/next buttons, tab links, traffic-light home link, viewport scaling via `--slide-scale`, `document.title`, and the `NN/NN` counter injected into every slide's `.topbar-nav`. Next/previous step through a slide's build steps before changing slide; shift + left/right jump a whole slide.
 - **`src/steps.ts`** - in-slide build steps. Elements with `data-step="N"` (and optional `data-step-end="M"`) get a `data-step-state` of `pending` / `active` / `done`; the slide gets `data-step`. Print state is precomputed into `data-step-print`. All appearance lives in `deck.css`, never in JS.
-- **`src/types.ts`** - `ArtifactData` / `ArtifactConfig` / `ArtifactType`, the JSON contract with `build.py`.
+- **`src/types.ts`** - `ArtifactData` / `ArtifactConfig` / `ArtifactType`, the contract with `build.py`'s `render_page`.
 - **`src/styles/shared.css`** - the CSS variables, theme token assignments and reset every type loads. User `styles.css` overrides the variables.
 - **`src/styles/deck.css`** - the deck: slide geometry, the 16:9 `@page`, transitions, topbar, slide typography, the opt-in layout helpers (`.row`, `.col`, `.cols-2`, `.cols-3`, `.shrink`, `.small-code`, `.center`) and the build-step rules. Everything is scoped to `.slide` / `.deck-presenter`.
 - **`src/styles/prose.css`** - typography for `article.prose`, shared by document and page: the slide typography at reading sizes, the same `markdown-*` decorations, and print rules that keep headings with their text and blocks unsplit.
@@ -115,7 +115,7 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 **Builder (`backend/build.py`)**
 
 - A module, not a script: `build_html(directory, output=None, runtime_url='/openartifact.js')` is the entry point and returns the output path. There is no CLI; `mcp_server.py` and the tests are the callers.
-- Loads and validates `artifact.toml` (`tomllib`; `type` in `TYPES`, `tabs` only for a deck, `favicon` a relative path that exists), reads `main.md`, checks it per type (`validate_slides` for a deck; `validate_prose` for the others, which rejects slide markers and empty content; both skip fenced code via `unfenced_lines`), collects every `<component src>` file (`.html` verbatim, `.svg` inlined with its XML prolog stripped; nesting, cycles, path escapes), checks every relatively referenced image exists inside the deck (`check_images`; nothing is embedded), and writes the JSON blob into the `TEMPLATE` page (with `<` escaped as `\u003c`) with `<script src="{runtime_url}">`.
+- Loads and validates `artifact.toml` (`tomllib`; `type` in `TYPES`, `tabs` only for a deck, `favicon` a relative path that exists), reads `main.md`, checks it per type (`validate_slides` for a deck; `validate_prose` for the others, which rejects slide markers and empty content; both skip fenced code via `unfenced_lines`), collects every `<component src>` file (`.html` verbatim, `.svg` inlined with its XML prolog stripped; nesting, cycles, path escapes), checks every relatively referenced image exists inside the deck (`check_images`; nothing is embedded), rejects `</style` in the CSS (`check_styles`), and writes the `TEMPLATE` page: a `<link rel="alternate" type="text/markdown">` to the source, the CSS as a live `<style id="artifact-styles">`, the config as JSON (`<` as `\u003c`), the markdown and each component as a data block (`<script type="text/markdown">` / `<script type="text/html" data-component>`) encoded with `encode_block`, and `<script src="{runtime_url}">`. `encode_block` escapes only the `<` of `</script`, `<script` and `<!--` (the sequences that move the HTML tokenizer out of script data) as `&lt;`, after doubling any pre-existing `&amp;` / `&lt;`; `decode_block` is its inverse and `main.ts` mirrors it.
 - No third-party runtime Python dependencies, and no knowledge of where `openartifact.js` lives on disk: that is `server.py`'s concern.
 
 **PDF (`backend/pdf.py`)**
@@ -146,7 +146,7 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 **HTTP server (`backend/server.py`)**
 
 - `mcp.http_app(path='/')` mounted at `/mcp`. The app's `lifespan` enters FastMCP's lifespan (its session manager will not start otherwise), `db.db_pool()`, `store.object_store()` and `mcp_server.monty_pool()`, then runs migrations. The MCP endpoint is `/mcp/`.
-- `/openartifact.js` serves `frontend/dist/openartifact.js` (`RUNTIME_JS_PATH`); every built page loads it from there. `/artifacts/{uuid}/` looks the artifact up (any workspace: pages are public by UUID), syncs the checkout under `open_artifact`, builds `dist/index.html` if missing (a `BuildError` is a 422) and returns the HTML read under the lock. `/artifacts/{uuid}/{path}` serves images and fonts (`SERVED_EXTS`) from the artifact directory after the containment and extension check in `contained_file`. A non-UUID is a 404. `main.md`, `artifact.toml`, `styles.css` and components are not served as files. `/` returns a JSON index without artifacts; `list_artifacts` is per user.
+- `/openartifact.js` serves `frontend/dist/openartifact.js` (`RUNTIME_JS_PATH`); every built page loads it from there. `/artifacts/{uuid}/` looks the artifact up (any workspace: pages are public by UUID), syncs the checkout under `open_artifact`, builds `dist/index.html` if missing (a `BuildError` is a 422) and returns the HTML read under the lock. `/artifacts/{uuid}/{path}` serves images and fonts, and the source files (`SOURCE_EXTS`: `main.md` as `text/markdown`, `artifact.toml`, `styles.css` and `components/*` as `text/plain`) from the artifact directory after the containment and extension check in `contained_file`; anything under `dist/` is a 404, as is a non-UUID. The sources are public because the page already contains them, and `main.md` is what an agent should read instead of parsing the page. `/` returns a JSON index without artifacts; `list_artifacts` is per user.
 - Configuration is by environment: `HOST`, `PORT` (default 8765), `DATABASE_URL`, `OPENARTIFACT_STORE_URL`, `OPENARTIFACT_CACHE_DIR`, `OPENARTIFACT_BASE_URL`, the auth variables above, and `LOGFIRE_TOKEN` to send telemetry.
 - `Dockerfile` builds the application image (`make docker-up` builds and runs it): a node stage bundles `openartifact.js`, a uv stage installs the locked dependencies, and the final `python:3.14-slim` image adds `git`, runs as a non-root user and defaults the cache and local store to `/data`. Chrome is not in it; PDF export gets its own image or a sidecar later. `make docker-up` runs the image against the compose Postgres on :8765 with the dev token (`OPENARTIFACT_PORT` moves the host port). The compose database and the image's `/data` volume belong together: a `head_sha` whose bundle is not in the configured store is reported as such by `sync_checkout`.
 - Observability: `configure_telemetry()` calls `logfire.configure()`, `logfire.instrument_asyncpg()`, and hands monty its tracer, meter and logger via `pydantic_monty.instrument_telemetry`. FastAPI's built-in telemetry and FastMCP's native spans pick up Logfire's global providers on their own, so do not add `logfire.instrument_fastapi` or `logfire.instrument_mcp`; they would duplicate spans. FastAPI is created with `telemetry={'auto_configure': False}` so it never adds OTLP exporters of its own.
@@ -162,18 +162,21 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 - `tests/test_mcp_server.py` - the tool functions directly as a signed-in user (`auth.as_principal`), plus one in-memory `fastmcp.Client` round trip.
 - `tests/test_server.py` - the HTTP routes with `TestClient` (seeding through `client.portal` so rows and checkouts belong to the app's loop), plus MCP over real HTTP against a uvicorn thread with the dev token.
 
-## The JSON contract
+## The page's data blocks
 
-```json
-{
-  "config":     { "type": "deck", "title": "...", "theme": "light", "footer": "...", "tabs": [{ "id": "intro", "label": "Intro" }] },
-  "markdown":   "raw main.md source",
-  "components": { "Hero.html": "<section>...</section>" },
-  "styles":     "raw styles.css"
-}
+```html
+<link rel="alternate" type="text/markdown" href="main.md">
+<style id="artifact-styles">/* raw styles.css */</style>
+<script type="application/json" id="artifact-config">{"type": "deck", "title": "...", "theme": "light", "tabs": [...]}</script>
+<script type="text/markdown" id="artifact-markdown">
+raw main.md source
+</script>
+<script type="text/html" data-component="Hero.html">
+raw Hero.html
+</script>
 ```
 
-Images are not in the blob. The page is served at `/artifacts/<id>/`, so relative image paths in the markdown, components and CSS resolve to `/artifacts/<id>/<path>`, which `server.py` serves from the artifact directory. The builder only checks that each referenced file exists.
+The non-JavaScript `type` makes a `<script>` an inert data block whose content stays an exact string; the only escaping is `encode_block`'s. Images are not in the page. The page is served at `/artifacts/<id>/`, so relative image paths in the markdown, components and CSS resolve to `/artifacts/<id>/<path>`, which `server.py` serves from the artifact directory. The builder only checks that each referenced file exists.
 
 ## Slide syntax in one paragraph
 

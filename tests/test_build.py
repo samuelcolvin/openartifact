@@ -139,28 +139,75 @@ def test_check_images_rejects_escape(tmp_path: Path):
 # --- page ------------------------------------------------------------------
 
 
-def blob_of(page: str) -> str:
-    """The raw text of the JSON blob embedded in a built page."""
-    match = re.search(r'id="artifact-data">(.*?)</script>', page, re.DOTALL)
-    assert match is not None
+def block_of(page: str, selector: str) -> str:
+    """The raw content of one data block in a built page, as the runtime would read it before decoding."""
+    match = re.search(rf'<script[^>]*{re.escape(selector)}[^>]*>\n?(.*?)</script>', page, re.DOTALL)
+    assert match is not None, selector
     return match.group(1)
 
 
-def test_render_page_escapes_script_breakers():
-    data: dict[str, object] = {'markdown': '</script><!--<script>', 'components': {}}
-    page = build.render_page('T & T', None, data, '/openartifact.js')
-    blob = blob_of(page)
-    assert '<' not in blob
-    assert json.loads(blob) == data
+def config_of(page: str) -> dict[str, object]:
+    return json.loads(block_of(page, 'id="artifact-config"'))
+
+
+# Sequences that would end a data block early or change how `</script>` is tokenized.
+BLOCK_BREAKERS = re.compile(r'</?script|<!--', re.IGNORECASE)
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        '</script><!--<script>',
+        'a </SCRIPT> b <Script> c',
+        'R&D &amp; &lt; &amp;lt; &lt;script &nbsp;',
+        '<!-- params: title -->\n<div>{{ title }}</div>',
+        'plain <b>html</b> and <br>',
+    ],
+)
+def test_block_codec_round_trips(text: str):
+    encoded = build.encode_block(text)
+    assert build.decode_block(encoded) == text
+    assert not BLOCK_BREAKERS.search(encoded)
+
+
+def test_block_codec_leaves_ordinary_text_alone():
+    assert build.encode_block('R&D, a < b, &nbsp; and <div>') == 'R&D, a < b, &nbsp; and <div>'
+
+
+def test_render_page_writes_readable_blocks():
+    data: dict[str, object] = {
+        'config': {'type': 'deck', 'title': '</script>'},
+        'markdown': '# Hi\n\n</script><!--<script>\n',
+        'components': {'Hero.html': '<!-- params: x -->\n<b>{{ x }}</b>\n'},
+        'styles': ':root { --accent: red }\n',
+    }
+    page = build.render_page('T & T', None, data, '/openartifact.js', 'main.md')
+    assert config_of(page) == data['config']
+    assert '\\u003c/script>' in block_of(page, 'id="artifact-config"')
+    assert build.decode_block(block_of(page, 'id="artifact-markdown"')) == data['markdown']
+    assert build.decode_block(block_of(page, 'data-component="Hero.html"')) == '<!-- params: x -->\n<b>{{ x }}</b>\n'
+    # The markdown reads as markdown in the page source: only the breaker sequences are touched.
+    assert '# Hi\n\n&lt;/script>&lt;!--&lt;script>' in page
+    assert '<style id="artifact-styles">\n:root { --accent: red }\n</style>' in page
+    assert '<link rel="alternate" type="text/markdown" href="main.md">' in page
     assert '<title>T &amp; T</title>' in page
     assert '<script src="/openartifact.js"></script>' in page
     assert '<link rel="icon"' not in page
+    assert 'id="artifact-data"' not in page
 
 
 def test_render_page_links_favicon_and_runtime_relatively():
-    page = build.render_page('T', 'assets/fav.svg', {}, 'https://cdn.example/openartifact.js?v="1"')
+    page = build.render_page('T', 'assets/fav.svg', {}, 'https://cdn.example/openartifact.js?v="1"', 'docs/x.md')
     assert '<link rel="icon" href="assets/fav.svg">' in page
+    assert '<link rel="alternate" type="text/markdown" href="docs/x.md">' in page
     assert '<script src="https://cdn.example/openartifact.js?v=&quot;1&quot;"></script>' in page
+
+
+def test_styles_cannot_close_the_style_element(tmp_path: Path):
+    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'styles.css', ':root {}\n</STYLE><script>alert(1)</script>\n')
+    with pytest.raises(BuildError, match=r"styles\.css:2: '</style' cannot appear"):
+        build.build_html(tmp_path)
 
 
 # --- end to end ------------------------------------------------------------
@@ -172,13 +219,17 @@ def test_build_starter_example(tmp_path: Path):
     assert sorted(p.name for p in out.parent.iterdir()) == ['index.html']
     page = out.read_text(encoding='utf-8')
     assert '<script src="/openartifact.js"></script>' in page
-    blob = json.loads(blob_of(page))
-    assert set(blob) == {'config', 'markdown', 'components', 'styles'}
-    assert blob['config']['type'] == 'deck'
-    assert blob['config']['theme'] == 'markdown-dark'
-    assert 'Hero.html' in blob['components'] and 'Callout.html' in blob['components']
+    config = config_of(page)
+    assert config['type'] == 'deck'
+    assert config['theme'] == 'markdown-dark'
+    starter = ROOT / 'examples' / 'starter'
+    assert build.decode_block(block_of(page, 'id="artifact-markdown"')) == (starter / 'main.md').read_text()
+    for name in ('Hero.html', 'Callout.html'):
+        component = build.decode_block(block_of(page, f'data-component="{name}"'))
+        assert component == (starter / 'components' / name).read_text()
+    assert (starter / 'styles.css').read_text() in page
+    assert '<link rel="alternate" type="text/markdown" href="main.md">' in page
     assert 'data:' not in page
-    assert '<slide' in blob['markdown']
 
 
 def test_build_uses_given_runtime_url(tmp_path: Path):
@@ -206,10 +257,11 @@ def test_load_config_favicon(tmp_path: Path):
 @pytest.mark.parametrize('name', ['document', 'page'])
 def test_build_prose_examples(tmp_path: Path, name: str):
     out = build.build_html(ROOT / 'examples' / name, tmp_path / 'index.html')
-    blob = json.loads(blob_of(out.read_text()))
-    assert blob['config']['type'] == name
+    page = out.read_text()
+    assert config_of(page)['type'] == name
     # The examples talk about slide markers in prose, but contain none.
-    assert not any(build.SLIDE_RE.match(line) for line in blob['markdown'].splitlines())
+    markdown = build.decode_block(block_of(page, 'id="artifact-markdown"'))
+    assert not any(build.SLIDE_RE.match(line) for line in markdown.splitlines())
 
 
 def test_type_defaults_to_deck(tmp_path: Path):
@@ -248,7 +300,7 @@ def test_build_document_from_plain_markdown(tmp_path: Path):
     write(tmp_path / 'main.md', '# Report\n\nBody text.\n')
     write(tmp_path / 'artifact.toml', 'type = "document"\n')
     page = build.build_html(tmp_path).read_text()
-    assert json.loads(blob_of(page))['config']['type'] == 'document'
+    assert config_of(page)['type'] == 'document'
     # A deck with the same markdown fails: the marker rule is per type.
     write(tmp_path / 'artifact.toml', 'type = "deck"\n')
     with pytest.raises(BuildError, match='content before the first'):

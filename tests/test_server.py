@@ -112,10 +112,29 @@ def test_artifact_images_are_served(client: TestClient):
     assert client.get(f'/artifacts/{artifact.id}/assets/body.woff2').status_code == 200
 
 
-def test_artifact_sources_stay_private(client: TestClient):
+def test_artifact_sources_are_served_as_text(client: TestClient):
     artifact = starter(client)
-    for path in ('main.md', 'artifact.toml', 'styles.css', 'components/Hero.html', 'dist/index.html'):
+    for path, media_type in (
+        ('main.md', 'text/markdown; charset=utf-8'),
+        ('artifact.toml', 'text/plain; charset=utf-8'),
+        ('styles.css', 'text/plain; charset=utf-8'),
+        ('components/Hero.html', 'text/plain; charset=utf-8'),
+    ):
+        response = client.get(f'/artifacts/{artifact.id}/{path}')
+        assert response.status_code == 200, path
+        assert response.headers['content-type'] == media_type, path
+        assert response.content == (STARTER / path).read_bytes(), path
+    # The page advertises the markdown source.
+    page = client.get(f'/artifacts/{artifact.id}/')
+    assert '<link rel="alternate" type="text/markdown" href="main.md">' in page.text
+    assert 'id="artifact-markdown"' in page.text
+    # The build output is not a source file: the page is served at the directory URL only.
+    for path in ('dist/index.html', 'assets/../dist/index.html'):
         assert client.get(f'/artifacts/{artifact.id}/{path}').status_code == 404, path
+
+
+def test_artifact_media_cannot_reach_other_artifacts(client: TestClient):
+    artifact = starter(client)
     other = starter(client)
     # `..` that leaves the artifact directory is refused, even towards another artifact's image. The segments
     # are percent-encoded because the HTTP client collapses a literal `..` before sending.
@@ -198,7 +217,7 @@ async def test_mcp_over_http(live_server: str):
     async with httpx2.AsyncClient() as http:
         page = await http.get(f'{live_server}/artifacts/{name}/')
         assert page.status_code == 200
-        assert 'id="artifact-data"' in page.text
+        assert 'id="artifact-markdown"' in page.text
 
 
 @pytest.mark.anyio

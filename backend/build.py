@@ -9,9 +9,9 @@ An artifact directory looks like:
     assets/         images referenced from the markdown, components or styles
 
 Nothing is rendered here. The markdown source, every referenced component and the user's
-styles are written into the page as one JSON blob, and `openartifact.js` (the browser runtime, built
-from frontend/src with `pnpm build`) renders the deck when the page loads. The output is
-`dist/index.html`. It is not self-contained: it links `openartifact.js` by URL (`/openartifact.js` by default)
+styles are written into the page verbatim as data blocks (see TEMPLATE), so the page reads as source to anyone
+who fetches it, and `openartifact.js` (the browser runtime, built from frontend/src with `pnpm build`) renders
+the artifact when the page loads. The output is `dist/index.html`. It is not self-contained: it links `openartifact.js` by URL (`/openartifact.js` by default)
 and leaves image references relative, so it is meant to be served by `server.py`, which
 hosts the runtime and the artifact's images. Referenced images are checked to exist so a
 build fails early; `pdf.py` prints the served page.
@@ -318,8 +318,10 @@ def check_images(texts: list[str], base: Path) -> list[str]:
 # Page
 # ---------------------------------------------------------------------------
 
-# The whole output page. `{title}`, `{favicon}`, `{blob}` and `{runtime}` are replaced with plain string substitution
-# (not `str.format`, so braces in the substituted values are safe).
+# The whole output page. Placeholders are replaced with plain string substitution (not `str.format`, so braces in
+# the substituted values are safe). The source files go in as data blocks: `<script>` elements with a non-JavaScript
+# `type` are never executed and keep their content as an exact string, which is what the runtime needs and what a
+# reader fetching the page wants to see. The user's CSS is a live `<style>` so it applies without the runtime.
 TEMPLATE = """\
 <!doctype html>
 <html lang="en">
@@ -327,18 +329,51 @@ TEMPLATE = """\
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>{favicon}
+<link rel="alternate" type="text/markdown" href="{markdown_href}">
+<style id="artifact-styles">
+{styles}</style>
 </head>
 <body>
 <div id="root"></div>
-<script type="application/json" id="artifact-data">{blob}</script>
-<script src="{runtime}"></script>
+<script type="application/json" id="artifact-config">{config}</script>
+<script type="text/markdown" id="artifact-markdown">
+{markdown}</script>
+{components}<script src="{runtime}"></script>
 </body>
 </html>
 """
+COMPONENT_BLOCK = '<script type="text/html" data-component="{name}">\n{source}</script>\n'
+
+# Inside script data the HTML tokenizer reacts to exactly three sequences: `</script` ends the element, and `<!--`
+# followed by `<script` puts it in a state where `</script>` no longer does. Escaping the `<` of those as `&lt;`
+# (and protecting any `&amp;` / `&lt;` already in the text) leaves everything else readable; the runtime reverses it.
+BLOCK_AMP_RE = re.compile(r'&(?=(?:amp|lt);)')
+BLOCK_LT_RE = re.compile(r'<(?=/?script|!--)', re.IGNORECASE)
+BLOCK_DECODE_RE = re.compile(r'&(amp|lt);')
+STYLE_END_RE = re.compile(r'</style', re.IGNORECASE)
 
 
-def build_deck_data(cfg: Config) -> dict[str, object]:
-    """Assemble the JSON blob the runtime reads; shape matches `ArtifactData` in frontend/src/types.ts."""
+def encode_block(text: str) -> str:
+    """Make `text` safe as the content of a data block; `decode_block` (and the runtime) reverse it exactly."""
+    return BLOCK_LT_RE.sub('&lt;', BLOCK_AMP_RE.sub('&amp;', text))
+
+
+def decode_block(text: str) -> str:
+    """The inverse of `encode_block`; mirrors `decodeBlock` in frontend/src/main.ts (used by the tests)."""
+    return BLOCK_DECODE_RE.sub(lambda m: '<' if m.group(1) == 'lt' else '&', text)
+
+
+def check_styles(css: str, path: Path) -> None:
+    """The user's CSS goes into a live `<style>`, where `</style` would end it early; there is no way to escape it."""
+    for number, line in enumerate(css.splitlines(), start=1):
+        if STYLE_END_RE.search(line):
+            raise BuildError(
+                f"{path}:{number}: '</style' cannot appear in CSS embedded in the page; inside a string write '<\\/style'"
+            )
+
+
+def build_page_data(cfg: Config) -> dict[str, object]:
+    """Validate the inputs and gather what goes into the page: `config`, `markdown`, `components`, `styles`."""
     markdown = cfg.markdown_path.read_text(encoding='utf-8')
     if cfg.type == 'deck':
         validate_slides(markdown, cfg.markdown_path)
@@ -346,6 +381,7 @@ def build_deck_data(cfg: Config) -> dict[str, object]:
         validate_prose(markdown, cfg.markdown_path, cfg.type)
     components = collect_components(markdown, cfg.components_dir)
     styles = cfg.styles_path.read_text(encoding='utf-8') if cfg.styles_path.is_file() else ''
+    check_styles(styles, cfg.styles_path)
     check_images([markdown, *components.values(), styles], cfg.cwd)
     return {
         'config': cfg.to_json(),
@@ -355,17 +391,30 @@ def build_deck_data(cfg: Config) -> dict[str, object]:
     }
 
 
-def render_page(title: str, favicon: str | None, data: dict[str, object], runtime_url: str) -> str:
-    """Fill TEMPLATE with the title, favicon link, JSON blob and the URL of the runtime."""
-    # `<` is escaped to the JSON sequence `\u003c`, which is still valid JSON. That defeats `</script>` and the
-    # `<!--` sequence, which would otherwise put the HTML tokenizer into a state where the real
-    # closing tag is ignored. Component HTML can contain both.
-    blob = json.dumps(data, ensure_ascii=False, indent=2).replace('<', '\\u003c')
+def render_page(title: str, favicon: str | None, data: dict[str, object], runtime_url: str, markdown_href: str) -> str:
+    """Fill TEMPLATE: title, favicon link, the data blocks, the user's CSS and the URL of the runtime.
+
+    `markdown_href` is where the server serves the markdown source relative to the page (`main.md` by default); it
+    is advertised with `<link rel="alternate">` so a reader can find the source without parsing the page.
+    """
+    # `<` in the JSON is written as `\u003c`, which is still JSON, so a title cannot contain `</script>`.
+    config = json.dumps(data.get('config', {}), ensure_ascii=False).replace('<', '\\u003c')
+    markdown = cast('str', data.get('markdown', ''))
+    components = cast('dict[str, str]', data.get('components', {}))
+    styles = cast('str', data.get('styles', ''))
     favicon_tag = f'\n<link rel="icon" href="{html.escape(favicon, quote=True)}">' if favicon else ''
+    component_blocks = ''.join(
+        COMPONENT_BLOCK.replace('{name}', html.escape(name, quote=True)).replace('{source}', encode_block(source))
+        for name, source in components.items()
+    )
     return (
         TEMPLATE.replace('{title}', html.escape(title))
         .replace('{favicon}', favicon_tag)
-        .replace('{blob}', blob)
+        .replace('{markdown_href}', html.escape(markdown_href, quote=True))
+        .replace('{styles}', styles)
+        .replace('{config}', config)
+        .replace('{markdown}', encode_block(markdown))
+        .replace('{components}', component_blocks)
         .replace('{runtime}', html.escape(runtime_url, quote=True))
     )
 
@@ -377,8 +426,9 @@ def build_html(cwd: Path, output: Path | None = None, runtime_url: str = DEFAULT
     `/artifacts/<id>/`. Returns the path written.
     """
     cfg = load_config(cwd)
-    data = build_deck_data(cfg)
-    page = render_page(cfg.title or cfg.markdown_path.stem, cfg.favicon, data, runtime_url)
+    data = build_page_data(cfg)
+    markdown_href = cfg.markdown_path.relative_to(cfg.cwd).as_posix()
+    page = render_page(cfg.title or cfg.markdown_path.stem, cfg.favicon, data, runtime_url, markdown_href)
     out = (output or cwd / 'dist' / 'index.html').resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page, encoding='utf-8')

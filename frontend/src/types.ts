@@ -1,6 +1,6 @@
 /**
- * Shapes shared between `build.py` (which writes the JSON blob into the page)
- * and the browser runtime (which reads it). Keep in sync with `render_page` in build.py.
+ * Shapes shared between `build.py` (which writes the data blocks into the page)
+ * and the browser runtime (which reads them). Keep in sync with `render_page` in build.py.
  */
 
 /** A single tab entry shown in the slide topbar tab navigation. */
@@ -35,13 +35,15 @@ export interface ArtifactConfig {
   tabs: DeckTab[]
 }
 
-/** The JSON blob embedded in `<script type="application/json" id="artifact-data">`. */
+/**
+ * The artifact as read from the page's data blocks: `#artifact-config` (JSON), `#artifact-markdown`
+ * (`<script type="text/markdown">`) and one `<script type="text/html" data-component="X">` per component.
+ * The user's `styles.css` is not here: it is a live `<style id="artifact-styles">` in the head.
+ */
 export interface ArtifactData {
   config: ArtifactConfig
   /** Raw `main.md` source. For a deck it is split into slides in the browser; otherwise rendered whole. */
   markdown: string
   /** `<component src="X">` -> file contents, keyed by the `src` attribute. */
   components: Record<string, string>
-  /** The user's `styles.css` (or an empty string). */
-  styles: string
 }

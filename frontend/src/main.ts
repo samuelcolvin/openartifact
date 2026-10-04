@@ -28,10 +28,30 @@ const TYPE_STYLES: Record<ArtifactType, string[]> = {
   page: [proseCss, pageCss],
 }
 
+/**
+ * Reverse `encode_block` in build.py: the only sequences that can end a data block early are `</script`, `<script`
+ * and `<!--`, so the builder writes their `<` as `&lt;` and protects pre-existing `&amp;` / `&lt;` by doubling the
+ * ampersand. One left-to-right pass restores the exact source.
+ */
+function decodeBlock(node: Element | null, what: string): string {
+  if (!node) throw new Error(`openartifact: ${what} block not found`)
+  const text = node.textContent ?? ''
+  // The builder puts the content on the line after the opening tag; drop exactly that newline.
+  const raw = text.startsWith('\n') ? text.slice(1) : text
+  return raw.replace(/&(amp|lt);/g, (_, name: string) => (name === 'lt' ? '<' : '&'))
+}
+
+/** Assemble the artifact from the data blocks `render_page` in build.py wrote into the page. */
 function readData(): ArtifactData {
-  const node = document.getElementById('artifact-data')
-  if (!node) throw new Error('openartifact: <script type="application/json" id="artifact-data"> not found')
-  return JSON.parse(node.textContent ?? '') as ArtifactData
+  const configNode = document.getElementById('artifact-config')
+  if (!configNode) throw new Error('openartifact: <script type="application/json" id="artifact-config"> not found')
+  const config = JSON.parse(configNode.textContent ?? '{}') as ArtifactConfig
+  const markdown = decodeBlock(document.getElementById('artifact-markdown'), 'markdown')
+  const components: Record<string, string> = {}
+  for (const node of document.querySelectorAll<HTMLScriptElement>('script[type="text/html"][data-component]')) {
+    components[node.dataset.component ?? ''] = decodeBlock(node, 'component')
+  }
+  return { config, markdown, components }
 }
 
 function addStyle(css: string): void {
@@ -59,11 +79,13 @@ function main(): void {
   }
   const root = document.getElementById('root') ?? document.body
 
-  // Shared tokens first, then the type's own sheets, then code colours, then the user's styles.css so it wins.
+  // Shared tokens first, then the type's own sheets, then code colours, then the user's styles.css so it wins. The
+  // user's sheet is already in <head> as a live <style>; appending it again moves it after the ones just added.
   addStyle(sharedCss)
   for (const css of TYPE_STYLES[config.type] ?? TYPE_STYLES.deck) addStyle(css)
   addStyle(hljsCss)
-  addStyle(data.styles)
+  const userStyles = document.getElementById('artifact-styles')
+  if (userStyles) document.head.append(userStyles)
   // The theme class goes on <html> too so `@media print` body rules can scope by theme.
   document.documentElement.classList.add(`theme-${config.theme}`)
 
