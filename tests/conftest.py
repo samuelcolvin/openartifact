@@ -8,6 +8,7 @@ is used to create and drop `openartifact_test_<hex>`.
 from __future__ import annotations
 
 import asyncio
+import os
 import secrets
 from collections.abc import AsyncGenerator, Iterator
 from pathlib import Path
@@ -15,6 +16,13 @@ from urllib.parse import urlsplit, urlunsplit
 
 import asyncpg
 import pytest
+
+# The MCP server builds its auth provider at import time; give it the static development token before any test
+# module imports it. Tests that need a second user register more tokens on the same verifier.
+DEV_TOKEN = 'test-dev-token'
+os.environ.setdefault('OPENARTIFACT_DEV_TOKEN', DEV_TOKEN)
+# The server configures Logfire at import; keep its console output out of pytest's captured stdout.
+os.environ.setdefault('LOGFIRE_CONSOLE', 'false')
 
 import auth
 import db
@@ -105,3 +113,29 @@ async def storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncGener
     monkeypatch.setenv('OPENARTIFACT_CACHE_DIR', str(tmp_path / 'cache'))
     async with store.object_store() as opened:
         yield opened
+
+
+async def truncate_all() -> None:
+    """Empty every table through a fresh connection, for tests whose pool belongs to another loop (the app's)."""
+    conn = await asyncpg.connect(db.database_url())
+    try:
+        await conn.execute(f'TRUNCATE {", ".join(TABLES)} CASCADE')
+    finally:
+        await conn.close()
+
+
+@pytest.fixture
+def server_env(test_database_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Environment for running the whole app (TestClient or uvicorn): fresh store and cache, tables emptied after.
+
+    Unlike `db_pool`/`storage`, nothing is opened here; the app's lifespan opens its own pool, store and monty pool
+    in its own loop, and the test seeds data through them.
+    """
+    monkeypatch.setenv('OPENARTIFACT_STORE_URL', (tmp_path / 'store').as_uri())
+    monkeypatch.setenv('OPENARTIFACT_CACHE_DIR', str(tmp_path / 'cache'))
+    try:
+        yield
+    finally:
+        asyncio.run(truncate_all())
+        auth.reset_cache()
+        workspace.reset_state()

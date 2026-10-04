@@ -16,7 +16,6 @@ import logging
 import os
 import uuid
 from collections.abc import Generator
-from contextvars import ContextVar
 from dataclasses import dataclass
 
 from config import base_url
@@ -88,7 +87,9 @@ class Principal:
     email: str | None
 
 
-_override: ContextVar[Principal | None] = ContextVar('principal', default=None)
+# Set by `as_principal()` for code running outside an MCP request (tests, scripts). A plain global rather than a
+# ContextVar: it is process-wide by design, and a ContextVar would not reach a test task from a sync fixture.
+_override: Principal | None = None
 # sub -> Principal, so a tool call after the first is a dictionary lookup rather than an upsert.
 _cache: dict[str, Principal] = {}
 
@@ -101,11 +102,13 @@ def reset_cache() -> None:
 @contextlib.contextmanager
 def as_principal(principal: Principal) -> Generator[None]:
     """Make `current_principal()` return `principal` inside the block, bypassing token lookup."""
-    token = _override.set(principal)
+    global _override
+    previous = _override
+    _override = principal
     try:
         yield
     finally:
-        _override.reset(token)
+        _override = previous
 
 
 async def upsert_user(
@@ -133,9 +136,8 @@ async def upsert_user(
 
 async def current_principal() -> Principal:
     """The caller of the current tool, from the verified access token; `ToolError` when there is none."""
-    override = _override.get()
-    if override is not None:
-        return override
+    if _override is not None:
+        return _override
     token = get_access_token()
     if token is None:
         raise ToolError('not authenticated')

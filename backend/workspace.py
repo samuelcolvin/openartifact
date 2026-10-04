@@ -220,6 +220,8 @@ class Edit:
     head_sha: str | None
     path: Path
     conn: db.Connection
+    # The commit message; the caller may rewrite it before the block ends (e.g. to record a failed run).
+    message: str
     touched: set[uuid.UUID] = field(default_factory=set)
 
     def artifact_dir(self, artifact_id: uuid.UUID) -> Path:
@@ -240,7 +242,7 @@ def strip_nested_git(directory: Path) -> list[str]:
     return removed
 
 
-async def commit_edit(tx: Edit, message: str) -> str | None:
+async def commit_edit(tx: Edit) -> str | None:
     """Stage everything, commit if anything changed, and return the new sha; `None` means nothing to commit."""
     for artifact_id in tx.touched:
         strip_nested_git(tx.path / ARTIFACTS_DIR / str(artifact_id))
@@ -248,7 +250,7 @@ async def commit_edit(tx: Edit, message: str) -> str | None:
     code, _, _ = await run_git('diff', '--cached', '--quiet', cwd=tx.path)
     if code == 0 and tx.head_sha is not None:
         return None
-    await git('commit', '-q', '-m', message, cwd=tx.path)
+    await git('commit', '-q', '-m', tx.message, cwd=tx.path)
     return (await git('rev-parse', 'HEAD', cwd=tx.path)).strip()
 
 
@@ -271,9 +273,9 @@ async def edit(workspace_id: uuid.UUID, message: str) -> AsyncGenerator[Edit]:
         head_sha: str | None = row['head_sha']
         try:
             path = await sync_checkout(workspace_id, head_sha)
-            tx = Edit(workspace_id, head_sha, path, conn)
+            tx = Edit(workspace_id, head_sha, path, conn, message)
             yield tx
-            new_sha = await commit_edit(tx, message)
+            new_sha = await commit_edit(tx)
             if new_sha is None:
                 return
             await bundle_and_upload(workspace_id, new_sha, path)

@@ -1,37 +1,28 @@
-"""Tests for `backend/mcp_server.py`. Run with `uv run pytest`."""
+"""Tests for `backend/mcp_server.py`: the tools called directly as the test user, and once over MCP in memory."""
 
 from __future__ import annotations
 
 import re
-import shutil
 import tomllib
-from collections.abc import AsyncGenerator
+import uuid
+from collections.abc import AsyncGenerator, Iterator
 from pathlib import Path
 
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
+import auth
 import build
+import db
 import mcp_server
+import workspace
 
 ROOT = Path(__file__).resolve().parent.parent
 STARTER = ROOT / 'examples' / 'starter'
+UUID_RE = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 
 pytestmark = pytest.mark.anyio
-
-
-@pytest.fixture
-def anyio_backend() -> str:
-    return 'asyncio'
-
-
-@pytest.fixture
-def artifacts_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Point the server at a temporary artifacts root."""
-    root = tmp_path / 'artifacts'
-    monkeypatch.setenv('OPENARTIFACT_ROOT', str(root))
-    return root
 
 
 @pytest.fixture
@@ -42,11 +33,10 @@ async def pool() -> AsyncGenerator[None]:
 
 
 @pytest.fixture
-def demo(artifacts_root: Path) -> Path:
-    """An existing, empty artifact called `demo`, as `new_artifact` would have left one."""
-    path = artifacts_root / 'demo'
-    path.mkdir(parents=True)
-    return path
+def me(principal: auth.Principal) -> Iterator[auth.Principal]:
+    """Run the test as the signed-in user, the way a verified token would."""
+    with auth.as_principal(principal):
+        yield principal
 
 
 def artifact_id(output: str) -> str:
@@ -56,58 +46,67 @@ def artifact_id(output: str) -> str:
     return first.removeprefix('artifact: ')
 
 
+def files_of(me: auth.Principal, artifact: str) -> Path:
+    return workspace.checkout_path(me.workspace_id) / 'artifacts' / artifact
+
+
+@pytest.fixture
+async def demo(me: auth.Principal) -> str:
+    """An existing deck with one slide; returns its id."""
+    return artifact_id(await mcp_server.new_artifact('Demo', '<slide/>\n# Demo\n'))
+
+
+async def head_sha(ws: uuid.UUID) -> str | None:
+    return await db.pool().fetchval('SELECT head_sha FROM workspaces WHERE id = $1', ws)
+
+
 # --- new_artifact ----------------------------------------------------------
 
 
-async def test_new_artifact_builds(artifacts_root: Path):
+async def test_new_artifact_builds_and_commits(me: auth.Principal):
     out = await mcp_server.new_artifact('My Deck!', '<slide/>\n# Hello\n', theme='dark', footer='ACME')
-    name = artifact_id(out)
-    assert re.fullmatch(r'my-deck-[a-z0-9]{6}', name)
-    assert out.endswith(f'page: http://127.0.0.1:8000/artifacts/{name}/\n')
-    directory = artifacts_root / name
+    artifact = artifact_id(out)
+    assert re.fullmatch(UUID_RE, artifact)
+    assert out.endswith(f'page: http://127.0.0.1:8000/artifacts/{artifact}/\n')
+    directory = files_of(me, artifact)
     assert (directory / 'deck.md').read_text() == '<slide/>\n# Hello\n'
     assert (directory / 'artifact.toml').read_text() == (
         'title = "My Deck!"\ntype = "deck"\ntheme = "dark"\nfooter = "ACME"\n'
     )
     assert (directory / 'dist' / 'index.html').is_file()
-    assert mcp_server.ARTIFACT_NAME_RE.fullmatch(name)
+    # One commit, recorded as the head, bundled; the build output is not in it.
+    path = workspace.checkout_path(me.workspace_id)
+    assert (await workspace.git('log', '--format=%s', cwd=path)).splitlines() == [f'new_artifact: {artifact}']
+    assert await head_sha(me.workspace_id) == (await workspace.git('rev-parse', 'HEAD', cwd=path)).strip()
+    assert 'dist' not in await workspace.git('ls-files', cwd=path)
+    row = await workspace.get_artifact(uuid.UUID(artifact))
+    assert row is not None and (row.title, row.type, row.workspace_id) == ('My Deck!', 'deck', me.workspace_id)
 
 
-async def test_new_artifact_reports_build_errors_and_keeps_files(artifacts_root: Path):
-    with pytest.raises(ToolError, match=r'deck\.md:1: content before the first') as exc_info:
+async def test_new_artifact_reports_build_errors_and_keeps_files(me: auth.Principal):
+    with pytest.raises(ToolError, match=r'deck\.md:1: content before the first'):
         await mcp_server.new_artifact('Broken', '# preamble\n<slide/>\n')
-    assert exc_info.type is ToolError
-    [directory] = artifacts_root.iterdir()
+    [row] = await workspace.list_artifacts(me.workspace_id)
+    directory = files_of(me, str(row.id))
     assert (directory / 'deck.md').read_text() == '# preamble\n<slide/>\n'
     assert not (directory / 'dist').exists()
+    assert await head_sha(me.workspace_id) is not None
 
 
-def test_new_artifact_id_handles_odd_titles():
-    assert re.fullmatch(r'artifact-[a-z0-9]{6}', mcp_server.new_artifact_id('!!!'))
-    assert re.fullmatch(r'caf-au-lait-[a-z0-9]{6}', mcp_server.new_artifact_id('  Café au lait  '))
-    long = mcp_server.new_artifact_id('x' * 100)
-    assert mcp_server.ARTIFACT_NAME_RE.fullmatch(long)
-    assert len(long) == mcp_server.SLUG_MAX_LEN + 1 + mcp_server.SUFFIX_LEN
+async def test_new_artifact_page_takes_plain_markdown(me: auth.Principal):
+    artifact = artifact_id(await mcp_server.new_artifact('Notes', '# Notes\n\nSome text.\n', type='page'))
+    assert (files_of(me, artifact) / 'artifact.toml').read_text() == 'title = "Notes"\ntype = "page"\ntheme = "light"\n'
+    assert (files_of(me, artifact) / 'dist' / 'index.html').is_file()
 
 
-def test_theme_literal_matches_builder():
-    assert set(mcp_server.THEMES) == set(build.THEMES)
-
-
-def test_type_literal_matches_builder():
-    assert set(mcp_server.TYPES) == set(build.TYPES)
-
-
-async def test_new_artifact_page_takes_plain_markdown(artifacts_root: Path):
-    out = await mcp_server.new_artifact('Notes', '# Notes\n\nSome text.\n', type='page')
-    name = artifact_id(out)
-    assert (artifacts_root / name / 'artifact.toml').read_text() == 'title = "Notes"\ntype = "page"\ntheme = "light"\n'
-    assert (artifacts_root / name / 'dist' / 'index.html').is_file()
-
-
-async def test_new_artifact_document_rejects_slide_markers(artifacts_root: Path):
+async def test_new_artifact_document_rejects_slide_markers(me: auth.Principal):
     with pytest.raises(ToolError, match=r'markers are only used when type = "deck"; this artifact is a document'):
         await mcp_server.new_artifact('Doc', '<slide/>\n# Doc\n', type='document')
+
+
+def test_literals_match_builder():
+    assert set(mcp_server.THEMES) == set(build.THEMES)
+    assert set(mcp_server.TYPES) == set(build.TYPES)
 
 
 def test_render_toml_escapes():
@@ -118,99 +117,122 @@ def test_render_toml_escapes():
 # --- run_code --------------------------------------------------------------
 
 
-async def test_run_code_writes_files(artifacts_root: Path, demo: Path, pool: None):
+async def test_run_code_writes_and_commits(me: auth.Principal, demo: str, pool: None):
     out = await mcp_server.run_code(
-        'demo',
-        "from pathlib import Path\nPath('deck.md').write_text('<slide/>\\n# hi\\n')\nprint('done')\nlen('abc')",
+        demo, "from pathlib import Path\nPath('deck.md').write_text('<slide/>\\n# hi\\n')\nprint('done')\nlen('abc')"
     )
     assert out == 'done\n3\n'
-    assert (artifacts_root / 'demo' / 'deck.md').read_text() == '<slide/>\n# hi\n'
+    assert (files_of(me, demo) / 'deck.md').read_text() == '<slide/>\n# hi\n'
+    log = (await workspace.git('log', '--format=%s', cwd=workspace.checkout_path(me.workspace_id))).splitlines()
+    assert log == [f'run_code: {demo}', f'new_artifact: {demo}']
 
 
-async def test_run_code_mounts_at_virtual_path(demo: Path, pool: None):
-    await mcp_server.run_code('demo', "open('/artifact/a.txt', 'w').write('x')")
-    out = await mcp_server.run_code('demo', "import os\nprint(os.getcwd())\nprint(sorted(os.listdir('.')))")
-    assert out == "/artifact\n['a.txt']\n"
+async def test_run_code_mounts_at_virtual_path(me: auth.Principal, demo: str, pool: None):
+    await mcp_server.run_code(demo, "open('/artifact/a.txt', 'w').write('x')")
+    out = await mcp_server.run_code(demo, "import os\nprint(os.getcwd())\nprint(sorted(os.listdir('.')))")
+    assert out == "/artifact\n['a.txt', 'artifact.toml', 'deck.md', 'dist']\n"
 
 
-async def test_run_code_binds_inputs(artifacts_root: Path, demo: Path, pool: None):
+async def test_run_code_binds_inputs(me: auth.Principal, demo: str, pool: None):
     out = await mcp_server.run_code(
-        'demo', "from pathlib import Path\nPath('deck.md').write_text(body * n)", inputs={'body': 'ab', 'n': 3}
+        demo, "from pathlib import Path\nPath('deck.md').write_text(body * n)", inputs={'body': 'ab', 'n': 3}
     )
     # `write_text` returns the character count, which is the trailing expression.
     assert out == '6\n'
-    assert (artifacts_root / 'demo' / 'deck.md').read_text() == 'ababab'
+    assert (files_of(me, demo) / 'deck.md').read_text() == 'ababab'
 
 
-async def test_run_code_cannot_escape_mount(demo: Path, pool: None):
+async def test_run_code_cannot_escape_mount(me: auth.Principal, demo: str, pool: None):
     with pytest.raises(ToolError, match='PermissionError'):
-        await mcp_server.run_code('demo', "open('/etc/hosts').read()")
+        await mcp_server.run_code(demo, "open('/etc/hosts').read()")
 
 
-async def test_run_code_reports_exceptions_with_output(demo: Path, pool: None):
+async def test_run_code_commits_even_when_the_code_fails(me: auth.Principal, demo: str, pool: None):
     with pytest.raises(ToolError) as exc_info:
-        await mcp_server.run_code('demo', "print('before')\n1 / 0")
+        await mcp_server.run_code(
+            demo, "from pathlib import Path\nPath('partial.txt').write_text('p')\nprint('before')\n1 / 0"
+        )
     message = str(exc_info.value)
     assert message.startswith('before\n')
     assert 'ZeroDivisionError: division by zero' in message
+    assert (files_of(me, demo) / 'partial.txt').read_text() == 'p'
+    log = (await workspace.git('log', '--format=%s', cwd=workspace.checkout_path(me.workspace_id))).splitlines()
+    assert log[0] == f'run_code (failed): {demo}'
 
 
-async def test_run_code_reports_syntax_errors(demo: Path, pool: None):
+async def test_run_code_reports_syntax_errors(me: auth.Principal, demo: str, pool: None):
     with pytest.raises(ToolError, match='SyntaxError'):
-        await mcp_server.run_code('demo', 'def (')
+        await mcp_server.run_code(demo, 'def (')
 
 
-async def test_run_code_rejects_bad_names(artifacts_root: Path, pool: None):
-    with pytest.raises(ToolError, match='invalid artifact name'):
+async def test_run_code_rejects_bad_ids(me: auth.Principal, pool: None):
+    with pytest.raises(ToolError, match='invalid artifact id'):
         await mcp_server.run_code('../escape', 'pass')
-    assert not artifacts_root.exists()
-
-
-async def test_run_code_requires_existing_artifact(artifacts_root: Path, pool: None):
-    with pytest.raises(ToolError, match='does not exist; create one with `new_artifact`'):
-        await mcp_server.run_code('demo', 'pass')
-    assert not artifacts_root.exists()
-
-
-async def test_run_code_without_pool(demo: Path):
-    with pytest.raises(RuntimeError, match='monty pool is not running'):
-        await mcp_server.run_code('demo', 'pass')
-
-
-# --- build -----------------------------------------------------------------
-
-
-async def test_build_missing_artifact(artifacts_root: Path):
     with pytest.raises(ToolError, match='does not exist'):
-        await mcp_server.build_artifact('nope')
+        await mcp_server.run_code(str(uuid.uuid4()), 'pass')
 
 
-async def test_build_starter(artifacts_root: Path, pool: None):
-    shutil.copytree(STARTER, artifacts_root / 'starter', ignore=shutil.ignore_patterns('dist'))
-    out = await mcp_server.build_artifact('starter')
-    assert 'index.html' in out
-    assert out.endswith('page: http://127.0.0.1:8000/artifacts/starter/\n')
-    assert (artifacts_root / 'starter' / 'dist' / 'index.html').is_file()
+async def test_run_code_without_pool(me: auth.Principal, demo: str):
+    with pytest.raises(RuntimeError, match='monty pool is not running'):
+        await mcp_server.run_code(demo, 'pass')
+
+
+# --- build and list ----------------------------------------------------------
+
+
+async def test_build_missing_artifact(me: auth.Principal):
+    with pytest.raises(ToolError, match='does not exist'):
+        await mcp_server.build_artifact(str(uuid.uuid4()))
+
+
+async def test_build_imported_starter(me: auth.Principal, pool: None):
+    row = await workspace.import_directory(me.workspace_id, 'Starter', 'deck', STARTER)
+    out = await mcp_server.build_artifact(str(row.id))
+    assert out.endswith(f'page: http://127.0.0.1:8000/artifacts/{row.id}/\n')
     # The sandbox sees the output under the mount.
-    listing = await mcp_server.run_code('starter', "import os\nprint(sorted(os.listdir('/artifact/dist')))")
+    listing = await mcp_server.run_code(str(row.id), "import os\nprint(sorted(os.listdir('/artifact/dist')))")
     assert listing == "['index.html']\n"
 
 
-async def test_build_reports_validation_errors(demo: Path, pool: None):
-    await mcp_server.run_code(
-        'demo', "from pathlib import Path\nPath('deck.md').write_text('# preamble\\n<slide/>\\n')"
-    )
+async def test_build_reports_validation_errors(me: auth.Principal, demo: str, pool: None):
+    await mcp_server.run_code(demo, "from pathlib import Path\nPath('deck.md').write_text('# preamble\\n<slide/>\\n')")
     with pytest.raises(ToolError, match=r'deck\.md:1: content before the first'):
-        await mcp_server.build_artifact('demo')
+        await mcp_server.build_artifact(demo)
+
+
+async def test_list_artifacts(me: auth.Principal):
+    assert await mcp_server.list_artifacts() == 'no artifacts yet; create one with `new_artifact`\n'
+    first = artifact_id(await mcp_server.new_artifact('First', '<slide/>\n# 1\n'))
+    second = artifact_id(await mcp_server.new_artifact('Second', '# 2\n', type='page'))
+    assert await mcp_server.list_artifacts() == (
+        f'{first}  deck  First  http://127.0.0.1:8000/artifacts/{first}/\n'
+        f'{second}  page  Second  http://127.0.0.1:8000/artifacts/{second}/\n'
+    )
+
+
+async def test_other_users_cannot_see_my_artifacts(me: auth.Principal, demo: str, db_pool: db.Pool, pool: None):
+    async with db_pool.acquire() as conn, conn.transaction():
+        other = await auth.upsert_user(conn, sub='user-b', email='b@example.com', name=None, picture=None)
+    with auth.as_principal(other):
+        assert await mcp_server.list_artifacts() == 'no artifacts yet; create one with `new_artifact`\n'
+        with pytest.raises(ToolError, match='does not exist'):
+            await mcp_server.build_artifact(demo)
+        with pytest.raises(ToolError, match='does not exist'):
+            await mcp_server.run_code(demo, 'pass')
+
+
+async def test_tools_require_a_caller(db_pool: db.Pool, storage: object):
+    with pytest.raises(ToolError, match='not authenticated'):
+        await mcp_server.list_artifacts()
 
 
 # --- MCP wiring ------------------------------------------------------------
 
 
-async def test_tools_over_mcp(artifacts_root: Path, pool: None):
+async def test_tools_over_mcp(me: auth.Principal, pool: None):
     async with Client(mcp_server.mcp) as client:
         tools = {tool.name for tool in await client.list_tools()}
-        assert tools == {'new_artifact', 'run_code', 'build'}
+        assert tools == {'new_artifact', 'run_code', 'build', 'list_artifacts'}
 
         created = await client.call_tool('new_artifact', {'title': 'Demo', 'content': '<slide/>\n# Demo\n'})
         name = artifact_id(created.data)
@@ -224,18 +246,15 @@ async def test_tools_over_mcp(artifacts_root: Path, pool: None):
             },
         )
         assert result.data == '1\n'
-        assert (artifacts_root / name / 'deck.md').read_text() == 'x'
+        assert (files_of(me, name) / 'deck.md').read_text() == 'x'
 
         failed = await client.call_tool('build', {'artifact': name}, raise_on_error=False)
         assert failed.is_error
 
-        # `theme` is a Literal, so a bad value is rejected by the schema before the tool runs.
-        bad_theme = await client.call_tool(
-            'new_artifact', {'title': 'T', 'content': '<slide/>\n', 'theme': 'neon'}, raise_on_error=False
-        )
-        assert bad_theme.is_error
-        bad_type = await client.call_tool(
-            'new_artifact', {'title': 'T', 'content': '# T\n', 'type': 'scroll'}, raise_on_error=False
-        )
-        assert bad_type.is_error
-        assert [p.name for p in artifacts_root.iterdir()] == [name]
+        # `theme` and `type` are Literals, so bad values are rejected by the schema before the tool runs.
+        for bad in ({'theme': 'neon'}, {'type': 'scroll'}):
+            rejected = await client.call_tool(
+                'new_artifact', {'title': 'T', 'content': '# T\n', **bad}, raise_on_error=False
+            )
+            assert rejected.is_error
+        assert len(await workspace.list_artifacts(me.workspace_id)) == 1

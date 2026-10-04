@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pdf
 import pytest
 
+import pdf
 from build import BuildError
 
 URL = 'http://127.0.0.1:8000/artifacts/demo-abc123/'
