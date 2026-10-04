@@ -1,0 +1,22 @@
+frontend/src/styles/shared.css
+  s_43f07e2c10821d::t_45430d47ad2f8a 12-13,15,17,19,44-47,51,60
+  s_43f07e2c10821d::t_110b2dff146d67 16
+frontend/src/styles/document.css
+  s_43f07e2c10821d::t_45430d47ad2f8a 16,30-34,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "37be0bc346d0891cbca1010a1669a8f414b35a83",
+  "prompts": {},
+  "sessions": {
+    "s_43f07e2c10821d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fb6f58d9-2e73-4053-b834-d4f0f433543c",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
