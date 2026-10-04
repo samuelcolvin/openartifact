@@ -172,12 +172,10 @@ async def test_build_starter(artifacts_root: Path, pool: None):
     out = await mcp_server.build_artifact('starter')
     assert 'index.html' in out
     assert out.endswith('page: http://127.0.0.1:8000/artifacts/starter/\n')
-    dist = artifacts_root / 'starter' / 'dist'
-    assert (dist / 'index.html').is_file()
-    assert (dist / 'deck.js').is_file()
+    assert (artifacts_root / 'starter' / 'dist' / 'index.html').is_file()
     # The sandbox sees the output under the mount.
     listing = await mcp_server.run_code('starter', "import os\nprint(sorted(os.listdir('/artifact/dist')))")
-    assert listing == "['deck.js', 'index.html']\n"
+    assert listing == "['index.html']\n"
 
 
 async def test_build_reports_validation_errors(demo: Path, pool: None):

@@ -5,7 +5,7 @@
 	@uv --version || echo 'Please install uv: https://docs.astral.sh/uv/getting-started/installation/'
 
 .PHONY: install
-install: .uv ## Install Python and JS dependencies, build deck.js and install prek hooks
+install: .uv ## Install Python and JS dependencies, build openartifact.js and install prek hooks
 	uv sync
 	pnpm -C frontend install
 	pnpm -C frontend build
@@ -30,11 +30,11 @@ test: ## Run the Python tests
 	uv run pytest
 
 .PHONY: build
-build: ## Bundle the browser runtime to frontend/dist/deck.js
+build: ## Bundle the browser runtime to frontend/dist/openartifact.js
 	pnpm -C frontend build
 
 .PHONY: serve
-serve: ## Run the HTTP server (MCP endpoint, deck.js and built artifacts) on http://127.0.0.1:8000
+serve: ## Run the HTTP server (MCP endpoint, openartifact.js and built artifacts) on http://127.0.0.1:8000
 	uv run backend/server.py
 
 .PHONY: main

@@ -7,7 +7,7 @@ Why?
 * My taste
 * Good support for HTML presentation - keyboard control, slide persistence in URL, jump to slide, title
 * Good support for PDF generation - configure `page` css property properly
-* No JavaScript toolchain needed to build a deck: the runtime is one prebuilt `deck.js`, the builder is one Python script with no dependencies
+* No JavaScript toolchain needed to build a deck: the runtime is one prebuilt `openartifact.js`, the builder is one Python module with no dependencies
 
 ## How it works
 
@@ -23,7 +23,7 @@ my-deck/
 └── assets/             # images
 ```
 
-`backend/build.py` reads those files and writes `dist/index.html`: the markdown source, every referenced component, your CSS and every referenced image (as a data URI) go into the page as one JSON blob, next to `<script src="deck.js">`. When the page loads, `deck.js` splits the markdown into slides, renders it, expands the components, highlights code and wires up navigation. The output opens from `file://` and prints to PDF with Chrome headless.
+`backend/build.py` reads those files and writes `dist/index.html`: the markdown source, every referenced component and your CSS go into the page as one JSON blob, next to `<script src="/openartifact.js">`. `backend/server.py` serves that page at `/artifacts/<id>/` along with `openartifact.js` and the deck's images, which the page references relatively. When the page loads, `openartifact.js` splits the markdown into slides, renders it, expands the components, highlights code and wires up navigation. Chrome headless prints the served page to PDF.
 
 ## Quick start
 
@@ -32,21 +32,20 @@ Clone the repo and build the browser runtime once:
 ```bash
 git clone https://github.com/samuelcolvin/openartifact
 cd openartifact
-pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/deck.js
+pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/openartifact.js
 ```
 
-Then build the starter deck:
+Then start the server and let an agent (or `mcp_demo.py`) drive it over MCP:
 
 ```bash
-uv run backend/build.py html --dir examples/starter    # -> examples/starter/dist/index.html
-uv run backend/build.py pdf --dir examples/starter     # -> examples/starter/dist/deck.pdf
+uv sync
+make serve                                    # http://127.0.0.1:8000, MCP at /mcp/
 ```
 
-The builder is a single script with no dependencies beyond Python 3.11+, so it also runs with plain `python3`. To build your own deck, point `--dir` at it or run from inside the deck directory:
+The builder itself is a library, `backend/build.py`, with no dependencies beyond Python 3.11+. To build a deck directory by hand:
 
 ```bash
-python3 path/to/openartifact/backend/build.py html --dir path/to/my-deck
-cd path/to/my-deck && python3 path/to/openartifact/backend/build.py pdf
+PYTHONPATH=backend python3 -c 'from pathlib import Path; import build; print(build.build_html(Path("examples/starter")))'
 ```
 
 ## Authoring
@@ -99,40 +98,38 @@ The four built-in themes split on two axes: light vs dark backgrounds, and wheth
 
 The full authoring guide - slide attributes, components, images, code blocks, the CSS variable contract and class hooks - lives at [`skills/openartifact/SKILL.md`](skills/openartifact/SKILL.md). It can be installed into Claude Code, Codex, Cursor, etc. via [skills.sh](https://skills.sh) (`bunx skills add samuelcolvin/openartifact`).
 
-## Commands
+## The builder API
 
-- `uv run backend/build.py html [output] [--dir DIR]` - build to `<output>` (default: `DIR/dist/index.html`). `deck.js` is copied next to it.
-- `uv run backend/build.py pdf [output] [--dir DIR]` - build HTML, then convert to `<output>` via Chrome (default: `DIR/dist/deck.pdf`).
-- `uv run backend/build.py html-to-pdf <input.html> <output.pdf>` - convert an existing HTML file to PDF, no rebuild.
-- `uv run backend/build.py --help`
-
-A subcommand is required - running with no arguments prints help and exits with status 1.
+- `build.build_html(directory, output=None, runtime_url='/openartifact.js')` - build `directory` to `output` (default `directory/dist/index.html`), loading the runtime from `runtime_url`; returns the output path. Input problems, including a referenced image that does not exist, raise `build.BuildError` with the file and line.
+- `pdf.print_to_pdf(url, pdf_path)` - print the served page to PDF with Chrome headless at the slide page size; returns the PDF path.
 
 ## Converting to PDF
 
+With the server running:
+
 ```bash
-uv run backend/build.py pdf
+PYTHONPATH=backend python3 -c 'from pathlib import Path; import pdf; pdf.print_to_pdf("http://127.0.0.1:8000/artifacts/<id>/", Path("deck.pdf"))'
 ```
 
-This builds the HTML, prints the exact Chrome command it's about to run, then runs it. If Chrome isn't found, or the conversion fails, copy the printed command, fix the Chrome path or flags, and run it yourself. The default command looks like:
+If Chrome isn't found, or the conversion fails, the error carries the exact command so you can fix the Chrome path or flags and run it yourself. It looks like:
 
 ```bash
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
   --headless=new --disable-gpu \
   --no-margins --print-to-pdf-no-header \
   --paper-width=11 --paper-height=6.1875 \
-  --print-to-pdf=./dist/deck.pdf "file://$PWD/dist/index.html"
+  --print-to-pdf=./deck.pdf "http://127.0.0.1:8000/artifacts/<id>/"
 ```
 
-(Use `google-chrome` or `chromium` on Linux - the script looks for them automatically.)
+(Use `google-chrome` or `chromium` on Linux - `pdf.find_chrome` looks for them automatically.)
 
 ## Developing OpenArtifact itself
 
-The browser runtime is in `frontend/` (pnpm), the builder is `backend/build.py` (dev tools via uv, configured by the root `pyproject.toml`).
+The browser runtime is in `frontend/` (pnpm); the builder is `backend/build.py` and `backend/pdf.py`, the MCP tools `backend/mcp_server.py` and the HTTP server `backend/server.py` (uv, configured by the root `pyproject.toml`).
 
 ```bash
 pnpm -C frontend install
-pnpm -C frontend build              # bundle frontend/src -> frontend/dist/deck.js
+pnpm -C frontend build              # bundle frontend/src -> frontend/dist/openartifact.js
 pnpm -C frontend typecheck
 pnpm -C frontend lint
 uv run ruff check
@@ -140,4 +137,4 @@ uv run basedpyright
 uv run pytest
 ```
 
-`pnpm -C frontend dev` rebuilds `frontend/dist/deck.js` on every change to `frontend/src/`; rerun `build.py` to pick it up. Headless Chrome (`--dump-dom`, `--screenshot`) is handy for checking the runtime without a browser session.
+`pnpm -C frontend dev` rebuilds `frontend/dist/openartifact.js` on every change to `frontend/src/`; the server serves the new file on the next request. Headless Chrome (`--dump-dom`, `--screenshot`) is handy for checking the runtime without a browser session.

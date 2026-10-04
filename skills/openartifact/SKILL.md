@@ -13,10 +13,10 @@ OpenArtifact is not packaged. Clone the repo and build the browser runtime once 
 
 ```bash
 git clone https://github.com/samuelcolvin/openartifact
-cd openartifact && pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/deck.js
+cd openartifact && pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/openartifact.js
 ```
 
-The builder is the single script `backend/build.py` in that checkout. It needs Python 3.11+ and nothing else, so run it with `python3` from any directory. Below, `CHECKOUT` stands for the path to that checkout.
+The builder is the module `backend/build.py` in that checkout, with PDF printing in `backend/pdf.py`. Both need Python 3.11+ and nothing else. The usual way to use them is through the MCP server (`make serve`, tools `new_artifact`, `run_code`, `build`); by hand, import them with `PYTHONPATH=CHECKOUT/backend`. Below, `CHECKOUT` stands for the path to that checkout.
 
 ## Project layout
 
@@ -31,11 +31,13 @@ my-deck/
 ```
 
 ```bash
-python3 CHECKOUT/backend/build.py html         # build to ./dist/index.html (+ deck.js beside it)
-python3 CHECKOUT/backend/build.py pdf          # build HTML, then ./dist/deck.pdf via Chrome headless
+# build to ./dist/index.html
+PYTHONPATH=CHECKOUT/backend python3 -c 'from pathlib import Path; import build; build.build_html(Path("."))'
+# then a PDF via Chrome headless, from the page the server is serving
+PYTHONPATH=CHECKOUT/backend python3 -c 'from pathlib import Path; import pdf; pdf.print_to_pdf("http://127.0.0.1:8000/artifacts/<id>/", Path("deck.pdf"))'
 ```
 
-`html` and `pdf` accept an optional output-path positional - e.g. `python3 CHECKOUT/backend/build.py pdf my-deck.pdf`. Use `--dir <dir>` to point at a deck directory other than the current one. To convert an existing HTML file to PDF without rebuilding, use `python3 CHECKOUT/backend/build.py html-to-pdf <input.html> <output.pdf>`.
+The page is not self-contained: it loads `openartifact.js` from the server and its images relatively, so view and print it through the server rather than from `file://`. `build_html(directory, output=None, runtime_url='/openartifact.js')` takes an optional output path; `print_to_pdf(url, pdf_path)` prints a served page. Input problems raise `build.BuildError` naming the file and line.
 
 ## `artifact.toml`
 
@@ -53,8 +55,8 @@ theme = "light"
 # Small footer rendered bottom-right of every slide.
 footer = "Confidential - do not share"
 
-# Path to a favicon for the browser tab. .svg / .png / .ico / .jpg.
-# Inlined as a data URI so the deck stays self-contained.
+# Relative path to a favicon for the browser tab. .svg / .png / .ico / .jpg.
+# Served by the server next to the deck's other images.
 favicon = "assets/favicon.svg"
 
 # Path overrides (defaults shown).
@@ -193,7 +195,7 @@ Reference images by path relative to the deck directory, from markdown, from a c
 <img src="assets/logo.svg" alt="Logo" style="width: 96px">
 ```
 
-The build reads each referenced `.png` / `.jpg` / `.gif` / `.svg` / `.webp` and embeds it as a data URI, so the output is self-contained and works from `file://`. A missing file fails the build. Absolute URLs (`https://...`) are left alone and will need network access to display.
+Image paths are relative to the deck directory and stay that way in the page: the server serves the page at `/artifacts/<id>/` and the deck's `.png` / `.jpg` / `.gif` / `.svg` / `.webp` files under it, so the browser fetches them from there. The build checks each referenced file exists and fails if one is missing or points outside the deck. Absolute URLs (`https://...`) are left alone.
 
 ### Code blocks
 
@@ -328,7 +330,7 @@ Markdown inside `.slide-body` renders as plain HTML (`h1`-`h4`, `p`, `ul`, `ol`,
 2. Pick a slightly off-white for `--color-heading` (pure white reads sterile under projector light).
 3. Pick a tinted dark for `--bg-slide` (pure black is harsh).
 4. For light slides, pick a tinted light bg (cream, eggshell, lavender - not pure white) plus a near-black text color → `--bg-light` / `--color-heading-light` / `--color-text-light`.
-5. For custom fonts, self-host woff2 files in `assets/` and declare them with `@font-face` in `styles.css`, then point `--font-body` / `--font-mono` at the family. Font files are not inlined by the build, so keep them next to the output or use `url(data:...)` yourself if the deck must be a single file. Use [Google Webfonts Helper](https://gwfh.mranftl.com/fonts) to download woff2 files.
+5. For custom fonts, self-host woff / woff2 files in `assets/` and declare them with `@font-face` in `styles.css` using relative `url(assets/...)`, then point `--font-body` / `--font-mono` at the family. The server serves font files from the deck directory just like images. Use [Google Webfonts Helper](https://gwfh.mranftl.com/fonts) to download woff2 files.
 
 ```css
 @font-face {
@@ -358,11 +360,11 @@ Markdown inside `.slide-body` renders as plain HTML (`h1`-`h4`, `p`, `ul`, `ol`,
 
 ## Building & PDF
 
-`python3 CHECKOUT/backend/build.py pdf` is the easy path: it builds the HTML, prints the exact Chrome command it's about to run, then runs it. Output lands at `./dist/deck.pdf`.
+Build the HTML with `build.build_html`, serve it, then print it with `pdf.print_to_pdf` (both commands are in "Project layout" above).
 
-If Chrome / Chromium can't be found, copy the printed command and run it yourself with the right binary path. On Linux the script auto-detects `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser`.
+If Chrome / Chromium can't be found, or it exits with an error, the `BuildError` message carries the exact command: copy it and run it yourself with the right binary path. On Linux `pdf.find_chrome` auto-detects `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser`.
 
-Paper size in the printed command matches the slide dimensions (11in × 6.1875in = 16:9). If you override `--slide-width` / `--slide-height` in `styles.css`, edit the `--paper-*` flags to match before running.
+Paper size in that command matches the slide dimensions (11in × 6.1875in = 16:9). If you override `--slide-width` / `--slide-height` in `styles.css`, edit the `--paper-*` flags to match before running.
 
 To spot-check the PDF (requires `pdftoppm` from poppler):
 

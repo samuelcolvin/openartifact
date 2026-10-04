@@ -8,51 +8,35 @@ A deck directory looks like:
     components/     HTML or SVG files pulled in with <component src="Name.html"></component>
     assets/         images referenced from the markdown, components or styles
 
-Nothing is rendered here. The markdown source, every referenced component, the user's
-styles and every referenced image (as a data URI) are written into the page as one JSON
-blob, and `deck.js` (the browser runtime, built from frontend/src with `pnpm build`) renders the
-deck when the page loads. The output is `dist/index.html` plus a copy of `deck.js`, which
-works from `file://` and prints to PDF with Chrome headless.
+Nothing is rendered here. The markdown source, every referenced component and the user's
+styles are written into the page as one JSON blob, and `openartifact.js` (the browser runtime, built
+from frontend/src with `pnpm build`) renders the deck when the page loads. The output is
+`dist/index.html`. It is not self-contained: it links `openartifact.js` by URL (`/openartifact.js` by default)
+and leaves image references relative, so it is meant to be served by `server.py`, which
+hosts the runtime and the artifact's images. Referenced images are checked to exist so a
+build fails early; `pdf.py` prints the served page.
 
-This is a single script with no dependencies beyond the standard library (Python 3.11+):
-
-    uv run backend/build.py html [output] [--dir DIR]
-    uv run backend/build.py pdf [output] [--dir DIR]
-    uv run backend/build.py html-to-pdf input.html output.pdf
+This module is used programmatically, by `mcp_server.py` and the tests; `build_html(directory)` is the entry
+point. It has no dependencies beyond the standard library (Python 3.11+).
 """
 
 from __future__ import annotations
 
-import argparse
-import base64
 import html
 import json
-import mimetypes
-import os
 import posixpath
 import re
-import shutil
-import subprocess
-import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-HERE = Path(__file__).resolve().parent
-# The repo checkout: backend/build.py -> repo root. deck.js is not packaged, so it is read from the frontend build
-# output.
-ROOT = HERE.parent
-FRONTEND_DIR = ROOT / 'frontend'
-DECK_JS_PATH = FRONTEND_DIR / 'dist' / 'deck.js'
+# Where the page loads the runtime from; `server.py` serves it there.
+DEFAULT_RUNTIME_URL = '/openartifact.js'
 
 THEMES = 'light', 'dark', 'markdown-light', 'markdown-dark'
 IMAGE_EXTS = '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'
 FAVICON_EXTS = '.svg', '.png', '.ico', '.jpg', '.jpeg'
-
-# Slide page size in inches, matching the @page rule in frontend/src/styles/base.css (16:9).
-PAPER_WIDTH_IN = 11
-PAPER_HEIGHT_IN = 6.1875
 
 
 class BuildError(Exception):
@@ -75,7 +59,8 @@ class Config:
     title: str | None = None
     theme: str = 'light'
     footer: str | None = None
-    favicon_path: Path | None = None
+    # Relative to `cwd`, as written in artifact.toml; the page links it relatively, so the server resolves it.
+    favicon: str | None = None
     tabs: list[dict[str, str]] = field(default_factory=list)
 
     def to_json(self) -> dict[str, object]:
@@ -132,9 +117,10 @@ def load_config(cwd: Path) -> Config:
             raise BuildError(f'artifact.toml: every `tabs` entry needs string `id` and `label`, got {tab!r}')
         tabs.append({'id': tab_id, 'label': label})
 
-    favicon_path: Path | None = None
-    favicon = optional_str('favicon')
+    favicon = optional_str('favicon') or None
     if favicon:
+        if is_external(favicon):
+            raise BuildError(f'artifact.toml: `favicon` must be a relative path inside the deck, got {favicon!r}')
         favicon_path = cwd / favicon
         if not favicon_path.is_file():
             raise BuildError(f'favicon not found: {favicon_path}')
@@ -151,7 +137,7 @@ def load_config(cwd: Path) -> Config:
         title=optional_str('title'),
         theme=theme,
         footer=optional_str('footer'),
-        favicon_path=favicon_path,
+        favicon=favicon,
         tabs=tabs,
     )
 
@@ -268,9 +254,13 @@ def is_external(path: str) -> bool:
     return path.startswith('/') or re.match(r'^[a-z][a-z0-9+.-]*:', path, re.IGNORECASE) is not None
 
 
-def collect_images(texts: list[str], base: Path) -> dict[str, str]:
-    """Find relative image references in `texts` and read them as data URIs, keyed by normalised path."""
-    images: dict[str, str] = {}
+def check_images(texts: list[str], base: Path) -> list[str]:
+    """Find relative image references in `texts` and check each file exists; returns the normalised paths, sorted.
+
+    Nothing is embedded: the browser fetches the images from the server relative to the page URL. The check only
+    makes a typo fail the build instead of showing a broken image.
+    """
+    found: list[str] = []
     for text in texts:
         # A <component src="X.svg"> is a component reference, not an image.
         text = COMPONENT_RE.sub('', text)
@@ -280,29 +270,22 @@ def collect_images(texts: list[str], base: Path) -> dict[str, str]:
                 if is_external(raw) or not raw.lower().endswith(IMAGE_EXTS):
                     continue
                 key = posixpath.normpath(raw)
-                if key in images:
+                if key in found:
                     continue
-                file = base / key
-                if not file.is_file():
-                    raise BuildError(f'image not found: {file} (referenced as {raw!r})')
-                images[key] = data_uri(file)
-    return images
-
-
-def data_uri(path: Path) -> str:
-    """Base64 data URI for a file, with the MIME type guessed from its extension."""
-    mime, _ = mimetypes.guess_type(path.name)
-    if mime is None:
-        raise BuildError(f'cannot determine MIME type of {path}')
-    return f'data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}'
+                if key.startswith('..'):
+                    raise BuildError(f'image {raw!r} escapes the deck directory')
+                if not (base / key).is_file():
+                    raise BuildError(f'image not found: {base / key} (referenced as {raw!r})')
+                found.append(key)
+    return sorted(found)
 
 
 # ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
 
-# The whole output page. `{title}`, `{favicon}` and `{blob}` are replaced with plain string substitution (not
-# `str.format`, so braces in the substituted values are safe).
+# The whole output page. `{title}`, `{favicon}`, `{blob}` and `{runtime}` are replaced with plain string substitution
+# (not `str.format`, so braces in the substituted values are safe).
 TEMPLATE = """\
 <!doctype html>
 <html lang="en">
@@ -314,7 +297,7 @@ TEMPLATE = """\
 <body>
 <div id="root"></div>
 <script type="application/json" id="deck-data">{blob}</script>
-<script src="deck.js"></script>
+<script src="{runtime}"></script>
 </body>
 </html>
 """
@@ -326,146 +309,40 @@ def build_deck_data(cfg: Config) -> dict[str, object]:
     validate_slides(markdown, cfg.markdown_path)
     components = collect_components(markdown, cfg.components_dir)
     styles = cfg.styles_path.read_text(encoding='utf-8') if cfg.styles_path.is_file() else ''
-    images = collect_images([markdown, *components.values(), styles], cfg.cwd)
+    check_images([markdown, *components.values(), styles], cfg.cwd)
     return {
         'config': cfg.to_json(),
         'markdown': markdown,
         'components': components,
         'styles': styles,
-        'images': images,
     }
 
 
-def render_page(title: str, favicon: Path | None, data: dict[str, object]) -> str:
-    """Fill TEMPLATE with the title, favicon link and JSON blob."""
+def render_page(title: str, favicon: str | None, data: dict[str, object], runtime_url: str) -> str:
+    """Fill TEMPLATE with the title, favicon link, JSON blob and the URL of the runtime."""
     # `<` is escaped to the JSON sequence `\u003c`, which is still valid JSON. That defeats `</script>` and the
     # `<!--` sequence, which would otherwise put the HTML tokenizer into a state where the real
     # closing tag is ignored. Component HTML can contain both.
     blob = json.dumps(data, ensure_ascii=False, indent=2).replace('<', '\\u003c')
-    favicon_tag = ''
-    if favicon is not None:
-        favicon_tag = f'\n<link rel="icon" href="{data_uri(favicon)}">'
-    return TEMPLATE.replace('{title}', html.escape(title)).replace('{favicon}', favicon_tag).replace('{blob}', blob)
+    favicon_tag = f'\n<link rel="icon" href="{html.escape(favicon, quote=True)}">' if favicon else ''
+    return (
+        TEMPLATE.replace('{title}', html.escape(title))
+        .replace('{favicon}', favicon_tag)
+        .replace('{blob}', blob)
+        .replace('{runtime}', html.escape(runtime_url, quote=True))
+    )
 
 
-def build_html(cwd: Path, output: Path | None = None, deck_js: Path = DECK_JS_PATH) -> Path:
-    """Build `cwd` into a single HTML file (default `cwd/dist/index.html`) plus `deck.js` beside it."""
+def build_html(cwd: Path, output: Path | None = None, runtime_url: str = DEFAULT_RUNTIME_URL) -> Path:
+    """Build `cwd` into one HTML file (default `cwd/dist/index.html`) that loads the runtime from `runtime_url`.
+
+    The page must be served with the deck's images reachable relative to it; `server.py` does that at
+    `/artifacts/<id>/`. Returns the path written.
+    """
     cfg = load_config(cwd)
     data = build_deck_data(cfg)
-    page = render_page(cfg.title or cfg.markdown_path.stem, cfg.favicon_path, data)
-
-    if not deck_js.is_file():
-        raise BuildError(f'{deck_js} is missing: run `pnpm build` in {FRONTEND_DIR} to create it')
+    page = render_page(cfg.title or cfg.markdown_path.stem, cfg.favicon, data, runtime_url)
     out = (output or cwd / 'dist' / 'index.html').resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page, encoding='utf-8')
-    shutil.copyfile(deck_js, out.parent / 'deck.js')
-    print(f'wrote {relative(out)} ({len(page.encode()):,} bytes) and deck.js')
     return out
-
-
-# ---------------------------------------------------------------------------
-# PDF
-# ---------------------------------------------------------------------------
-
-
-def find_chrome() -> str | None:
-    """Locate a Chrome or Chromium executable: the macOS app bundle, then names on PATH."""
-    mac_path = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-    if sys.platform == 'darwin' and os.path.exists(mac_path):
-        return mac_path
-    for name in ('google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'):
-        found = shutil.which(name)
-        if found:
-            return found
-
-
-def html_to_pdf(html_path: Path, pdf_path: Path) -> None:
-    """Print an HTML file to PDF with Chrome headless at openartifact's slide page size.
-
-    The exact command is printed first so it can be copied and edited if Chrome is not found
-    or the conversion fails.
-    """
-    html_path = html_path.resolve()
-    pdf_path = pdf_path.resolve()
-    if not html_path.is_file():
-        raise BuildError(f'HTML input not found: {html_path}')
-    chrome = find_chrome()
-    args = [
-        '--headless=new',
-        '--disable-gpu',
-        '--no-margins',
-        '--print-to-pdf-no-header',
-        f'--paper-width={PAPER_WIDTH_IN}',
-        f'--paper-height={PAPER_HEIGHT_IN}',
-        f'--print-to-pdf={pdf_path}',
-        html_path.as_uri(),
-    ]
-    printable = ' '.join(shell_quote(a) for a in (chrome or 'google-chrome', *args))
-    print(f'running Chrome to convert HTML to PDF:\n  {printable}\n')
-    if chrome is None:
-        raise BuildError('Chrome / Chromium not found on PATH or in /Applications; run the command above yourself')
-    result = subprocess.run([chrome, *args], check=False)
-    if result.returncode != 0:
-        raise BuildError(f'Chrome exited with code {result.returncode}')
-    print(f'wrote {relative(pdf_path)}')
-
-
-def shell_quote(s: str) -> str:
-    """Quote one argument for display (POSIX style)."""
-    if re.fullmatch(r'[A-Za-z0-9_\-./:=@%+,]+', s):
-        return s
-    return "'" + s.replace("'", "'\\''") + "'"
-
-
-def relative(path: Path) -> str:
-    """Path relative to the cwd when possible, for friendlier messages."""
-    try:
-        return str(path.relative_to(Path.cwd()))
-    except ValueError:
-        return str(path)
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = parser.add_subparsers(dest='command')
-
-    p_html = sub.add_parser('html', help='build the deck to a single HTML file (default: DIR/dist/index.html)')
-    p_html.add_argument('output', nargs='?', type=Path)
-    p_html.add_argument('--dir', type=Path, default=Path('.'), help='deck directory (default: current directory)')
-
-    p_pdf = sub.add_parser(
-        'pdf', help='build HTML, then convert to PDF via Chrome headless (default: DIR/dist/deck.pdf)'
-    )
-    p_pdf.add_argument('output', nargs='?', type=Path)
-    p_pdf.add_argument('--dir', type=Path, default=Path('.'), help='deck directory (default: current directory)')
-
-    p_h2p = sub.add_parser('html-to-pdf', help='convert an existing HTML file to PDF without rebuilding')
-    p_h2p.add_argument('input', type=Path)
-    p_h2p.add_argument('output', type=Path)
-
-    args = parser.parse_args(argv)
-    if args.command is None:
-        parser.print_help()
-        return 1
-    try:
-        if args.command == 'html':
-            build_html(args.dir, args.output)
-        elif args.command == 'pdf':
-            html_path = build_html(args.dir)
-            html_to_pdf(html_path, args.output or html_path.parent / 'deck.pdf')
-        else:
-            html_to_pdf(args.input, args.output)
-    except BuildError as exc:
-        print(f'error: {exc}', file=sys.stderr)
-        return 1
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

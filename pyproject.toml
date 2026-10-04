@@ -14,8 +14,8 @@ dependencies = [
     "uvicorn>=0.54.0",
 ]
 
-# Not a package: the builder is the single script backend/build.py and the server is backend/server.py, both run with
-# `uv run backend/<name>.py`. The dependencies above are for the server only; build.py needs none.
+# Not a package: backend/ is a handful of modules imported by path (pytest and pyright add it to the path), with
+# backend/server.py the only entry point. The dependencies above are for the server only; build.py and pdf.py need none.
 [tool.uv]
 package = false
 

@@ -94,7 +94,7 @@ def test_component_extension_is_checked(tmp_path: Path):
 
 
 def test_svg_component_reference_is_not_an_image(tmp_path: Path):
-    assert build.collect_images(['<component src="Arrow.svg"></component>'], tmp_path) == {}
+    assert build.check_images(['<component src="Arrow.svg"></component>'], tmp_path) == []
 
 
 def test_collect_components_rejects_escape(tmp_path: Path):
@@ -115,22 +115,25 @@ def test_collect_components_missing(tmp_path: Path):
 # --- images ----------------------------------------------------------------
 
 
-def test_collect_images_normalises_paths_and_skips_external(tmp_path: Path):
+def test_check_images_normalises_paths_and_skips_external(tmp_path: Path):
     write(tmp_path / 'assets' / 'a.png', 'png')
     write(tmp_path / 'assets' / 'b.svg', '<svg/>')
     texts = [
         '![alt](./assets/a.png) and <img src="assets//b.svg">',
         'background: url("assets/../assets/a.png"); <img src="https://x/y.png"> <img src="/abs.png">',
     ]
-    images = build.collect_images(texts, tmp_path)
-    assert set(images) == {'assets/a.png', 'assets/b.svg'}
-    assert images['assets/a.png'].startswith('data:image/png;base64,')
-    assert images['assets/b.svg'].startswith('data:image/svg+xml;base64,')
+    assert build.check_images(texts, tmp_path) == ['assets/a.png', 'assets/b.svg']
 
 
-def test_collect_images_missing_file(tmp_path: Path):
+def test_check_images_missing_file(tmp_path: Path):
     with pytest.raises(BuildError, match='image not found'):
-        build.collect_images(['![x](assets/missing.png)'], tmp_path)
+        build.check_images(['![x](assets/missing.png)'], tmp_path)
+
+
+def test_check_images_rejects_escape(tmp_path: Path):
+    write(tmp_path.parent / 'outside.png', 'png')
+    with pytest.raises(BuildError, match='escapes the deck directory'):
+        build.check_images(['![x](../outside.png)'], tmp_path)
 
 
 # --- page ------------------------------------------------------------------
@@ -145,32 +148,55 @@ def blob_of(page: str) -> str:
 
 def test_render_page_escapes_script_breakers():
     data: dict[str, object] = {'markdown': '</script><!--<script>', 'components': {}}
-    page = build.render_page('T & T', None, data)
+    page = build.render_page('T & T', None, data, '/openartifact.js')
     blob = blob_of(page)
     assert '<' not in blob
     assert json.loads(blob) == data
     assert '<title>T &amp; T</title>' in page
+    assert '<script src="/openartifact.js"></script>' in page
+    assert '<link rel="icon"' not in page
+
+
+def test_render_page_links_favicon_and_runtime_relatively():
+    page = build.render_page('T', 'assets/fav.svg', {}, 'https://cdn.example/openartifact.js?v="1"')
+    assert '<link rel="icon" href="assets/fav.svg">' in page
+    assert '<script src="https://cdn.example/openartifact.js?v=&quot;1&quot;"></script>' in page
 
 
 # --- end to end ------------------------------------------------------------
 
 
 def test_build_starter_example(tmp_path: Path):
-    deck_js = write(tmp_path / 'deck.js', '// stub')
-    out = build.build_html(ROOT / 'examples' / 'starter', tmp_path / 'out' / 'index.html', deck_js=deck_js)
+    out = build.build_html(ROOT / 'examples' / 'starter', tmp_path / 'out' / 'index.html')
     assert out.is_file()
-    assert (tmp_path / 'out' / 'deck.js').read_text() == '// stub'
+    assert sorted(p.name for p in out.parent.iterdir()) == ['index.html']
     page = out.read_text(encoding='utf-8')
+    assert '<script src="/openartifact.js"></script>' in page
     blob = json.loads(blob_of(page))
+    assert set(blob) == {'config', 'markdown', 'components', 'styles'}
     assert blob['config']['theme'] == 'markdown-dark'
     assert 'Hero.html' in blob['components'] and 'Callout.html' in blob['components']
-    assert 'assets/logo.svg' in blob['images']
+    assert 'data:' not in page
     assert '<slide' in blob['markdown']
 
 
-def test_build_reports_missing_deck_js(tmp_path: Path):
-    with pytest.raises(BuildError, match='pnpm build'):
-        build.build_html(ROOT / 'examples' / 'starter', tmp_path / 'index.html', deck_js=tmp_path / 'nope.js')
+def test_build_uses_given_runtime_url(tmp_path: Path):
+    write(tmp_path / 'deck.md', '<slide/>\n# hi\n')
+    page = build.build_html(tmp_path, runtime_url='/static/openartifact.js').read_text()
+    assert '<script src="/static/openartifact.js"></script>' in page
+
+
+def test_load_config_favicon(tmp_path: Path):
+    write(tmp_path / 'deck.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'assets' / 'fav.svg', '<svg/>')
+    write(tmp_path / 'artifact.toml', 'favicon = "assets/fav.svg"\n')
+    assert build.load_config(tmp_path).favicon == 'assets/fav.svg'
+    write(tmp_path / 'artifact.toml', 'favicon = "https://x/fav.svg"\n')
+    with pytest.raises(BuildError, match='must be a relative path'):
+        build.load_config(tmp_path)
+    write(tmp_path / 'artifact.toml', 'favicon = "assets/missing.svg"\n')
+    with pytest.raises(BuildError, match='favicon not found'):
+        build.load_config(tmp_path)
 
 
 def test_load_config_rejects_bad_theme(tmp_path: Path):

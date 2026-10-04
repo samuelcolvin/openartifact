@@ -46,35 +46,67 @@ def build_starter(artifacts_root: Path) -> None:
 
 
 def test_index_lists_built_artifacts(client: TestClient, artifacts_root: Path):
-    assert client.get('/').json() == {'mcp': '/mcp/', 'deck_js': '/deck.js', 'artifacts': {}}
+    assert client.get('/').json() == {'mcp': '/mcp/', 'runtime': '/openartifact.js', 'artifacts': {}}
     build_starter(artifacts_root)
     assert client.get('/').json()['artifacts'] == {'starter': 'http://127.0.0.1:8000/artifacts/starter/'}
 
 
-def test_deck_js(client: TestClient):
-    response = client.get('/deck.js')
+def test_runtime_js(client: TestClient):
+    response = client.get('/openartifact.js')
     assert response.status_code == 200
     assert response.headers['content-type'].startswith('text/javascript')
-    assert response.content == server.build.DECK_JS_PATH.read_bytes()
+    assert response.content == server.RUNTIME_JS_PATH.read_bytes()
 
 
 def test_artifact_not_built(client: TestClient, artifacts_root: Path):
     assert client.get('/artifacts/starter/').status_code == 404
-    assert client.get('/artifacts/starter/deck.js').status_code == 404
+    assert client.get('/artifacts/starter/assets/logo.svg').status_code == 404
 
 
-def test_artifact_served_from_dist_only(client: TestClient, artifacts_root: Path):
+def test_artifact_page_links_the_hosted_runtime(client: TestClient, artifacts_root: Path):
     build_starter(artifacts_root)
     page = client.get('/artifacts/starter/')
     assert page.status_code == 200
     assert page.headers['content-type'].startswith('text/html')
-    assert '<script src="deck.js">' in page.text
-    assert client.get('/artifacts/starter/deck.js').status_code == 200
-    # The source files and anything outside dist/ stay private.
-    assert client.get('/artifacts/starter/deck.md').status_code == 404
+    assert '<script src="/openartifact.js"></script>' in page.text
+    assert 'data:' not in page.text
+    # Nothing is copied next to the page any more.
+    assert client.get('/artifacts/starter/dist/openartifact.js').status_code == 404
+
+
+def test_artifact_images_are_served(client: TestClient, artifacts_root: Path):
+    build_starter(artifacts_root)
+    logo = client.get('/artifacts/starter/assets/logo.svg')
+    assert logo.status_code == 200
+    assert logo.headers['content-type'].startswith('image/svg+xml')
+    assert logo.content == (artifacts_root / 'starter' / 'assets' / 'logo.svg').read_bytes()
+    # Fonts declared in styles.css are served too.
+    (artifacts_root / 'starter' / 'assets' / 'body.woff2').write_bytes(b'wOF2')
+    assert client.get('/artifacts/starter/assets/body.woff2').status_code == 200
+
+
+def test_artifact_sources_stay_private(client: TestClient, artifacts_root: Path):
+    build_starter(artifacts_root)
+    for path in ('deck.md', 'artifact.toml', 'styles.css', 'components/Hero.html', 'dist/index.html'):
+        assert client.get(f'/artifacts/starter/{path}').status_code == 404, path
     assert client.get('/artifacts/starter/..').status_code == 404
-    assert client.get('/artifacts/starter/%2e%2e/deck.md').status_code == 404
     assert client.get('/artifacts/Bad%20Name/').status_code == 404
+    # `..` that leaves the artifact directory is refused, even when the target is another artifact's image. The
+    # segments are percent-encoded because the HTTP client collapses a literal `..` before sending.
+    (artifacts_root / 'other' / 'assets').mkdir(parents=True)
+    (artifacts_root / 'other' / 'assets' / 'x.png').write_bytes(b'png')
+    assert client.get('/artifacts/starter/%2e%2e/other/assets/x.png').status_code == 404
+    assert client.get('/artifacts/starter/assets/%2e%2e/%2e%2e/other/assets/x.png').status_code == 404
+    # ...while `..` that stays inside it is just a path to the same file.
+    assert client.get('/artifacts/starter/assets/../assets/logo.svg').status_code == 200
+
+
+def test_artifact_media_cannot_escape_via_symlink(client: TestClient, artifacts_root: Path, tmp_path: Path):
+    build_starter(artifacts_root)
+    outside = tmp_path / 'outside.png'
+    outside.write_bytes(b'png')
+    (artifacts_root / 'starter' / 'assets' / 'link.png').symlink_to(outside)
+    assert client.get('/artifacts/starter/assets/link.png').status_code == 404
 
 
 def test_artifact_redirects_to_trailing_slash(client: TestClient, artifacts_root: Path):

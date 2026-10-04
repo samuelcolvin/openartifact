@@ -36,6 +36,4 @@ export interface DeckData {
   components: Record<string, string>
   /** The user's `styles.css` (or an empty string). */
   styles: string
-  /** Normalised relative image path -> `data:` URI. */
-  images: Record<string, string>
 }

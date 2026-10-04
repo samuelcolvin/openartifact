@@ -1,11 +1,11 @@
 /**
- * Post-processing of a rendered slide body:
+ * Post-processing of a rendered slide body: `<component src="Name.html"></component>` is
+ * replaced by the contents of that file (from the `components` map build.py embedded).
+ * Components may contain components, so the substitution loops; a depth cap guards against
+ * cycles the build missed.
  *
- *  - `<component src="Name.html"></component>` is replaced by the contents of that file
- *    (from the `components` map build.py embedded). Components may contain components,
- *    so the substitution loops; a depth cap guards against cycles the build missed.
- *  - `<img src="relative/path">` whose path is in the `images` map is rewritten to the
- *    embedded data URI so the page works from `file://` with no fetches.
+ * Images need no processing: the page is served from `/artifacts/<id>/`, so relative
+ * `src` and CSS `url()` references resolve to the server, which serves the artifact's files.
  */
 
 const MAX_COMPONENT_DEPTH = 32
@@ -41,32 +41,4 @@ export function expandComponents(root: ParentNode, components: Record<string, st
     }
   }
   console.warn(`openartifact: component nesting deeper than ${MAX_COMPONENT_DEPTH}, giving up`)
-}
-
-/**
- * Normalise a relative path the same way `posixpath.normpath` does in build.py, so
- * `./assets/x.png`, `assets//x.png` and `assets/../assets/x.png` all hit the same key.
- */
-export function normalizePath(path: string): string {
-  const out: string[] = []
-  for (const part of path.split('/')) {
-    if (part === '' || part === '.') continue
-    if (part === '..' && out.length > 0 && out[out.length - 1] !== '..') out.pop()
-    else out.push(part)
-  }
-  return out.join('/') || '.'
-}
-
-/** True for `http://`, `data:`, `/absolute` and similar: paths build.py never inlines. */
-function isExternal(src: string): boolean {
-  return src.startsWith('/') || /^[a-z][a-z0-9+.-]*:/i.test(src)
-}
-
-export function inlineImages(root: ParentNode, images: Record<string, string>): void {
-  for (const img of root.querySelectorAll<HTMLImageElement>('img[src]')) {
-    const src = img.getAttribute('src') ?? ''
-    if (isExternal(src)) continue
-    const data = images[normalizePath(src)]
-    if (data !== undefined) img.setAttribute('src', data)
-  }
 }

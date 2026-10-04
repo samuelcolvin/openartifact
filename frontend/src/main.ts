@@ -1,13 +1,13 @@
 /**
- * Browser entry point. Bundled by esbuild into `dist/deck.js`, which build.py places next
- * to the generated `index.html` and the page loads with a classic `<script src="deck.js">`.
+ * Browser entry point. Bundled by esbuild into `dist/openartifact.js`, which server.py serves at
+ * `/openartifact.js` and every generated `index.html` loads with a classic `<script src>`.
  *
  * Everything below runs synchronously while the script executes at the end of <body>:
  * no DOMContentLoaded handler, no requestAnimationFrame, no dynamic imports. That keeps the
  * DOM complete before `load`, which is when headless Chrome prints to PDF.
  */
 
-import { expandComponents, inlineImages } from './components.ts'
+import { expandComponents } from './components.ts'
 import { initDeck } from './deck.ts'
 import hljsCss from './hljs.css'
 import { renderMarkdown } from './render.ts'
@@ -66,7 +66,6 @@ function main(): void {
   for (const raw of slides) {
     const section = buildSlide(raw, renderMarkdown(raw.body), config)
     expandComponents(section, data.components)
-    inlineImages(section, data.images)
     deck.append(section)
   }
   presenter.append(deck)

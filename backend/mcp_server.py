@@ -80,7 +80,7 @@ def base_url() -> str:
 
 
 def artifact_url(name: str, file: str = '') -> str:
-    """Where `server.py` serves a built artifact's page, or one of the other files in its `dist/`."""
+    """Where `server.py` serves a built artifact's page, or a file (such as an image) from its directory."""
     return f'{base_url()}/artifacts/{name}/{file}'
 
 
@@ -204,7 +204,7 @@ async def build_artifact(artifact: str) -> str:
         html_path = await asyncio.to_thread(build.build_html, directory)
     except build.BuildError as exc:
         raise ToolError(f'error: {exc}') from exc
-    return f'wrote {html_path} ({html_path.stat().st_size:,} bytes) and deck.js\npage: {artifact_url(artifact)}\n'
+    return f'wrote {html_path} ({html_path.stat().st_size:,} bytes)\npage: {artifact_url(artifact)}\n'
 
 
 mcp.tool(new_artifact)

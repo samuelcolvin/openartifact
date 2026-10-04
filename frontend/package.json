@@ -13,8 +13,8 @@
   },
   "packageManager": "pnpm@10.22.0",
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --format=iife --target=es2022 --loader:.css=text --minify --outfile=dist/deck.js",
-    "dev": "esbuild src/main.ts --bundle --format=iife --target=es2022 --loader:.css=text --outfile=dist/deck.js --watch",
+    "build": "esbuild src/main.ts --bundle --format=iife --target=es2022 --loader:.css=text --minify --outfile=dist/openartifact.js",
+    "dev": "esbuild src/main.ts --bundle --format=iife --target=es2022 --loader:.css=text --outfile=dist/openartifact.js --watch",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome check --fix ."
