@@ -1,0 +1,22 @@
+backend/mcp_server.py
+  s_43f07e2c10821d::t_1992853a235684 5-6,31,69,153-156
+  s_43f07e2c10821d::t_94e32973fb53d2 7,65-66
+CLAUDE.md
+  s_43f07e2c10821d::t_94e32973fb53d2 139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c37f489598eb18be9ff7655b172e09fed518c16e",
+  "prompts": {},
+  "sessions": {
+    "s_43f07e2c10821d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fb6f58d9-2e73-4053-b834-d4f0f433543c",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
