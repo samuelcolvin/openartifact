@@ -238,7 +238,7 @@ async def test_skill_is_served(me: auth.Principal):
         resources = {str(r.uri): r for r in await client.list_resources()}
         assert mcp_server.SKILL_URI in resources
         description = resources[mcp_server.SKILL_URI].description
-        assert description is not None and description.startswith('Create a deck with OpenArtifact.')
+        assert description is not None and description.startswith('Create a deck, document or page with OpenArtifact.')
         [content] = await client.read_resource(mcp_server.SKILL_URI)
         assert getattr(content, 'text', None) == skill_file.read_text(encoding='utf-8')
         # Supporting files are reachable through the template, and the manifest lists them.
