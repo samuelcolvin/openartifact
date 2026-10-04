@@ -19,8 +19,8 @@ __pycache__/
 # brand-specific example kept out of the repo
 /examples/pennylane/
 
-# artifacts written by the MCP server
-/artifacts/
+# local object store and checkout cache written by the server
+/data/
 
 # local MCP client walkthrough
 /mcp_demo.py
