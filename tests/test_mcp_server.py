@@ -229,6 +229,23 @@ async def test_tools_require_a_caller(db_pool: db.Pool, storage: object):
 # --- MCP wiring ------------------------------------------------------------
 
 
+async def test_skill_is_served(me: auth.Principal):
+    skill_file = ROOT / 'skills' / 'openartifact' / 'SKILL.md'
+    async with Client(mcp_server.mcp) as client:
+        resources = {str(r.uri): r for r in await client.list_resources()}
+        assert mcp_server.SKILL_URI in resources
+        description = resources[mcp_server.SKILL_URI].description
+        assert description is not None and description.startswith('Create a deck with OpenArtifact.')
+        [content] = await client.read_resource(mcp_server.SKILL_URI)
+        assert getattr(content, 'text', None) == skill_file.read_text(encoding='utf-8')
+        # Supporting files are reachable through the template, and the manifest lists them.
+        templates = [t.uri_template for t in await client.list_resource_templates()]
+        assert 'skill://openartifact/{path*}' in templates
+        [manifest] = await client.read_resource('skill://openartifact/_manifest')
+        assert '"skill": "openartifact"' in getattr(manifest, 'text', '')
+    assert mcp_server.mcp.instructions is not None and mcp_server.SKILL_URI in mcp_server.mcp.instructions
+
+
 async def test_tools_over_mcp(me: auth.Principal, pool: None):
     async with Client(mcp_server.mcp) as client:
         tools = {tool.name for tool in await client.list_tools()}

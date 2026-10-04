@@ -136,7 +136,7 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 
 **MCP server (`backend/mcp_server.py`)**
 
-- `FastMCP` server named `openartifact`, mounted into `server.py` (it has no entry point of its own). The tool functions `new_artifact`, `run_code`, `build_artifact` (registered as `build`) and `list_artifacts` are plain coroutines so tests call them directly under `auth.as_principal`. Nothing in them blocks the event loop: the sandbox is `AsyncMonty` and the builder runs via `asyncio.to_thread`.
+- `FastMCP` server named `openartifact`, mounted into `server.py` (it has no entry point of its own). It also serves `skills/openartifact/` as an agent skill through FastMCP's `SkillProvider` (`SKILL_DIR`): the resource `skill://openartifact/SKILL.md` (`SKILL_URI`), a `_manifest` and a file template; the server instructions tell agents to read it. The Docker image copies `skills/` for this reason. The tool functions `new_artifact`, `run_code`, `build_artifact` (registered as `build`) and `list_artifacts` are plain coroutines so tests call them directly under `auth.as_principal`. Nothing in them blocks the event loop: the sandbox is `AsyncMonty` and the builder runs via `asyncio.to_thread`.
 - The `AsyncMonty` worker pool is opened by the `monty_pool()` async context manager and lives for the app's lifespan. It is bound to the loop that opened it, so never create pools lazily or at import time. Tests use a `pool` fixture.
 - `new_artifact(title, content, type, theme, footer)` is the only way an artifact is created: inside one `edit()` it writes `artifact.toml` (`render_toml`, JSON string escaping is valid TOML) and `main.md` under `artifacts/<uuid4>/` and inserts the row; then it builds. A build failure is returned as the `ToolError` but the artifact exists and is listed, for `run_code` to fix. `type` and `theme` are Literals kept equal to `build.TYPES` / `build.THEMES` by a test. Tabs are not a parameter; the agent edits `artifact.toml` for those.
 - `run_code(artifact, code, inputs)` resolves the UUID within the caller's workspace (`resolve`; another workspace's artifact is reported as missing), mounts the directory read-write at `/artifact` inside an `edit()`, and commits even when the sandbox raised (message `run_code (failed): <id>`) before re-raising, so partial writes persist. Printed output and the trailing expression value are returned.
@@ -153,7 +153,7 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 
 **Supporting files**
 
-- `skills/openartifact/SKILL.md` - the user-facing authoring guide. Update it whenever slide syntax, config keys or the CSS contract change.
+- `skills/openartifact/SKILL.md` - the user-facing authoring guide, also served to agents as the MCP skill. Update it whenever slide syntax, config keys or the CSS contract change.
 - `examples/starter/` - smoke-test deck exercising every feature (components, nesting, image, tabs, light slide, code). `examples/document/` and `examples/page/` are the same for the other two types.
 - `tests/test_build.py` - pytest for `backend/build.py` (imported as `build`; pytest adds `backend/` to `pythonpath`).
 - `tests/test_pdf.py` - pytest for `backend/pdf.py`; Chrome is stubbed, the command assembly and error paths are checked.

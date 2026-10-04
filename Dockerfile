@@ -42,6 +42,7 @@ WORKDIR /app
 COPY --from=deps /app/.venv ./.venv
 COPY --from=frontend /build/dist ./frontend/dist
 COPY backend ./backend
+COPY skills ./skills
 USER app
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \

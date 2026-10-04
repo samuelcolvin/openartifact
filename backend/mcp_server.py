@@ -13,6 +13,9 @@ Tools:
 - `build` validates the files and writes `dist/index.html`, which `server.py` serves.
 - `list_artifacts` lists the caller's artifacts.
 
+The authoring guide `skills/openartifact/SKILL.md` is served as an agent skill through FastMCP's `SkillProvider`:
+the resource `skill://openartifact/SKILL.md`, a `_manifest` listing the skill's files and a template for the rest.
+
 The tools are coroutines: the sandbox is `AsyncMonty`, whose worker I/O stays off the event loop, and the
 builder's file work runs in a thread. `server.py` opens the pools in its lifespan and serves the output.
 """
@@ -26,9 +29,10 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Literal, get_args
 
-from config import base_url
+from config import ROOT, base_url
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.server.providers.skills import SkillProvider
 from pydantic_monty import (
     AsyncMonty,
     CollectStreams,
@@ -52,6 +56,9 @@ ArtifactType = Literal['deck', 'document', 'page']
 TYPES: tuple[str, ...] = get_args(ArtifactType)
 Theme = Literal['light', 'dark', 'markdown-light', 'markdown-dark']
 THEMES: tuple[str, ...] = get_args(Theme)
+# The authoring guide, exposed as an MCP skill; its directory name is the skill name.
+SKILL_DIR = ROOT / 'skills' / 'openartifact'
+SKILL_URI = f'skill://{SKILL_DIR.name}/SKILL.md'
 
 mcp = FastMCP(
     'openartifact',
@@ -63,7 +70,9 @@ mcp = FastMCP(
         f'`run_code`, where the artifact directory is the working directory and is also mounted at `{VIRTUAL_PATH}` '
         '(`main.md`, `artifact.toml`, `styles.css`, `components/*.html`, `assets/*`), then call `build` to validate '
         'the files and refresh the page. `list_artifacts` shows the artifacts you already have. Every change is '
-        "committed to the artifact's history."
+        "committed to the artifact's history. The full authoring guide (slide attributes, components, build steps, "
+        f'images, the CSS variable contract, mapping a brand palette) is the resource `{SKILL_URI}`; read it before '
+        'writing anything beyond plain markdown.'
     ),
     auth=auth.make_auth_provider(),
 )
@@ -243,3 +252,4 @@ mcp.tool(new_artifact)
 mcp.tool(run_code)
 mcp.tool(build_artifact, name='build')
 mcp.tool(list_artifacts)
+mcp.add_provider(SkillProvider(SKILL_DIR))
