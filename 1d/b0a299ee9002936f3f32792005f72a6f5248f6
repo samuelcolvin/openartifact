@@ -1,0 +1,23 @@
+docker-compose.yml
+  s_43f07e2c10821d::t_305f54e996dde0 26,34
+README.md
+  s_43f07e2c10821d::t_b3cb3666d8c1ae 52
+CLAUDE.md
+  s_43f07e2c10821d::t_b3cb3666d8c1ae 55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1db0a299ee9002936f3f32792005f72a6f5248f6",
+  "prompts": {},
+  "sessions": {
+    "s_43f07e2c10821d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fb6f58d9-2e73-4053-b834-d4f0f433543c",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
