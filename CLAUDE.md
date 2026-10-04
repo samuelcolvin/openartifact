@@ -154,6 +154,7 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 **Supporting files**
 
 - `skills/openartifact/SKILL.md` - the user-facing authoring guide, also served to agents as the MCP skill. Update it whenever slide syntax, config keys or the CSS contract change.
+- `examples/create_examples.py` - creates every example through the MCP server (`new_artifact`, one `run_code` that writes the files from `inputs`, `build`), the way an agent would; run it against `make dev` to smoke-test the tools. The gitignored `mcp_demo.py` at the root is the shorter walkthrough of the same.
 - `examples/starter/` - smoke-test deck exercising every feature (a page component with header and counter, directives, components with parameters and children, nesting, an SVG component, `[context]`, a light page, build steps, code). `examples/document/` (two pages, a page component with a footer) and `examples/page/` are the same for the other two types.
 - `tests/test_build.py` - pytest for `backend/build.py` (imported as `build`; pytest adds `backend/` to `pythonpath`): the page splitter and directives, the component scanner and parameter checks, the context table, the page component, the block codec, and the examples end to end.
 - `tests/test_pdf.py` - pytest for `backend/pdf.py`; Chrome is stubbed, the command assembly and error paths are checked.

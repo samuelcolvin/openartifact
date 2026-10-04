@@ -32,7 +32,7 @@ dev = [
 
 [tool.ruff]
 line-length = 120
-include = ["*.py", "backend/**/*.py", "tests/**/*.py"]
+include = ["*.py", "backend/**/*.py", "tests/**/*.py", "examples/*.py"]
 
 [tool.ruff.lint]
 extend-select = [
@@ -57,7 +57,7 @@ pythonVersion = "3.11"
 typeCheckingMode = "strict"
 reportUnnecessaryTypeIgnoreComment = true
 venv = ".venv"
-include = ["*.py", "backend", "tests"]
+include = ["*.py", "backend", "tests", "examples"]
 extraPaths = ["backend"]
 
 [tool.logfire]
