@@ -2,8 +2,9 @@
 
 Artifacts belong to the calling user's workspace (see `auth.py` and `workspace.py`): a git repository, cached as
 a working clone, with one directory per artifact holding the files `build.py` expects: `artifact.toml`,
-`main.md` (pages separated by `---`), optional `styles.css`, `components/` and `assets/`. Every tool that changes files goes through
-`workspace.edit`, so each call is a commit and the repo is pushed to the object store before the tool returns.
+`main.md` (pages separated by `---`), optional `styles.css`, `components/` and `assets/`. Every tool that changes
+files goes through `workspace.edit`, so each call is a commit and the repo is pushed to the object store before
+the tool returns. The server instructions an agent sees first are `instructions.md` next to this module.
 
 Tools:
 
@@ -27,6 +28,7 @@ import contextlib
 import json
 import uuid
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Literal, get_args
 
 from config import ROOT, base_url
@@ -60,26 +62,12 @@ THEMES: tuple[str, ...] = get_args(Theme)
 SKILL_DIR = ROOT / 'skills' / 'openartifact'
 SKILL_URI = f'skill://{SKILL_DIR.name}/SKILL.md'
 
-mcp = FastMCP(
-    'openartifact',
-    instructions=(
-        'Create an artifact with `new_artifact`, which writes `main.md` from `content`, builds it and returns its '
-        'identifier (a UUID) and page URL. An artifact is markdown split into pages by lines containing only `---` '
-        '(with a blank line before each); `type` picks how the pages are laid out: `deck` shows one 16:9 page at a '
-        'time with navigation, `document` stacks fixed-width sheets that print one per page, `page` is a continuous '
-        'web page. A comment at the top of a page sets its classes and title: `<!-- class: cover light; title: ... -->`. '
-        'Edit the artifact with `run_code`, where the artifact directory is the working directory and is also mounted '
-        f'at `{VIRTUAL_PATH}` (`main.md`, `artifact.toml`, `styles.css`, `components/*.html`, `assets/*`), then call '
-        '`build` to validate the files and refresh the page. Components take parameters as attributes and children '
-        'between the tags; `{{ PAGE_NUMBER }}`, `{{ PAGE_COUNT }}`, `{{ PAGE_TITLE }}` and the `[context]` keys of '
-        '`artifact.toml` are available everywhere; `page_component` in `artifact.toml` names a component rendered '
-        'around every page. `list_artifacts` shows the artifacts you already have. Every change is committed to the '
-        "artifact's history. The full authoring guide (page classes, components and parameters, build steps, images, "
-        f'the CSS variable contract, mapping a brand palette) is the resource `{SKILL_URI}`; read it before writing '
-        'anything beyond plain markdown.'
-    ),
-    auth=auth.make_auth_provider(),
-)
+# What the agent reads before it starts: `backend/instructions.md`, with the mount path and the skill URI filled in.
+INSTRUCTIONS_PATH = Path(__file__).with_name('instructions.md')
+instructions = INSTRUCTIONS_PATH.read_text()
+instructions = instructions.replace('{VIRTUAL_PATH}', VIRTUAL_PATH).replace('{SKILL_URI}', SKILL_URI)
+
+mcp = FastMCP('openartifact', instructions=instructions, auth=auth.make_auth_provider())
 
 
 def artifact_url(artifact_id: uuid.UUID, file: str = '') -> str:
@@ -162,9 +150,10 @@ async def new_artifact(title: str, content: str, type: ArtifactType = 'deck', th
     `content` is markdown; a line containing only `---`, with a blank line before it, starts a new page. `type`
     is how the pages are laid out: `deck` shows one 16:9 page at a time (so every page is a slide), `document`
     stacks fixed-width sheets that print one per A4 page, `page` is a continuous web page (usually one page).
-    `content` becomes `main.md`; `title`, `type` and `theme` are written to `artifact.toml`. The artifact is built straight away, so a problem in `content` is returned as an error naming
-    the line; the files are kept, so fix them with `run_code` and call `build`. On success returns the artifact
-    identifier (a UUID) to pass to the other tools, and the URL of the page.
+    `content` becomes `main.md`; `title`, `type` and `theme` are written to `artifact.toml`. The artifact is built
+    straight away, so a problem in `content` is returned as an error naming the line; the files are kept, so fix
+    them with `run_code` and call `build`. On success returns the artifact identifier (a UUID) to pass to the other
+    tools, and the URL of the page.
     """
     principal = await auth.current_principal()
     artifact_id = uuid.uuid4()
