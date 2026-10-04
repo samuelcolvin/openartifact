@@ -60,6 +60,10 @@ venv = ".venv"
 include = ["*.py", "backend", "tests"]
 extraPaths = ["backend"]
 
+[tool.logfire]
+# Tests import modules that open spans without calling logfire.configure(); that is fine.
+ignore_no_config = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["backend"]

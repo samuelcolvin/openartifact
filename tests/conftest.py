@@ -16,8 +16,10 @@ from urllib.parse import urlsplit, urlunsplit
 import asyncpg
 import pytest
 
+import auth
 import db
 import store
+import workspace
 
 TABLES = ('users', 'credentials', 'workspaces', 'artifacts')
 
@@ -84,6 +86,16 @@ async def db_pool(test_database_url: str) -> AsyncGenerator[db.Pool]:
             yield pool
         finally:
             await pool.execute(f'TRUNCATE {", ".join(TABLES)} CASCADE')
+            # Per-process caches would otherwise point at rows and checkouts that no longer exist.
+            auth.reset_cache()
+            workspace.reset_state()
+
+
+@pytest.fixture
+async def principal(db_pool: db.Pool, storage: store.ObjectStore) -> auth.Principal:
+    """A signed-in user with an empty workspace; use `with auth.as_principal(principal):` around tool calls."""
+    async with db_pool.acquire() as conn, conn.transaction():
+        return await auth.upsert_user(conn, sub='user-a', email='a@example.com', name='User A', picture=None)
 
 
 @pytest.fixture

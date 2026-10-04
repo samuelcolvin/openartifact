@@ -1,5 +1,5 @@
--- Users are created from identities the MCP auth layer verifies (Google today). `google_sub` is null only for
--- the development user that OPENARTIFACT_DEV_TOKEN signs in.
+-- Users are created from identities the MCP auth layer verifies: `google_sub` is Google's subject, or `dev`
+-- for the development user that OPENARTIFACT_DEV_TOKEN signs in.
 create table users (
     id            uuid primary key,
     google_sub    text unique,
