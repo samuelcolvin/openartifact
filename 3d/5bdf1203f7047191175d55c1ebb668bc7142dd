@@ -1,0 +1,9 @@
+tests/test_mcp_server.py
+  ai_agent 241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3d5bdf1203f7047191175d55c1ebb668bc7142dd",
+  "prompts": {}
+}
