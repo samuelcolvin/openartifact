@@ -7,9 +7,12 @@ license = "MIT"
 authors = [{ name = "Samuel Colvin", email = "s@muelcolvin.com" }]
 requires-python = ">=3.11"
 dependencies = [
+    "asyncpg>=0.31.0",
     "fastapi>=0.142.2",
     "fastmcp>=4.0.10",
-    "logfire>=5.1.1",
+    "logfire[asyncpg]>=5.1.1",
+    "obstore>=0.11.1",
+    "py-key-value-aio[postgresql,wrappers-encryption]>=0.4.6",
     "pydantic-monty>=1.0.0",
     "uvicorn>=0.54.0",
 ]
@@ -21,6 +24,7 @@ package = false
 
 [dependency-groups]
 dev = [
+    "asyncpg-stubs>=0.31.3",
     "basedpyright>=1.29",
     "pytest>=8",
     "ruff>=0.12",
@@ -42,7 +46,7 @@ mccabe = { max-complexity = 14 }
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
-known-first-party = ["build", "mcp_server", "server"]
+known-first-party = ["auth", "build", "db", "mcp_server", "pdf", "server", "store", "workspace"]
 
 [tool.ruff.format]
 docstring-code-format = true

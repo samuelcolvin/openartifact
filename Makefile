@@ -33,6 +33,10 @@ test: ## Run the Python tests
 build: ## Bundle the browser runtime to frontend/dist/openartifact.js
 	pnpm -C frontend build
 
+.PHONY: postgres
+postgres: ## Start Postgres in Docker (docker-compose.yml); the server and tests use it at DATABASE_URL
+	docker compose up -d --wait postgres
+
 .PHONY: serve
 serve: ## Run the HTTP server (MCP endpoint, openartifact.js and built artifacts) on http://127.0.0.1:8000
 	uv run backend/server.py
