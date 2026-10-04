@@ -1,0 +1,75 @@
+frontend/src/hljs.css
+  s_3d99f581f2340b::t_ac5226c65a97fc 4-8,11-12,22
+tests/test_pdf.py
+  s_3d99f581f2340b::t_f83336644a555b 21-23
+backend/mcp_server.py
+  s_3d99f581f2340b::t_3a29825ae2efaa 8-9,57-58,67-73,153-156,158-164,168
+frontend/src/styles/shared.css
+  s_3d99f581f2340b::t_ac5226c65a97fc 1-80
+CLAUDE.md
+  s_3d99f581f2340b::t_7cd6cdf49e7253 98,101
+  s_3d99f581f2340b::t_010379462ed443 7-9,13,30,94-95,102-107,112,117,123,138,148,159
+frontend/src/deck.ts
+  s_3d99f581f2340b::t_81199d44d997a1 18,32
+examples/document/deck.md
+  s_3d99f581f2340b::t_f83336644a555b 1-9,11-33
+  s_3d99f581f2340b::t_c3afb69d878724 10
+frontend/src/styles/deck.css
+  s_3d99f581f2340b::t_ac5226c65a97fc 1-1111
+frontend/src/slide.ts
+  s_3d99f581f2340b::t_7cd6cdf49e7253 3
+  s_3d99f581f2340b::t_81199d44d997a1 15,34
+frontend/src/styles/prose.css
+  s_3d99f581f2340b::t_ac5226c65a97fc 1-327
+frontend/src/styles/page.css
+  s_3d99f581f2340b::t_ac5226c65a97fc 1-43
+README.md
+  s_3d99f581f2340b::t_26c932bf515b84 128,132
+  s_3d99f581f2340b::t_010379462ed443 12-21
+frontend/src/article.ts
+  s_3d99f581f2340b::t_81199d44d997a1 1-31
+backend/pdf.py
+  s_3d99f581f2340b::t_26c932bf515b84 44-45
+  s_3d99f581f2340b::t_3a29825ae2efaa 3-6,33
+tests/test_build.py
+  s_3d99f581f2340b::t_f83336644a555b 144,177,203-210,213-255
+  s_3d99f581f2340b::t_b7018bf3dfea91 211-212
+frontend/src/types.ts
+  s_3d99f581f2340b::t_81199d44d997a1 19-28,34,38-41
+skills/openartifact/SKILL.md
+  s_3d99f581f2340b::t_010379462ed443 42-55,61,70,82
+  s_3d99f581f2340b::t_7cd6cdf49e7253 268
+frontend/src/main.ts
+  s_3d99f581f2340b::t_81199d44d997a1 10,17-22,24-34,54-59,62-64,70-74,86
+frontend/src/render.ts
+  s_3d99f581f2340b::t_7cd6cdf49e7253 52
+frontend/src/steps.ts
+  s_3d99f581f2340b::t_7cd6cdf49e7253 15
+frontend/src/styles/document.css
+  s_3d99f581f2340b::t_ac5226c65a97fc 1-54
+tests/test_mcp_server.py
+  s_3d99f581f2340b::t_f83336644a555b 69-71,97-112,237-240
+examples/page/deck.md
+  s_3d99f581f2340b::t_f83336644a555b 1-11,13-24
+  s_3d99f581f2340b::t_c3afb69d878724 12
+examples/document/artifact.toml
+  s_3d99f581f2340b::t_f83336644a555b 1-3
+examples/page/artifact.toml
+  s_3d99f581f2340b::t_f83336644a555b 1-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "097656dfc8b60e003695fd89adea95c27b6bbbd7",
+  "prompts": {},
+  "sessions": {
+    "s_3d99f581f2340b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2de96c71-f17d-4b9b-8005-d83a59e0b331",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
