@@ -3,7 +3,7 @@
 An artifact directory looks like:
 
     artifact.toml   type, title, theme, footer, tabs, path overrides (all optional)
-    deck.md         the content: for a deck one `<slide .../>` line starts each slide; a document or page is plain markdown
+    main.md         the content: for a deck one `<slide .../>` line starts each slide; a document or page is plain markdown
     styles.css      CSS variable overrides (optional)
     components/     HTML or SVG files pulled in with <component src="Name.html"></component>
     assets/         images referenced from the markdown, components or styles
@@ -79,7 +79,7 @@ class Config:
 
 
 def load_config(cwd: Path) -> Config:
-    """Load artifact.toml from `cwd` if present and validate it. A missing deck.md is fatal."""
+    """Load artifact.toml from `cwd` if present and validate it. A missing main.md is fatal."""
     cwd = cwd.resolve()
     toml_path = cwd / 'artifact.toml'
     raw: dict[str, object] = {}
@@ -101,7 +101,7 @@ def load_config(cwd: Path) -> Config:
             raise BuildError(f'artifact.toml: `{key}` must be a string, got {value!r}')
         return value
 
-    markdown_path = cwd / (optional_str('markdown') or 'deck.md')
+    markdown_path = cwd / (optional_str('markdown') or 'main.md')
     if not markdown_path.is_file():
         raise BuildError(f'markdown file not found: {markdown_path}')
 

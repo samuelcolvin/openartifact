@@ -1,6 +1,6 @@
 ---
 name: openartifact
-description: Create a deck with OpenArtifact. Use when the user mentions "openartifact", "deck" or "slides", asks to build a slide deck from markdown, asks to convert a brand palette into a deck stylesheet, or asks how to convert an OpenArtifact HTML deck into a PDF. Covers project layout, artifact.toml config, deck.md authoring with <slide/> breaks, HTML components, images, code blocks, the styles.css token contract, and the Chrome headless PDF command.
+description: Create a deck with OpenArtifact. Use when the user mentions "openartifact", "deck" or "slides", asks to build a slide deck from markdown, asks to convert a brand palette into a deck stylesheet, or asks how to convert an OpenArtifact HTML deck into a PDF. Covers project layout, artifact.toml config, main.md authoring with <slide/> breaks, HTML components, images, code blocks, the styles.css token contract, and the Chrome headless PDF command.
 ---
 
 # OpenArtifact
@@ -23,7 +23,7 @@ The builder is the module `backend/build.py` in that checkout, with PDF printing
 ```
 my-deck/
 ├── artifact.toml          # config: title, theme, tabs, footer, paths (all optional)
-├── deck.md             # the slides
+├── main.md             # the content: slides, or plain markdown
 ├── styles.css          # CSS variable overrides (optional)
 ├── components/         # optional HTML or SVG files pulled in with <component src="...">
 │   └── Hero.html
@@ -43,7 +43,7 @@ The page is not self-contained: it loads `openartifact.js` from the server and i
 
 `type` in `artifact.toml` picks the overall form. It is independent of `theme`, which only picks colours.
 
-| `type`     | What it is                                                         | What `deck.md` contains                              | Printing                        |
+| `type`     | What it is                                                         | What `main.md` contains                              | Printing                        |
 | ---------- | ------------------------------------------------------------------ | ---------------------------------------------------- | ------------------------------- |
 | `deck`     | Slides with next/previous navigation, tabs and build steps         | Markdown with a `<slide .../>` line starting each slide | one 16:9 slide per page         |
 | `document` | A fixed-width sheet, like a word processor, centred on the screen  | Plain markdown structured with headings; no slide markers | A4 pages, headings kept with their text, blocks unsplit |
@@ -55,7 +55,7 @@ Document and page add two variables to override in `styles.css`: `--document-wid
 
 ## `artifact.toml`
 
-All fields are optional - a deck with only `deck.md` works.
+All fields are optional - a deck with only `main.md` works.
 
 ```toml
 type = "deck"                         # deck | document | page   (default: deck)
@@ -75,7 +75,7 @@ footer = "Confidential - do not share"
 favicon = "assets/favicon.svg"
 
 # Path overrides (defaults shown).
-markdown = "deck.md"
+markdown = "main.md"
 styles = "styles.css"
 components = "components"
 
@@ -88,7 +88,7 @@ tabs = [
 
 If `tabs` is omitted, the `tab` attribute on `<slide/>` is ignored and slides render with a plain title topbar.
 
-## `deck.md`
+## `main.md`
 
 Plain markdown (CommonMark plus GFM tables and strikethrough). A line containing only `<slide .../>` starts a new slide; the slide's body runs to the next such line or the end of the file. There is no closing tag.
 
@@ -265,7 +265,7 @@ Fonts:
 
 ### Layout helpers
 
-Markdown has no columns, so `deck.css` ships a few opt-in classes for the wrapper HTML you write in `deck.md`. Leave a blank line between the wrapper tags and the markdown inside them, or the markdown is not rendered.
+Markdown has no columns, so `deck.css` ships a few opt-in classes for the wrapper HTML you write in `main.md`. Leave a blank line between the wrapper tags and the markdown inside them, or the markdown is not rendered.
 
 - `.row` - a flex row of `.col` children, vertically centred, filling the remaining slide height. Add `.row-top` to align children to the top.
 - `.col` - an equal-width column inside `.row`. Override with inline `style="flex: 0 0 40%"` for an uneven split.

@@ -69,7 +69,7 @@ async def test_new_artifact_builds_and_commits(me: auth.Principal):
     assert re.fullmatch(UUID_RE, artifact)
     assert out.endswith(f'page: http://127.0.0.1:8000/artifacts/{artifact}/\n')
     directory = files_of(me, artifact)
-    assert (directory / 'deck.md').read_text() == '<slide/>\n# Hello\n'
+    assert (directory / 'main.md').read_text() == '<slide/>\n# Hello\n'
     assert (directory / 'artifact.toml').read_text() == (
         'title = "My Deck!"\ntype = "deck"\ntheme = "dark"\nfooter = "ACME"\n'
     )
@@ -84,11 +84,11 @@ async def test_new_artifact_builds_and_commits(me: auth.Principal):
 
 
 async def test_new_artifact_reports_build_errors_and_keeps_files(me: auth.Principal):
-    with pytest.raises(ToolError, match=r'deck\.md:1: content before the first'):
+    with pytest.raises(ToolError, match=r'main\.md:1: content before the first'):
         await mcp_server.new_artifact('Broken', '# preamble\n<slide/>\n')
     [row] = await workspace.list_artifacts(me.workspace_id)
     directory = files_of(me, str(row.id))
-    assert (directory / 'deck.md').read_text() == '# preamble\n<slide/>\n'
+    assert (directory / 'main.md').read_text() == '# preamble\n<slide/>\n'
     assert not (directory / 'dist').exists()
     assert await head_sha(me.workspace_id) is not None
 
@@ -119,10 +119,10 @@ def test_render_toml_escapes():
 
 async def test_run_code_writes_and_commits(me: auth.Principal, demo: str, pool: None):
     out = await mcp_server.run_code(
-        demo, "from pathlib import Path\nPath('deck.md').write_text('<slide/>\\n# hi\\n')\nprint('done')\nlen('abc')"
+        demo, "from pathlib import Path\nPath('main.md').write_text('<slide/>\\n# hi\\n')\nprint('done')\nlen('abc')"
     )
     assert out == 'done\n3\n'
-    assert (files_of(me, demo) / 'deck.md').read_text() == '<slide/>\n# hi\n'
+    assert (files_of(me, demo) / 'main.md').read_text() == '<slide/>\n# hi\n'
     log = (await workspace.git('log', '--format=%s', cwd=workspace.checkout_path(me.workspace_id))).splitlines()
     assert log == [f'run_code: {demo}', f'new_artifact: {demo}']
 
@@ -130,16 +130,16 @@ async def test_run_code_writes_and_commits(me: auth.Principal, demo: str, pool: 
 async def test_run_code_mounts_at_virtual_path(me: auth.Principal, demo: str, pool: None):
     await mcp_server.run_code(demo, "open('/artifact/a.txt', 'w').write('x')")
     out = await mcp_server.run_code(demo, "import os\nprint(os.getcwd())\nprint(sorted(os.listdir('.')))")
-    assert out == "/artifact\n['a.txt', 'artifact.toml', 'deck.md', 'dist']\n"
+    assert out == "/artifact\n['a.txt', 'artifact.toml', 'dist', 'main.md']\n"
 
 
 async def test_run_code_binds_inputs(me: auth.Principal, demo: str, pool: None):
     out = await mcp_server.run_code(
-        demo, "from pathlib import Path\nPath('deck.md').write_text(body * n)", inputs={'body': 'ab', 'n': 3}
+        demo, "from pathlib import Path\nPath('main.md').write_text(body * n)", inputs={'body': 'ab', 'n': 3}
     )
     # `write_text` returns the character count, which is the trailing expression.
     assert out == '6\n'
-    assert (files_of(me, demo) / 'deck.md').read_text() == 'ababab'
+    assert (files_of(me, demo) / 'main.md').read_text() == 'ababab'
 
 
 async def test_run_code_cannot_escape_mount(me: auth.Principal, demo: str, pool: None):
@@ -195,8 +195,8 @@ async def test_build_imported_starter(me: auth.Principal, pool: None):
 
 
 async def test_build_reports_validation_errors(me: auth.Principal, demo: str, pool: None):
-    await mcp_server.run_code(demo, "from pathlib import Path\nPath('deck.md').write_text('# preamble\\n<slide/>\\n')")
-    with pytest.raises(ToolError, match=r'deck\.md:1: content before the first'):
+    await mcp_server.run_code(demo, "from pathlib import Path\nPath('main.md').write_text('# preamble\\n<slide/>\\n')")
+    with pytest.raises(ToolError, match=r'main\.md:1: content before the first'):
         await mcp_server.build_artifact(demo)
 
 
@@ -241,12 +241,12 @@ async def test_tools_over_mcp(me: auth.Principal, pool: None):
             'run_code',
             {
                 'artifact': name,
-                'code': "from pathlib import Path\nPath('deck.md').write_text(md)",
+                'code': "from pathlib import Path\nPath('main.md').write_text(md)",
                 'inputs': {'md': 'x'},
             },
         )
         assert result.data == '1\n'
-        assert (files_of(me, name) / 'deck.md').read_text() == 'x'
+        assert (files_of(me, name) / 'main.md').read_text() == 'x'
 
         failed = await client.call_tool('build', {'artifact': name}, raise_on_error=False)
         assert failed.is_error

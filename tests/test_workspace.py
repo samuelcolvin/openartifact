@@ -32,7 +32,7 @@ async def write_artifact(ws: uuid.UUID, title: str = 'Demo', body: str = '# hi\n
     async with workspace.edit(ws, f'new_artifact: {artifact_id}') as tx:
         directory = tx.artifact_dir(artifact_id)
         directory.mkdir(parents=True)
-        (directory / 'deck.md').write_text(body)
+        (directory / 'main.md').write_text(body)
         return await workspace.insert_artifact(
             tx.conn, artifact_id=artifact_id, workspace_id=ws, title=title, type='page'
         )
@@ -81,12 +81,12 @@ async def test_body_error_rolls_back_and_resets_checkout(principal: auth.Princip
     before = await head_sha(ws)
     with pytest.raises(RuntimeError, match='boom'):
         async with workspace.edit(ws, 'bad') as tx:
-            (tx.artifact_dir(artifact.id) / 'deck.md').write_text('changed')
+            (tx.artifact_dir(artifact.id) / 'main.md').write_text('changed')
             await workspace.touch_artifact(tx.conn, artifact.id)
             raise RuntimeError('boom')
     assert await head_sha(ws) == before
     async with workspace.open_artifact(artifact) as directory:
-        assert (directory / 'deck.md').read_text() == '# hi\n'
+        assert (directory / 'main.md').read_text() == '# hi\n'
     assert (await workspace.get_artifact(artifact.id)) == artifact  # updated_at untouched: the row write rolled back
 
 
@@ -101,12 +101,12 @@ async def test_upload_failure_rolls_back(principal: auth.Principal, monkeypatch:
     monkeypatch.setattr(store.ObjectStore, 'put', failing_put)
     with pytest.raises(OSError, match='store down'):
         async with workspace.edit(ws, 'run_code') as tx:
-            (tx.artifact_dir(artifact.id) / 'deck.md').write_text('changed')
+            (tx.artifact_dir(artifact.id) / 'main.md').write_text('changed')
     monkeypatch.undo()
     assert await head_sha(ws) == before
     # The local commit that was never published is discarded on the next sync.
     async with workspace.open_artifact(artifact) as directory:
-        assert (directory / 'deck.md').read_text() == '# hi\n'
+        assert (directory / 'main.md').read_text() == '# hi\n'
     assert await git_log(workspace.checkout_path(ws)) == [f'new_artifact: {artifact.id}']
 
 
@@ -121,7 +121,7 @@ async def test_second_cache_syncs_from_bundle(
     monkeypatch.setenv('OPENARTIFACT_CACHE_DIR', str(tmp_path / 'cache-b'))
     workspace.reset_state()
     async with workspace.open_artifact(artifact) as directory:
-        assert (directory / 'deck.md').read_text() == '# from A\n'
+        assert (directory / 'main.md').read_text() == '# from A\n'
         assert (directory / 'extra.txt').read_text() == 'second commit'
     path_b = workspace.checkout_path(ws)
     assert len(await git_log(path_b)) == 2
@@ -147,12 +147,12 @@ async def test_sync_removes_stale_dist_for_changed_artifacts(
     monkeypatch.setenv('OPENARTIFACT_CACHE_DIR', str(tmp_path / 'cache-b'))
     workspace.reset_state()
     async with workspace.edit(ws, 'run_code') as tx:
-        (tx.artifact_dir(changed.id) / 'deck.md').write_text('# new\n')
+        (tx.artifact_dir(changed.id) / 'main.md').write_text('# new\n')
     # Back in process A, the next sync drops only the stale build.
     monkeypatch.setenv('OPENARTIFACT_CACHE_DIR', str(cache_a.parent))
     workspace.reset_state()
     async with workspace.open_artifact(changed) as directory:
-        assert (directory / 'deck.md').read_text() == '# new\n'
+        assert (directory / 'main.md').read_text() == '# new\n'
         assert not (directory / 'dist').exists()
     assert (cache_a / 'artifacts' / str(untouched.id) / 'dist' / 'index.html').exists()
 
@@ -164,7 +164,7 @@ async def test_nested_git_entries_are_stripped(principal: auth.Principal):
         directory = tx.artifact_dir(artifact.id)
         (directory / '.git').mkdir()
         (directory / '.git' / 'HEAD').write_text('ref: refs/heads/main')
-        (directory / '.gitignore').write_text('deck.md\n')
+        (directory / '.gitignore').write_text('main.md\n')
         (directory / 'kept.txt').write_text('kept')
     path = workspace.checkout_path(ws)
     tracked = (await workspace.git('ls-files', cwd=path)).split()
@@ -177,7 +177,7 @@ async def test_import_directory(principal: auth.Principal):
     artifact = await workspace.import_directory(principal.workspace_id, 'Starter', 'deck', STARTER)
     assert artifact.title == 'Starter'
     async with workspace.open_artifact(artifact) as directory:
-        assert (directory / 'deck.md').is_file()
+        assert (directory / 'main.md').is_file()
         assert (directory / 'components' / 'Hero.html').is_file()
         assert not (directory / 'dist').exists()
 

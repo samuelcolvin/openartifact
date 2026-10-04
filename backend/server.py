@@ -8,7 +8,7 @@ Routes:
     /artifacts/{id}/{path}      an image or font from the artifact directory, referenced relatively by the page
     /                           JSON index of the above
 
-Pages are public to anyone holding the artifact's UUID. Only the page and its media are exposed; `deck.md`,
+Pages are public to anyone holding the artifact's UUID. Only the page and its media are exposed; `main.md`,
 `artifact.toml`, `styles.css` and components are already in the page's JSON blob and are not served as files.
 
 Run with `uv run backend/server.py` (`HOST` and `PORT` override the bind address). Configuration is by

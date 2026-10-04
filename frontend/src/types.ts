@@ -38,7 +38,7 @@ export interface ArtifactConfig {
 /** The JSON blob embedded in `<script type="application/json" id="artifact-data">`. */
 export interface ArtifactData {
   config: ArtifactConfig
-  /** Raw `deck.md` source. For a deck it is split into slides in the browser; otherwise rendered whole. */
+  /** Raw `main.md` source. For a deck it is split into slides in the browser; otherwise rendered whole. */
   markdown: string
   /** `<component src="X">` -> file contents, keyed by the `src` attribute. */
   components: Record<string, string>

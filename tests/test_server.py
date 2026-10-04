@@ -91,7 +91,7 @@ def test_artifact_build_failure_is_422(client: TestClient):
 
     async def break_it() -> None:
         async with workspace.edit(artifact.workspace_id, 'break') as tx:
-            (tx.artifact_dir(artifact.id) / 'deck.md').write_text('# preamble\n<slide/>\n')
+            (tx.artifact_dir(artifact.id) / 'main.md').write_text('# preamble\n<slide/>\n')
 
     in_app(client, break_it)
     response = client.get(f'/artifacts/{artifact.id}/')
@@ -114,7 +114,7 @@ def test_artifact_images_are_served(client: TestClient):
 
 def test_artifact_sources_stay_private(client: TestClient):
     artifact = starter(client)
-    for path in ('deck.md', 'artifact.toml', 'styles.css', 'components/Hero.html', 'dist/index.html'):
+    for path in ('main.md', 'artifact.toml', 'styles.css', 'components/Hero.html', 'dist/index.html'):
         assert client.get(f'/artifacts/{artifact.id}/{path}').status_code == 404, path
     other = starter(client)
     # `..` that leaves the artifact directory is refused, even towards another artifact's image. The segments
@@ -187,7 +187,7 @@ async def test_mcp_over_http(live_server: str):
         name = created.data.partition('\n')[0].removeprefix('artifact: ')
         result = await client.call_tool(
             'run_code',
-            {'artifact': name, 'code': "from pathlib import Path\nPath('deck.md').write_text('<slide/>\\n')"},
+            {'artifact': name, 'code': "from pathlib import Path\nPath('main.md').write_text('<slide/>\\n')"},
         )
         assert result.data == '9\n'
         built = await client.call_tool('build', {'artifact': name})

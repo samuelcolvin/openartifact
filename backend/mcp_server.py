@@ -2,7 +2,7 @@
 
 Artifacts belong to the calling user's workspace (see `auth.py` and `workspace.py`): a git repository, cached as
 a working clone, with one directory per artifact holding the files `build.py` expects: `artifact.toml`,
-`deck.md`, optional `styles.css`, `components/` and `assets/`. Every tool that changes files goes through
+`main.md`, optional `styles.css`, `components/` and `assets/`. Every tool that changes files goes through
 `workspace.edit`, so each call is a commit and the repo is pushed to the object store before the tool returns.
 
 Tools:
@@ -56,12 +56,12 @@ THEMES: tuple[str, ...] = get_args(Theme)
 mcp = FastMCP(
     'openartifact',
     instructions=(
-        'Create an artifact with `new_artifact`, which writes `deck.md` from `content`, builds it and returns its '
+        'Create an artifact with `new_artifact`, which writes `main.md` from `content`, builds it and returns its '
         'identifier (a UUID) and page URL. Pick the `type` for the job: `deck` for slides (content is markdown '
         'with a `<slide .../>` line starting each slide), `document` for a fixed-width document that prints to '
         'pages, or `page` for a continuous web page (both take plain markdown with no slide markers). Edit it with '
         f'`run_code`, where the artifact directory is the working directory and is also mounted at `{VIRTUAL_PATH}` '
-        '(`deck.md`, `artifact.toml`, `styles.css`, `components/*.html`, `assets/*`), then call `build` to validate '
+        '(`main.md`, `artifact.toml`, `styles.css`, `components/*.html`, `assets/*`), then call `build` to validate '
         'the files and refresh the page. `list_artifacts` shows the artifacts you already have. Every change is '
         "committed to the artifact's history."
     ),
@@ -151,7 +151,7 @@ async def new_artifact(
     `type` is the form of the artifact: `deck` is slides, where `content` has a line containing only
     `<slide .../>` starting each slide; `document` is a fixed-width document that prints to A4 pages; `page` is a
     continuous web page. For `document` and `page`, `content` is plain markdown with no slide markers, structured
-    with headings. `content` becomes `deck.md`; `title`, `type`, `theme` and `footer` are written to
+    with headings. `content` becomes `main.md`; `title`, `type`, `theme` and `footer` are written to
     `artifact.toml`. The artifact is built straight away, so a problem in `content` is returned as an error naming
     the line; the files are kept, so fix them with `run_code` and call `build`. On success returns the artifact
     identifier (a UUID) to pass to the other tools, and the URL of the page.
@@ -165,7 +165,7 @@ async def new_artifact(
         directory = tx.artifact_dir(artifact_id)
         directory.mkdir(parents=True)
         (directory / 'artifact.toml').write_text(render_toml(config), encoding='utf-8')
-        (directory / 'deck.md').write_text(content, encoding='utf-8')
+        (directory / 'main.md').write_text(content, encoding='utf-8')
         await workspace.insert_artifact(
             tx.conn, artifact_id=artifact_id, workspace_id=principal.workspace_id, title=title, type=type
         )
@@ -214,7 +214,7 @@ async def run_code(artifact: str, code: str, inputs: dict[str, str | int] | None
 async def build_artifact(artifact: str) -> str:
     """Validate an artifact's files and build it to `dist/index.html`.
 
-    Validation covers `artifact.toml`, the slide structure of `deck.md`, every referenced component and image.
+    Validation covers `artifact.toml`, the slide structure of `main.md`, every referenced component and image.
     Problems are returned as an error naming the file and line, so fix them with `run_code` and build again. On
     success returns the URL where the page can be viewed; inside `run_code` the output is also visible under
     `/artifact/dist/`.

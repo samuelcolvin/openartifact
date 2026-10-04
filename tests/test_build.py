@@ -24,27 +24,27 @@ def write(path: Path, text: str) -> Path:
 
 
 def test_validate_slides_counts_markers():
-    assert build.validate_slides('<slide/>\n# one\n<slide layout="title">\n# two\n', Path('deck.md')) == 2
+    assert build.validate_slides('<slide/>\n# one\n<slide layout="title">\n# two\n', Path('main.md')) == 2
 
 
 def test_validate_slides_ignores_markers_in_fences():
     source = '<slide/>\n```html\n<slide/>\n```\n~~~\n<slide/>\n~~~\n'
-    assert build.validate_slides(source, Path('deck.md')) == 1
+    assert build.validate_slides(source, Path('main.md')) == 1
 
 
 def test_validate_slides_rejects_preamble():
-    with pytest.raises(BuildError, match=r'deck\.md:1: content before the first'):
-        build.validate_slides('# hello\n<slide/>\n', Path('deck.md'))
+    with pytest.raises(BuildError, match=r'main\.md:1: content before the first'):
+        build.validate_slides('# hello\n<slide/>\n', Path('main.md'))
 
 
 def test_validate_slides_rejects_empty():
     with pytest.raises(BuildError, match='no slides found'):
-        build.validate_slides('\n\n', Path('deck.md'))
+        build.validate_slides('\n\n', Path('main.md'))
 
 
 def test_validate_slides_rejects_self_closing_component():
-    with pytest.raises(BuildError, match=r'deck\.md:2: self-closing'):
-        build.validate_slides('<slide/>\n<component src="X.html"/>\n', Path('deck.md'))
+    with pytest.raises(BuildError, match=r'main\.md:2: self-closing'):
+        build.validate_slides('<slide/>\n<component src="X.html"/>\n', Path('main.md'))
 
 
 # --- components ------------------------------------------------------------
@@ -182,13 +182,13 @@ def test_build_starter_example(tmp_path: Path):
 
 
 def test_build_uses_given_runtime_url(tmp_path: Path):
-    write(tmp_path / 'deck.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
     page = build.build_html(tmp_path, runtime_url='/static/openartifact.js').read_text()
     assert '<script src="/static/openartifact.js"></script>' in page
 
 
 def test_load_config_favicon(tmp_path: Path):
-    write(tmp_path / 'deck.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
     write(tmp_path / 'assets' / 'fav.svg', '<svg/>')
     write(tmp_path / 'artifact.toml', 'favicon = "assets/fav.svg"\n')
     assert build.load_config(tmp_path).favicon == 'assets/fav.svg'
@@ -213,39 +213,39 @@ def test_build_prose_examples(tmp_path: Path, name: str):
 
 
 def test_type_defaults_to_deck(tmp_path: Path):
-    write(tmp_path / 'deck.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
     assert build.load_config(tmp_path).type == 'deck'
 
 
 def test_load_config_rejects_bad_type(tmp_path: Path):
-    write(tmp_path / 'deck.md', '# hi\n')
+    write(tmp_path / 'main.md', '# hi\n')
     write(tmp_path / 'artifact.toml', 'type = "scroll"\n')
     with pytest.raises(BuildError, match='invalid type'):
         build.load_config(tmp_path)
 
 
 def test_tabs_are_deck_only(tmp_path: Path):
-    write(tmp_path / 'deck.md', '# hi\n')
+    write(tmp_path / 'main.md', '# hi\n')
     write(tmp_path / 'artifact.toml', 'type = "page"\ntabs = [{ id = "a", label = "A" }]\n')
     with pytest.raises(BuildError, match='`tabs` are only used when type = "deck"'):
         build.load_config(tmp_path)
 
 
 def test_prose_rejects_slide_markers():
-    with pytest.raises(BuildError, match=r'deck\.md:3: <slide .../> markers are only used when type = "deck"'):
-        build.validate_prose('# Title\n\n<slide/>\n', Path('deck.md'), 'document')
+    with pytest.raises(BuildError, match=r'main\.md:3: <slide .../> markers are only used when type = "deck"'):
+        build.validate_prose('# Title\n\n<slide/>\n', Path('main.md'), 'document')
 
 
 def test_prose_allows_markers_in_fences_and_rejects_self_closing_components():
-    build.validate_prose('# Title\n```md\n<slide/>\n```\n', Path('deck.md'), 'page')
+    build.validate_prose('# Title\n```md\n<slide/>\n```\n', Path('main.md'), 'page')
     with pytest.raises(BuildError, match='self-closing'):
-        build.validate_prose('# Title\n<component src="X.html"/>\n', Path('deck.md'), 'page')
+        build.validate_prose('# Title\n<component src="X.html"/>\n', Path('main.md'), 'page')
     with pytest.raises(BuildError, match='no content'):
-        build.validate_prose('\n\n', Path('deck.md'), 'page')
+        build.validate_prose('\n\n', Path('main.md'), 'page')
 
 
 def test_build_document_from_plain_markdown(tmp_path: Path):
-    write(tmp_path / 'deck.md', '# Report\n\nBody text.\n')
+    write(tmp_path / 'main.md', '# Report\n\nBody text.\n')
     write(tmp_path / 'artifact.toml', 'type = "document"\n')
     page = build.build_html(tmp_path).read_text()
     assert json.loads(blob_of(page))['config']['type'] == 'document'
@@ -256,14 +256,14 @@ def test_build_document_from_plain_markdown(tmp_path: Path):
 
 
 def test_load_config_rejects_bad_theme(tmp_path: Path):
-    write(tmp_path / 'deck.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
     write(tmp_path / 'artifact.toml', 'theme = "neon"\n')
     with pytest.raises(BuildError, match='invalid theme'):
         build.load_config(tmp_path)
 
 
 def test_load_config_rejects_dropped_keys(tmp_path: Path):
-    write(tmp_path / 'deck.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
     write(tmp_path / 'artifact.toml', 'code_light_theme = "github-light"\n')
     with pytest.raises(BuildError, match='no longer supported'):
         build.load_config(tmp_path)

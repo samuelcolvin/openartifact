@@ -26,7 +26,7 @@ A deck is a directory:
 ```
 my-deck/
 ├── artifact.toml          # title, theme, footer, tabs, paths (all optional)
-├── deck.md             # the slides
+├── main.md             # the content: slides, or plain markdown
 ├── styles.css          # theme tokens (optional)
 ├── components/         # HTML files pulled in with <component src="...">
 │   └── Hero.html
@@ -63,7 +63,7 @@ PYTHONPATH=backend python3 -c 'from pathlib import Path; import build; print(bui
 
 ## Authoring
 
-`deck.md`:
+`main.md`:
 
 ```markdown
 <slide layout="title"/>

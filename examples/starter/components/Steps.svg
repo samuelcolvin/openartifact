@@ -2,7 +2,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 90" style="width: 100%; height: auto;">
   <g font-family="var(--font-mono)" font-size="12" text-anchor="middle">
     <rect x="4" y="25" width="90" height="40" rx="8" fill="color-mix(in srgb, var(--accent) 18%, transparent)" stroke="var(--accent)" stroke-width="2"/>
-    <text x="49" y="50" fill="var(--color-heading)">deck.md</text>
+    <text x="49" y="50" fill="var(--color-heading)">main.md</text>
     <path d="M98 45 H130" stroke="var(--accent)" stroke-width="2" marker-end="url(#starter-arrow)"/>
     <rect x="136" y="25" width="90" height="40" rx="8" fill="color-mix(in srgb, var(--accent-aqua) 18%, transparent)" stroke="var(--accent-aqua)" stroke-width="2"/>
     <text x="181" y="50" fill="var(--color-heading)">build</text>

@@ -35,7 +35,7 @@ The service shape is now set: a FastAPI server hosting the MCP endpoint, with gi
 
 ### Origin
 
-Forked on 2026-09-30 from the `markdown-runtime` branch of [deckx](https://github.com/samuelcolvin/deckx), keeping its history. deckx shipped a Python package with a `deckx` CLI and a `deckx.toml` config file; here those are the single script and `artifact.toml`. The slide vocabulary (`deck.md`, `.deck`, `DeckData`) was kept because it names the artifact, not the tool; the runtime bundle is `openartifact.js` because it names the tool.
+Forked on 2026-09-30 from the `markdown-runtime` branch of [deckx](https://github.com/samuelcolvin/deckx), keeping its history. deckx shipped a Python package with a `deckx` CLI and a `deckx.toml` config file; here those are the single script and `artifact.toml`. The slide vocabulary (`.deck`, `DeckData`) was kept because it names the artifact, not the tool; the markdown file was `deck.md` until the `document` and `page` types arrived, and is now `main.md` for every type; the runtime bundle is `openartifact.js` because it names the tool.
 
 DO NOT use the em dash "—" in source files or docs; always use a plain hyphen "-".
 
@@ -113,7 +113,7 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 **Builder (`backend/build.py`)**
 
 - A module, not a script: `build_html(directory, output=None, runtime_url='/openartifact.js')` is the entry point and returns the output path. There is no CLI; `mcp_server.py` and the tests are the callers.
-- Loads and validates `artifact.toml` (`tomllib`; `type` in `TYPES`, `tabs` only for a deck, `favicon` a relative path that exists), reads `deck.md`, checks it per type (`validate_slides` for a deck; `validate_prose` for the others, which rejects slide markers and empty content; both skip fenced code via `unfenced_lines`), collects every `<component src>` file (`.html` verbatim, `.svg` inlined with its XML prolog stripped; nesting, cycles, path escapes), checks every relatively referenced image exists inside the deck (`check_images`; nothing is embedded), and writes the JSON blob into the `TEMPLATE` page (with `<` escaped as `\u003c`) with `<script src="{runtime_url}">`.
+- Loads and validates `artifact.toml` (`tomllib`; `type` in `TYPES`, `tabs` only for a deck, `favicon` a relative path that exists), reads `main.md`, checks it per type (`validate_slides` for a deck; `validate_prose` for the others, which rejects slide markers and empty content; both skip fenced code via `unfenced_lines`), collects every `<component src>` file (`.html` verbatim, `.svg` inlined with its XML prolog stripped; nesting, cycles, path escapes), checks every relatively referenced image exists inside the deck (`check_images`; nothing is embedded), and writes the JSON blob into the `TEMPLATE` page (with `<` escaped as `\u003c`) with `<script src="{runtime_url}">`.
 - No third-party runtime Python dependencies, and no knowledge of where `openartifact.js` lives on disk: that is `server.py`'s concern.
 
 **PDF (`backend/pdf.py`)**
@@ -136,7 +136,7 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 
 - `FastMCP` server named `openartifact`, mounted into `server.py` (it has no entry point of its own). The tool functions `new_artifact`, `run_code`, `build_artifact` (registered as `build`) and `list_artifacts` are plain coroutines so tests call them directly under `auth.as_principal`. Nothing in them blocks the event loop: the sandbox is `AsyncMonty` and the builder runs via `asyncio.to_thread`.
 - The `AsyncMonty` worker pool is opened by the `monty_pool()` async context manager and lives for the app's lifespan. It is bound to the loop that opened it, so never create pools lazily or at import time. Tests use a `pool` fixture.
-- `new_artifact(title, content, type, theme, footer)` is the only way an artifact is created: inside one `edit()` it writes `artifact.toml` (`render_toml`, JSON string escaping is valid TOML) and `deck.md` under `artifacts/<uuid4>/` and inserts the row; then it builds. A build failure is returned as the `ToolError` but the artifact exists and is listed, for `run_code` to fix. `type` and `theme` are Literals kept equal to `build.TYPES` / `build.THEMES` by a test. Tabs are not a parameter; the agent edits `artifact.toml` for those.
+- `new_artifact(title, content, type, theme, footer)` is the only way an artifact is created: inside one `edit()` it writes `artifact.toml` (`render_toml`, JSON string escaping is valid TOML) and `main.md` under `artifacts/<uuid4>/` and inserts the row; then it builds. A build failure is returned as the `ToolError` but the artifact exists and is listed, for `run_code` to fix. `type` and `theme` are Literals kept equal to `build.TYPES` / `build.THEMES` by a test. Tabs are not a parameter; the agent edits `artifact.toml` for those.
 - `run_code(artifact, code, inputs)` resolves the UUID within the caller's workspace (`resolve`; another workspace's artifact is reported as missing), mounts the directory read-write at `/artifact` inside an `edit()`, and commits even when the sandbox raised (message `run_code (failed): <id>`) before re-raising, so partial writes persist. Printed output and the trailing expression value are returned.
 - `build(artifact)` runs `build.build_html` in a thread under `open_artifact`; output lands in the checkout's `dist/`, where the sandbox can read it, and the returned URL is `OPENARTIFACT_BASE_URL/artifacts/<uuid>/`.
 - The mount must contain only artifact data, never code the host executes; keep the cache directory off `sys.path`.
@@ -144,7 +144,7 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 **HTTP server (`backend/server.py`)**
 
 - `mcp.http_app(path='/')` mounted at `/mcp`. The app's `lifespan` enters FastMCP's lifespan (its session manager will not start otherwise), `db.db_pool()`, `store.object_store()` and `mcp_server.monty_pool()`, then runs migrations. The MCP endpoint is `/mcp/`.
-- `/openartifact.js` serves `frontend/dist/openartifact.js` (`RUNTIME_JS_PATH`); every built page loads it from there. `/artifacts/{uuid}/` looks the artifact up (any workspace: pages are public by UUID), syncs the checkout under `open_artifact`, builds `dist/index.html` if missing (a `BuildError` is a 422) and returns the HTML read under the lock. `/artifacts/{uuid}/{path}` serves images and fonts (`SERVED_EXTS`) from the artifact directory after the containment and extension check in `contained_file`. A non-UUID is a 404. `deck.md`, `artifact.toml`, `styles.css` and components are not served as files. `/` returns a JSON index without artifacts; `list_artifacts` is per user.
+- `/openartifact.js` serves `frontend/dist/openartifact.js` (`RUNTIME_JS_PATH`); every built page loads it from there. `/artifacts/{uuid}/` looks the artifact up (any workspace: pages are public by UUID), syncs the checkout under `open_artifact`, builds `dist/index.html` if missing (a `BuildError` is a 422) and returns the HTML read under the lock. `/artifacts/{uuid}/{path}` serves images and fonts (`SERVED_EXTS`) from the artifact directory after the containment and extension check in `contained_file`. A non-UUID is a 404. `main.md`, `artifact.toml`, `styles.css` and components are not served as files. `/` returns a JSON index without artifacts; `list_artifacts` is per user.
 - Configuration is by environment: `HOST`, `PORT`, `DATABASE_URL`, `OPENARTIFACT_STORE_URL`, `OPENARTIFACT_CACHE_DIR`, `OPENARTIFACT_BASE_URL`, the auth variables above, and `LOGFIRE_TOKEN` to send telemetry. The deployment image needs `git`.
 - Observability: `configure_telemetry()` calls `logfire.configure()`, `logfire.instrument_asyncpg()`, and hands monty its tracer, meter and logger via `pydantic_monty.instrument_telemetry`. FastAPI's built-in telemetry and FastMCP's native spans pick up Logfire's global providers on their own, so do not add `logfire.instrument_fastapi` or `logfire.instrument_mcp`; they would duplicate spans. FastAPI is created with `telemetry={'auto_configure': False}` so it never adds OTLP exporters of its own.
 
@@ -164,7 +164,7 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 ```json
 {
   "config":     { "type": "deck", "title": "...", "theme": "light", "footer": "...", "tabs": [{ "id": "intro", "label": "Intro" }] },
-  "markdown":   "raw deck.md source",
+  "markdown":   "raw main.md source",
   "components": { "Hero.html": "<section>...</section>" },
   "styles":     "raw styles.css"
 }

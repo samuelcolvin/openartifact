@@ -52,7 +52,7 @@ Anything longer than a few lines of HTML goes in a file and is pulled in with a
 
 | Feature       | Where it lives        |
 | ------------- | --------------------- |
-| Slide content | `deck.md`             |
+| Slide content | `main.md`             |
 | Theme tokens  | `styles.css`          |
 | Components    | `components/*.html`   |
 | Config        | `artifact.toml`          |
