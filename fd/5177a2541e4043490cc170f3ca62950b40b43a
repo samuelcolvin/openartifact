@@ -1,0 +1,46 @@
+frontend/src/article.ts
+  s_43f07e2c10821d::t_c738160f797ed5 9,19-21
+backend/build.py
+  s_43f07e2c10821d::t_c0f0f461f20011 70-71,74,80-81,85-105,179,247-301,306-314,319,322-324,326-338,340-346,348-353,355-486,507-561,587-588,670-673
+frontend/src/types.ts
+  s_43f07e2c10821d::t_c738160f797ed5 36-37
+examples/starter/components/Hero.html
+  s_43f07e2c10821d::t_c738160f797ed5 6-7
+tests/test_build.py
+  s_43f07e2c10821d::t_85c44f3f2bb674 52-59,65,75,85,94,101,108-112,118,125-327
+skills/openartifact/SKILL.md
+  s_43f07e2c10821d::t_c738160f797ed5 82-87,171,175-201
+examples/starter/components/Card.html
+  s_43f07e2c10821d::t_c738160f797ed5 1-5
+frontend/src/substitute.ts
+  s_43f07e2c10821d::t_00fa933b33d887 1-63
+examples/starter/styles.css
+  s_43f07e2c10821d::t_c738160f797ed5 20-49
+examples/starter/artifact.toml
+  s_43f07e2c10821d::t_cb94e56591b01f 8-11
+CLAUDE.md
+  s_43f07e2c10821d::t_eb386d13bc2b8d 105-106,119,184
+frontend/src/main.ts
+  s_43f07e2c10821d::t_c738160f797ed5 22,112,115-116
+frontend/src/components.ts
+  s_43f07e2c10821d::t_2d0d830446f0c7 2-3,5-19,24-28,31-32,38-41,45-92,94,96
+  s_43f07e2c10821d::t_c738160f797ed5 22
+examples/starter/main.md
+  s_43f07e2c10821d::t_c738160f797ed5 34-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fd5177a2541e4043490cc170f3ca62950b40b43a",
+  "prompts": {},
+  "sessions": {
+    "s_43f07e2c10821d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fb6f58d9-2e73-4053-b834-d4f0f433543c",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
