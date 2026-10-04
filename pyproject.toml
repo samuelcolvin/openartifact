@@ -6,9 +6,16 @@ readme = "README.md"
 license = "MIT"
 authors = [{ name = "Samuel Colvin", email = "s@muelcolvin.com" }]
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "fastapi>=0.142.2",
+    "fastmcp>=4.0.10",
+    "logfire>=5.1.1",
+    "pydantic-monty>=1.0.0",
+    "uvicorn>=0.54.0",
+]
 
-# Not a package: the builder is the single script backend/build.py, run with `uv run backend/build.py`.
+# Not a package: the builder is the single script backend/build.py and the server is backend/server.py, both run with
+# `uv run backend/<name>.py`. The dependencies above are for the server only; build.py needs none.
 [tool.uv]
 package = false
 
@@ -21,7 +28,7 @@ dev = [
 
 [tool.ruff]
 line-length = 120
-include = ["backend/**/*.py", "tests/**/*.py"]
+include = ["*.py", "backend/**/*.py", "tests/**/*.py"]
 
 [tool.ruff.lint]
 extend-select = [
@@ -35,7 +42,7 @@ mccabe = { max-complexity = 14 }
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
-known-first-party = ["build"]
+known-first-party = ["build", "mcp_server", "server"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -46,7 +53,7 @@ pythonVersion = "3.11"
 typeCheckingMode = "strict"
 reportUnnecessaryTypeIgnoreComment = true
 venv = ".venv"
-include = ["backend", "tests"]
+include = ["*.py", "backend", "tests"]
 extraPaths = ["backend"]
 
 [tool.pytest.ini_options]

@@ -10,6 +10,8 @@ The repo has two halves:
 
 - **`frontend/`** - the browser runtime, `deck.js`. This is the only thing with a JavaScript build step, and it exists solely to be embedded in the output page. All rendering (markdown, components, code highlighting, navigation, build steps, print layout) happens here, in the browser.
 - **`backend/build.py`** - the builder. A single Python script with no dependencies beyond the standard library. It does no rendering: it validates the inputs, packs them into a JSON blob, writes that blob plus `deck.js` into an HTML page, and optionally drives Chrome to print a PDF.
+- **`backend/mcp_server.py`** - an MCP server for agents, built on `fastmcp` and `pydantic-monty`. Its `new_artifact` tool creates a deck from markdown and builds it; its `run_code` tool runs agent-written Python in a monty sandbox with the artifact's directory mounted read-write at `/artifact`, which is how the agent edits files; its `build` tool calls `build.py` on that directory to produce the HTML page (PDF export is not an MCP concern; it will be a download button on the served artifact). Artifacts live under `OPENARTIFACT_ROOT` (default `artifacts/`, gitignored).
+- **`backend/server.py`** - the FastAPI app that runs it all: the MCP server mounted at `/mcp/`, `deck.js` at `/deck.js`, and each built artifact's `dist/` at `/artifacts/{name}/`. `uv run backend/server.py` (or `make serve`) starts it with uvicorn.
 
 The split is deliberate. The builder is thin enough to run anywhere Python 3.11 exists and to become a service later; the runtime is where the product lives.
 
@@ -19,7 +21,7 @@ The next step is to run the builder as a standalone service in a Docker containe
 
 ### Rules that follow from this
 
-- **The builder stays one dependency-free script.** No package, no console script, no third-party Python imports. `pyproject.toml` exists only to configure the dev tools.
+- **The builder stays one dependency-free script.** No package, no console script, no third-party Python imports in `build.py`. The project's runtime dependencies (`fastapi`, `uvicorn`, `fastmcp`, `pydantic-monty`, `logfire`) belong to `mcp_server.py` and `server.py`, which import `build.py`, never the other way round.
 - **The runtime does the work, the builder packages it.** If a feature can be implemented in `frontend/src/` it goes there. The builder only mirrors runtime logic where it lets a build fail early with a good error (see `validate_slides`).
 - **Everything in the page is synchronous.** Headless Chrome prints at `load`, so the runtime must finish rendering before then. Never add async work to `main.ts`.
 - **Output is self-contained.** Components, styles and images are inlined; the page must never reference anything outside `index.html` and the `deck.js` beside it.
@@ -43,29 +45,29 @@ pnpm -C frontend typecheck            # tsc --noEmit
 pnpm -C frontend lint                 # biome check
 pnpm -C frontend format               # biome check --fix
 
-uv sync                               # create .venv with the dev tools (uv run does this on demand too)
+uv sync                               # create .venv with the dependencies and dev tools (uv run does this on demand too)
 uv run backend/build.py html --dir examples/starter   # -> examples/starter/dist/index.html + deck.js
 uv run backend/build.py pdf --dir examples/starter    # html, then Chrome headless -> dist/deck.pdf
+uv run backend/server.py              # HTTP server on :8000: MCP at /mcp/, deck.js, built artifacts; files under $OPENARTIFACT_ROOT
 uv run ruff check                     # lint backend/ and tests/
 uv run ruff format                    # format them
 uv run basedpyright                   # strict type check of backend/ and tests/
 uv run pytest                         # run tests/
 ```
 
+The `Makefile` wraps these: `make install`, `make format`, `make lint`, `make test`, `make main` (all three), `make serve`.
+
 `build.py` reads `frontend/dist/deck.js`, so run `pnpm -C frontend build` once after cloning or after changing anything in `frontend/src/`.
 
 **After every set of changes, before reporting work as done, run:**
 
 ```bash
-pnpm -C frontend format
-pnpm -C frontend typecheck
-uv run ruff format
-uv run ruff check
-uv run basedpyright
-uv run pytest
+make format
+make lint
+make test
 ```
 
-If `format` modifies files, that's fine - those edits are correct. If `typecheck`, `ruff check`, `basedpyright` or the tests report an error, fix it.
+If `format` modifies files, that's fine - those edits are correct. If `lint` or the tests report an error, fix it.
 
 ## Pre-commit hooks
 
@@ -103,11 +105,29 @@ Paths below are relative to `frontend/`. `package.json`, `tsconfig.json` and `bi
 - Loads and validates `artifact.toml` (`tomllib`), reads `deck.md`, collects every `<component src>` file (`.html` verbatim, `.svg` inlined with its XML prolog stripped; nesting, cycles, path escapes), inlines every referenced image as a data URI, writes the JSON blob into the `TEMPLATE` page (with `<` escaped as `\u003c`) and copies `frontend/dist/deck.js` next to the output. `pdf` and `html-to-pdf` run Chrome headless with the paper size from `base.css`.
 - No third-party runtime Python dependencies. Keep it that way. The builder finds `deck.js` via the repo layout (`backend/` -> repo root -> `frontend/dist/`).
 
+**MCP server (`backend/mcp_server.py`)**
+
+- `FastMCP` server named `openartifact`, mounted into `server.py` (it has no entry point of its own). The tool functions `new_artifact`, `run_code` and `build_artifact` (registered as `build`) are plain coroutines so tests call them directly. Nothing in them blocks the event loop: the sandbox is `AsyncMonty` and the builder runs via `asyncio.to_thread`.
+- The `AsyncMonty` worker pool is opened by the `monty_pool()` async context manager and lives for the app's lifespan (`server.py` enters it next to FastMCP's lifespan). It is bound to the loop that opened it, so never create pools lazily or at import time. Tests use a `pool` fixture.
+- `new_artifact(title, content, theme, footer)` is the only way an artifact is created. The server picks the identifier (`new_artifact_id`: slugified title capped at 40 chars plus a 6-char random suffix), writes `artifact.toml` (`render_toml`, JSON string escaping is valid TOML) and `deck.md` from `content`, then runs `build_artifact`. A build failure is returned as the `ToolError` and the files are kept for `run_code` to fix. `theme` is the `Theme` Literal, which a test keeps equal to `build.THEMES`. Tabs are not a parameter; the agent edits `artifact.toml` for those.
+- `run_code(artifact, code, inputs)` resolves `artifact` (a `[a-z0-9_-]` slug) to an existing `<root>/<artifact>/` (a missing one is a `ToolError`, never created implicitly) and runs `code` with a `MountDir` on that directory in `read-write` mode at `/artifact`, which is also the sandbox's working directory. `inputs` become globals. Printed output and the trailing expression value are returned; sandbox exceptions become `ToolError`s carrying the monty traceback.
+- `build(artifact)` runs `build.build_html` in a thread, so output lands in `<root>/<artifact>/dist/` where the sandbox can read it. It returns the URL the page is served at, built from `OPENARTIFACT_BASE_URL` (default `http://127.0.0.1:8000`). `BuildError` becomes a `ToolError`. The builder's own `print` lines go to the server's stdout.
+- The mount must contain only artifact data, never code the host executes; keep `OPENARTIFACT_ROOT` off `sys.path`.
+
+**HTTP server (`backend/server.py`)**
+
+- `mcp.http_app(path='/')` mounted at `/mcp`. The app's `lifespan` enters FastMCP's lifespan (its session manager will not start otherwise) and `mcp_server.monty_pool()`. The MCP endpoint is `/mcp/`.
+- `/deck.js` serves `frontend/dist/deck.js`. `/artifacts/{name}/` serves `dist/index.html` and `/artifacts/{name}/{file}` the other files in `dist/`, after checking the name and that the resolved path is directly inside `dist/`. Source files are never served. `/` returns a JSON index.
+- Configuration is by environment: `HOST`, `PORT`, `OPENARTIFACT_ROOT`, `OPENARTIFACT_BASE_URL`, and `LOGFIRE_TOKEN` to send telemetry.
+- Observability: `configure_telemetry()` calls `logfire.configure()` and hands monty its tracer, meter and logger via `pydantic_monty.instrument_telemetry`. FastAPI's built-in telemetry and FastMCP's native spans pick up Logfire's global providers on their own, so do not add `logfire.instrument_fastapi` or `logfire.instrument_mcp`; they would duplicate spans. FastAPI is created with `telemetry={'auto_configure': False}` so it never adds OTLP exporters of its own.
+
 **Supporting files**
 
 - `skills/openartifact/SKILL.md` - the user-facing authoring guide. Update it whenever slide syntax, config keys or the CSS contract change.
 - `examples/starter/` - smoke-test deck exercising every feature (components, nesting, image, tabs, light slide, code).
 - `tests/test_build.py` - pytest for `backend/build.py` (imported as `build`; pytest adds `backend/` to `pythonpath`).
+- `tests/test_mcp_server.py` - pytest for the MCP server: the tool functions directly, plus one in-memory `fastmcp.Client` round trip.
+- `tests/test_server.py` - pytest for the HTTP routes with `TestClient`, plus an MCP round trip over real HTTP against a uvicorn thread.
 
 ## The JSON contract
 
