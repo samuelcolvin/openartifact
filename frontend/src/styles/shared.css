@@ -9,12 +9,14 @@
 
 :root {
   /* Core palette - override in your deck's styles.css. */
-  --bg-deck: #0d0d0d;
-  --bg-slide: #1a1a1a;
+  --bg-deck: #101317;
+  --bg-slide: #1c2026;
   --bg-light: #ffffff;
-  --surface: #2a2a2a;
+  /* The workspace behind a document's sheets: a light grey for light themes, the deck backdrop for dark ones. */
+  --bg-backdrop-light: #e8eaed;
+  --surface: #272c33;
   --color-text: rgba(255, 255, 255, 0.85);
-  --color-heading: #ffffff;
+  --color-heading: #f2f4f7;
   --color-muted: #8f888e;
   --color-text-light: #2a2230;
   --color-heading-light: #1a1018;
@@ -39,12 +41,14 @@
 /* ========================================
    THEME COLOR ASSIGNMENTS
    These two blocks pick which raw tokens are "active" for the current theme.
-   The presenter's outer background (--bg-deck) stays dark across all themes -
-   only the slide itself swaps. Applied on both <html> (so @media print body
-   bg works) and the .deck-presenter.
+   A deck presenter's outer background (--bg-deck) stays dark across all themes -
+   only the page itself swaps - while a document's backdrop (--bg-backdrop)
+   follows the theme like a word processor's workspace. Applied on both <html>
+   (so @media print body bg works) and the artifact root.
    ======================================== */
 :is(.theme-light, .theme-markdown-light) {
   --slide-bg: var(--bg-light);
+  --bg-backdrop: var(--bg-backdrop-light);
   --slide-text: var(--color-text-light);
   --slide-heading: var(--color-heading-light);
   --topbar-divider: color-mix(in srgb, var(--color-heading-light) 12%, transparent);
@@ -53,6 +57,7 @@
 
 :is(.theme-dark, .theme-markdown-dark) {
   --slide-bg: var(--bg-slide);
+  --bg-backdrop: var(--bg-deck);
   --slide-text: var(--color-text);
   --slide-heading: var(--color-heading);
   --topbar-divider: rgba(255, 255, 255, 0.08);

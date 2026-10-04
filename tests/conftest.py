@@ -17,17 +17,17 @@ from urllib.parse import urlsplit, urlunsplit
 import asyncpg
 import pytest
 
+import auth
+import db
+import store
+import workspace
+
 # The MCP server builds its auth provider at import time; give it the static development token before any test
 # module imports it. Tests that need a second user register more tokens on the same verifier.
 DEV_TOKEN = 'test-dev-token'
 os.environ['OPENARTIFACT_DEV_TOKEN'] = DEV_TOKEN  # not setdefault: the Makefile exports a dev token of its own
 # The server configures Logfire at import; keep its console output out of pytest's captured stdout.
 os.environ.setdefault('LOGFIRE_CONSOLE', 'false')
-
-import auth
-import db
-import store
-import workspace
 
 TABLES = ('users', 'credentials', 'workspaces', 'artifacts')
 

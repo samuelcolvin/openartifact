@@ -13,7 +13,7 @@
 }
 
 body {
-  background: var(--bg-deck);
+  background: var(--bg-backdrop);
 }
 
 .artifact-document {
@@ -27,7 +27,11 @@ body {
   margin: 0 auto 2.5rem;
   padding: var(--document-padding);
   background: var(--slide-bg);
-  box-shadow: 0 2px 28px rgba(0, 0, 0, 0.35);
+  /* A hairline plus a soft shadow: enough to read as paper on a backdrop that is close to white. */
+  border: 1px solid color-mix(in srgb, var(--slide-heading) 10%, transparent);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    0 8px 24px rgba(0, 0, 0, 0.06);
 }
 
 @page {
@@ -51,6 +55,7 @@ body {
     min-height: 0;
     margin: 0;
     padding: 0;
+    border: 0;
   }
 
   /* `---` in the markdown is an explicit page break when printing. */
