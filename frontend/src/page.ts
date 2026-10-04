@@ -1,9 +1,9 @@
 /**
  * Build the DOM for one page of an artifact, whatever its type.
  *
- *   section.slide[.classes]            (`section.page` for a document or page artifact)
+ *   section.page[.classes]
  *     ...the page component, or nothing around...
- *       div.slide-body | article.prose   (the rendered markdown)
+ *       div.page-body[.prose]   (the rendered markdown; `prose` for a document or page artifact)
  *
  * The page component (`page_component` in artifact.toml) is an ordinary component rendered once per
  * page with no attributes: `{{ CONTENT }}` is the rendered body, and the global context gives it
@@ -14,23 +14,16 @@
 
 import { expandComponents, renderComponent } from './components.ts'
 import { renderMarkdown } from './render.ts'
+import type { RawPage } from './split.ts'
 import { type Context, substituteText } from './substitute.ts'
 import type { ArtifactConfig, ArtifactData } from './types.ts'
-
-/** What a page is made of before rendering: its classes, an optional title and its markdown. */
-export interface PageInput {
-  classes: string[]
-  /** Explicit title; otherwise the first `h1` of the rendered body is used, then nothing. */
-  title?: string
-  body: string
-}
 
 /** With no page component the body is the whole page. */
 const DEFAULT_FRAME = '{{ CONTENT }}'
 
-/** Render page `index` of `total`. */
+/** Render page `index` of `total`. `PAGE_TITLE` is the title directive, else the body's first `h1`, else empty. */
 export function buildPage(
-  page: PageInput,
+  page: RawPage,
   index: number,
   total: number,
   data: ArtifactData,
@@ -39,9 +32,8 @@ export function buildPage(
   // Parse through <template> so any <script> in the markdown or a component is inert.
   const template = document.createElement('template')
   template.innerHTML = renderMarkdown(page.body)
-  const isDeck = config.type === 'deck'
-  const body = document.createElement(isDeck ? 'div' : 'article')
-  body.className = isDeck ? 'slide-body' : 'prose'
+  const body = document.createElement('div')
+  body.className = config.type === 'deck' ? 'page-body' : 'page-body prose'
   body.append(template.content)
 
   const title = page.title ?? body.querySelector('h1')?.textContent?.trim() ?? ''
@@ -53,7 +45,7 @@ export function buildPage(
   }
 
   const section = document.createElement('section')
-  section.className = [isDeck ? 'slide' : 'page', ...page.classes].join(' ')
+  section.className = ['page', ...page.classes].join(' ')
   section.dataset.pageTitle = title
   const frame = (config.page_component && data.components[config.page_component]) || DEFAULT_FRAME
   section.append(renderComponent(frame, {}, context, [body]))

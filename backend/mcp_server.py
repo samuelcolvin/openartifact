@@ -2,7 +2,7 @@
 
 Artifacts belong to the calling user's workspace (see `auth.py` and `workspace.py`): a git repository, cached as
 a working clone, with one directory per artifact holding the files `build.py` expects: `artifact.toml`,
-`main.md`, optional `styles.css`, `components/` and `assets/`. Every tool that changes files goes through
+`main.md` (pages separated by `---`), optional `styles.css`, `components/` and `assets/`. Every tool that changes files goes through
 `workspace.edit`, so each call is a commit and the repo is pushed to the object store before the tool returns.
 
 Tools:
@@ -64,15 +64,19 @@ mcp = FastMCP(
     'openartifact',
     instructions=(
         'Create an artifact with `new_artifact`, which writes `main.md` from `content`, builds it and returns its '
-        'identifier (a UUID) and page URL. Pick the `type` for the job: `deck` for slides (content is markdown '
-        'with a `<slide .../>` line starting each slide), `document` for a fixed-width document that prints to '
-        'pages, or `page` for a continuous web page (both take plain markdown with no slide markers). Edit it with '
-        f'`run_code`, where the artifact directory is the working directory and is also mounted at `{VIRTUAL_PATH}` '
-        '(`main.md`, `artifact.toml`, `styles.css`, `components/*.html`, `assets/*`), then call `build` to validate '
-        'the files and refresh the page. `list_artifacts` shows the artifacts you already have. Every change is '
-        "committed to the artifact's history. The full authoring guide (slide attributes, components, build steps, "
-        f'images, the CSS variable contract, mapping a brand palette) is the resource `{SKILL_URI}`; read it before '
-        'writing anything beyond plain markdown.'
+        'identifier (a UUID) and page URL. An artifact is markdown split into pages by lines containing only `---` '
+        '(with a blank line before each); `type` picks how the pages are laid out: `deck` shows one 16:9 page at a '
+        'time with navigation, `document` stacks fixed-width sheets that print one per page, `page` is a continuous '
+        'web page. A comment at the top of a page sets its classes and title: `<!-- class: cover light; title: ... -->`. '
+        'Edit the artifact with `run_code`, where the artifact directory is the working directory and is also mounted '
+        f'at `{VIRTUAL_PATH}` (`main.md`, `artifact.toml`, `styles.css`, `components/*.html`, `assets/*`), then call '
+        '`build` to validate the files and refresh the page. Components take parameters as attributes and children '
+        'between the tags; `{{ PAGE_NUMBER }}`, `{{ PAGE_COUNT }}`, `{{ PAGE_TITLE }}` and the `[context]` keys of '
+        '`artifact.toml` are available everywhere; `page_component` in `artifact.toml` names a component rendered '
+        'around every page. `list_artifacts` shows the artifacts you already have. Every change is committed to the '
+        "artifact's history. The full authoring guide (page classes, components and parameters, build steps, images, "
+        f'the CSS variable contract, mapping a brand palette) is the resource `{SKILL_URI}`; read it before writing '
+        'anything beyond plain markdown.'
     ),
     auth=auth.make_auth_provider(),
 )
@@ -155,10 +159,10 @@ def format_output(streams: CollectStreams, result: object) -> str:
 async def new_artifact(title: str, content: str, type: ArtifactType = 'deck', theme: Theme = 'light') -> str:
     """Create an artifact from markdown and build it.
 
-    `type` is the form of the artifact: `deck` is slides, where `content` has a line containing only
-    `<slide .../>` starting each slide; `document` is a fixed-width document that prints to A4 pages; `page` is a
-    continuous web page. For `document` and `page`, `content` is plain markdown with no slide markers, structured
-    with headings. `content` becomes `main.md`; `title`, `type` and `theme` are written to `artifact.toml`. The artifact is built straight away, so a problem in `content` is returned as an error naming
+    `content` is markdown; a line containing only `---`, with a blank line before it, starts a new page. `type`
+    is how the pages are laid out: `deck` shows one 16:9 page at a time (so every page is a slide), `document`
+    stacks fixed-width sheets that print one per A4 page, `page` is a continuous web page (usually one page).
+    `content` becomes `main.md`; `title`, `type` and `theme` are written to `artifact.toml`. The artifact is built straight away, so a problem in `content` is returned as an error naming
     the line; the files are kept, so fix them with `run_code` and call `build`. On success returns the artifact
     identifier (a UUID) to pass to the other tools, and the URL of the page.
     """
@@ -218,7 +222,8 @@ async def run_code(artifact: str, code: str, inputs: dict[str, str | int] | None
 async def build_artifact(artifact: str) -> str:
     """Validate an artifact's files and build it to `dist/index.html`.
 
-    Validation covers `artifact.toml`, the slide structure of `main.md`, every referenced component and image.
+    Validation covers `artifact.toml`, the page structure of `main.md`, every component and its parameters, and
+    every image.
     Problems are returned as an error naming the file and line, so fix them with `run_code` and build again. On
     success returns the URL where the page can be viewed; inside `run_code` the output is also visible under
     `/artifact/dist/`.

@@ -1,21 +1,21 @@
 # OpenArtifact
 
-Markdown slide decks that render in the browser and print to PDF.
+Markdown slide decks, documents and pages that render in the browser and print to PDF.
 
 Why?
 
 * My taste
-* Good support for HTML presentation - keyboard control, slide persistence in URL, jump to slide, title
+* Good support for HTML presentation - keyboard control, page persistence in URL, jump to page, title
 * Good support for PDF generation - configure `page` css property properly
 * No JavaScript toolchain needed to build a deck: the runtime is one prebuilt `openartifact.js`, the builder is one Python module with no dependencies
 
 ## Artifact types
 
-`type` in `artifact.toml` picks the form of the artifact; `theme` picks the colours.
+An artifact is markdown split into pages on `---` lines. `type` in `artifact.toml` picks how the pages are laid out; `theme` picks the colours.
 
-- `deck` (default) - slides with navigation, one 16:9 slide per PDF page. The markdown has a `<slide .../>` line starting each slide.
-- `document` - a fixed-width sheet that prints to A4 pages like a word processor. Plain markdown, structured with headings.
-- `page` - a continuous, fluid page in the manner of a Notion page. Plain markdown.
+- `deck` (default) - one 16:9 page at a time with navigation; prints one page per sheet.
+- `document` - fixed-width sheets, one per page, that print to A4 like a word processor.
+- `page` - a continuous, fluid page in the manner of a Notion page.
 
 `examples/starter`, `examples/document` and `examples/page` show one of each.
 
@@ -25,8 +25,8 @@ A deck is a directory:
 
 ```
 my-deck/
-├── artifact.toml          # title, theme, footer, tabs, paths (all optional)
-├── main.md             # the content: slides, or plain markdown
+├── artifact.toml          # type, title, theme, page_component, [context], paths (all optional)
+├── main.md             # the content: markdown, pages separated by ---
 ├── styles.css          # theme tokens (optional)
 ├── components/         # HTML files pulled in with <component src="...">
 │   └── Hero.html
@@ -67,22 +67,28 @@ PYTHONPATH=backend python3 -c 'from pathlib import Path; import build; print(bui
 `main.md`:
 
 ```markdown
-<slide layout="title"/>
+<!-- class: cover; title: My Deck -->
 
 ### Section Label
 
 # My Deck
 
-<slide tab="intro"/>
+---
 
 # Hello, world
 
 - Bullets, tables, code blocks and inline HTML all work
-- A `<slide .../>` line starts each slide; there is no closing tag
+- A line containing only `---` starts a new page; this is page {{ PAGE_NUMBER }} of {{ PAGE_COUNT }}
 
-<component src="Hero.html"></component>
+<component src="Card.html" title="Components take parameters">
 
-<slide layout="statement"/>
+And markdown children, between the tags.
+
+</component>
+
+---
+
+<!-- class: statement -->
 
 # One bold statement.
 ```
@@ -92,13 +98,13 @@ PYTHONPATH=backend python3 -c 'from pathlib import Path; import build; print(bui
 ```toml
 title = "My Deck"
 theme = "light"           # light | dark | markdown-light | markdown-dark (default: light)
+page_component = "Page.html"   # rendered around every page: a header, a counter, a footer, with {{ CONTENT }} inside
 
-tabs = [
-  { id = "intro", label = "Intro" },
-]
+[context]
+DATE = "October 2026"     # {{ DATE }} anywhere
 ```
 
-The four built-in themes split on two axes: light vs dark backgrounds, and whether markdown-source decorations (`#` heading prefixes, `**` strong markers, traffic-light dots, mono slide counter, diamond bullets) render on top. Pick `light` or `dark` for a clean baseline; pick a `markdown-*` variant for the opinionated annotated look.
+The four built-in themes split on two axes: light vs dark backgrounds, and whether markdown-source decorations (`#` heading prefixes, `**` strong markers, diamond bullets) render on top. Pick `light` or `dark` for a clean baseline; pick a `markdown-*` variant for the opinionated annotated look.
 
 `styles.css` overrides any of the CSS variables in the base stylesheet:
 
@@ -110,12 +116,12 @@ The four built-in themes split on two axes: light vs dark backgrounds, and wheth
 }
 ```
 
-The full authoring guide - slide attributes, components, images, code blocks, the CSS variable contract and class hooks - lives at [`skills/openartifact/SKILL.md`](skills/openartifact/SKILL.md). It can be installed into Claude Code, Codex, Cursor, etc. via [skills.sh](https://skills.sh) (`bunx skills add samuelcolvin/openartifact`).
+The full authoring guide - page directives, the page component, components and parameters, images, code blocks, the CSS variable contract and class hooks - lives at [`skills/openartifact/SKILL.md`](skills/openartifact/SKILL.md). It can be installed into Claude Code, Codex, Cursor, etc. via [skills.sh](https://skills.sh) (`bunx skills add samuelcolvin/openartifact`).
 
 ## The builder API
 
 - `build.build_html(directory, output=None, runtime_url='/openartifact.js')` - build `directory` to `output` (default `directory/dist/index.html`), loading the runtime from `runtime_url`; returns the output path. Input problems, including a referenced image that does not exist, raise `build.BuildError` with the file and line.
-- `pdf.print_to_pdf(url, pdf_path)` - print the served page to PDF with Chrome headless at the slide page size; returns the PDF path.
+- `pdf.print_to_pdf(url, pdf_path)` - print the served page to PDF with Chrome headless at the type's page size; returns the PDF path.
 
 ## Converting to PDF
 

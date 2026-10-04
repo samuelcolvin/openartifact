@@ -53,7 +53,7 @@ def files_of(me: auth.Principal, artifact: str) -> Path:
 @pytest.fixture
 async def demo(me: auth.Principal) -> str:
     """An existing deck with one slide; returns its id."""
-    return artifact_id(await mcp_server.new_artifact('Demo', '<slide/>\n# Demo\n'))
+    return artifact_id(await mcp_server.new_artifact('Demo', '# Demo\n'))
 
 
 async def head_sha(ws: uuid.UUID) -> str | None:
@@ -64,12 +64,12 @@ async def head_sha(ws: uuid.UUID) -> str | None:
 
 
 async def test_new_artifact_builds_and_commits(me: auth.Principal):
-    out = await mcp_server.new_artifact('My Deck!', '<slide/>\n# Hello\n', theme='dark')
+    out = await mcp_server.new_artifact('My Deck!', '# Hello\n', theme='dark')
     artifact = artifact_id(out)
     assert re.fullmatch(UUID_RE, artifact)
     assert out.endswith(f'page: http://127.0.0.1:8765/artifacts/{artifact}/\n')
     directory = files_of(me, artifact)
-    assert (directory / 'main.md').read_text() == '<slide/>\n# Hello\n'
+    assert (directory / 'main.md').read_text() == '# Hello\n'
     assert (directory / 'artifact.toml').read_text() == ('title = "My Deck!"\ntype = "deck"\ntheme = "dark"\n')
     assert (directory / 'dist' / 'index.html').is_file()
     # One commit, recorded as the head, bundled; the build output is not in it.
@@ -82,11 +82,11 @@ async def test_new_artifact_builds_and_commits(me: auth.Principal):
 
 
 async def test_new_artifact_reports_build_errors_and_keeps_files(me: auth.Principal):
-    with pytest.raises(ToolError, match=r'main\.md:1: content before the first'):
-        await mcp_server.new_artifact('Broken', '# preamble\n<slide/>\n')
+    with pytest.raises(ToolError, match=r'main\.md:2: put a blank line before ---'):
+        await mcp_server.new_artifact('Broken', '# heading\n---\n# next\n')
     [row] = await workspace.list_artifacts(me.workspace_id)
     directory = files_of(me, str(row.id))
-    assert (directory / 'main.md').read_text() == '# preamble\n<slide/>\n'
+    assert (directory / 'main.md').read_text() == '# heading\n---\n# next\n'
     assert not (directory / 'dist').exists()
     assert await head_sha(me.workspace_id) is not None
 
@@ -97,9 +97,14 @@ async def test_new_artifact_page_takes_plain_markdown(me: auth.Principal):
     assert (files_of(me, artifact) / 'dist' / 'index.html').is_file()
 
 
-async def test_new_artifact_document_rejects_slide_markers(me: auth.Principal):
-    with pytest.raises(ToolError, match=r'markers are only used when type = "deck"; this artifact is a document'):
+async def test_new_artifact_rejects_old_slide_markers(me: auth.Principal):
+    with pytest.raises(ToolError, match=r'main\.md:1: <slide \.\.\./> is no longer supported'):
         await mcp_server.new_artifact('Doc', '<slide/>\n# Doc\n', type='document')
+
+
+async def test_new_artifact_reports_unknown_placeholders(me: auth.Principal):
+    with pytest.raises(ToolError, match=r'main\.md:3: unknown placeholder \{\{ AUTHOR \}\}; built-ins and \[context\]'):
+        await mcp_server.new_artifact('Doc', '# Doc\n\nBy {{ AUTHOR }}\n', type='document')
 
 
 def test_literals_match_builder():
@@ -117,10 +122,10 @@ def test_render_toml_escapes():
 
 async def test_run_code_writes_and_commits(me: auth.Principal, demo: str, pool: None):
     out = await mcp_server.run_code(
-        demo, "from pathlib import Path\nPath('main.md').write_text('<slide/>\\n# hi\\n')\nprint('done')\nlen('abc')"
+        demo, "from pathlib import Path\nPath('main.md').write_text('# hi\\n')\nprint('done')\nlen('abc')"
     )
     assert out == 'done\n3\n'
-    assert (files_of(me, demo) / 'main.md').read_text() == '<slide/>\n# hi\n'
+    assert (files_of(me, demo) / 'main.md').read_text() == '# hi\n'
     log = (await workspace.git('log', '--format=%s', cwd=workspace.checkout_path(me.workspace_id))).splitlines()
     assert log == [f'run_code: {demo}', f'new_artifact: {demo}']
 
@@ -193,14 +198,14 @@ async def test_build_imported_starter(me: auth.Principal, pool: None):
 
 
 async def test_build_reports_validation_errors(me: auth.Principal, demo: str, pool: None):
-    await mcp_server.run_code(demo, "from pathlib import Path\nPath('main.md').write_text('# preamble\\n<slide/>\\n')")
-    with pytest.raises(ToolError, match=r'main\.md:1: content before the first'):
+    await mcp_server.run_code(demo, "from pathlib import Path\nPath('main.md').write_text('# a\\n---\\n# b\\n')")
+    with pytest.raises(ToolError, match=r'main\.md:2: put a blank line before ---'):
         await mcp_server.build_artifact(demo)
 
 
 async def test_list_artifacts(me: auth.Principal):
     assert await mcp_server.list_artifacts() == 'no artifacts yet; create one with `new_artifact`\n'
-    first = artifact_id(await mcp_server.new_artifact('First', '<slide/>\n# 1\n'))
+    first = artifact_id(await mcp_server.new_artifact('First', '# 1\n'))
     second = artifact_id(await mcp_server.new_artifact('Second', '# 2\n', type='page'))
     assert await mcp_server.list_artifacts() == (
         f'{first}  deck  First  http://127.0.0.1:8765/artifacts/{first}/\n'
@@ -249,7 +254,7 @@ async def test_tools_over_mcp(me: auth.Principal, pool: None):
         tools = {tool.name for tool in await client.list_tools()}
         assert tools == {'new_artifact', 'run_code', 'build', 'list_artifacts'}
 
-        created = await client.call_tool('new_artifact', {'title': 'Demo', 'content': '<slide/>\n# Demo\n'})
+        created = await client.call_tool('new_artifact', {'title': 'Demo', 'content': '# Demo\n'})
         name = artifact_id(created.data)
 
         result = await client.call_tool(
@@ -257,11 +262,11 @@ async def test_tools_over_mcp(me: auth.Principal, pool: None):
             {
                 'artifact': name,
                 'code': "from pathlib import Path\nPath('main.md').write_text(md)",
-                'inputs': {'md': 'x'},
+                'inputs': {'md': '<component src="Nope.html"></component>'},
             },
         )
-        assert result.data == '1\n'
-        assert (files_of(me, name) / 'main.md').read_text() == 'x'
+        assert result.data == '39\n'
+        assert (files_of(me, name) / 'main.md').read_text() == '<component src="Nope.html"></component>'
 
         failed = await client.call_tool('build', {'artifact': name}, raise_on_error=False)
         assert failed.is_error

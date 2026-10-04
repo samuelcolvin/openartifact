@@ -1,28 +1,28 @@
 /**
  * Presenter behaviour, a vanilla port of the React `Deck` component this project used to ship:
  *
- *  - the current slide lives in the URL hash (`#3` is the third slide, 1-indexed)
+ *  - the current page lives in the URL hash (`#3` is the third page, 1-indexed)
  *  - keyboard (arrows, space, page up/down), wheel and any `[data-nav]` element in a page component navigate
- *  - "next" and "previous" step through a slide's build steps (`data-step`, see steps.ts)
- *    before moving between slides; a slide entered backwards opens on its last step
- *  - shift + left/right jump a whole slide, skipping build steps
- *  - the slide stream is scaled to fit the viewport via `--slide-scale`
- *  - `document.title` follows the active slide's `PAGE_TITLE`
- *  - `#N` links work as they do anywhere, so a page component can link to a slide
+ *  - "next" and "previous" step through a page's build steps (`data-step`, see steps.ts)
+ *    before moving between pages; a page entered backwards opens on its last step
+ *  - shift + left/right jump a whole page, skipping build steps
+ *  - the page stream is scaled to fit the viewport via `--page-scale`
+ *  - `document.title` follows the active page's `PAGE_TITLE`
+ *  - `#N` links work as they do anywhere, so a page component can link to a page
  *
  * Everything here runs synchronously at load, before first paint, so headless Chrome's
- * print-to-PDF sees the counters and every slide.
+ * print-to-PDF sees the counters and every page.
  */
 
 import { initSteps } from './steps.ts'
 import type { ArtifactConfig } from './types.ts'
 
-/** Transition style between slides: 'fade' for crossfade, 'slide' for directional slide. */
+/** Transition style between pages: 'fade' for crossfade, 'slide' for directional slide. */
 const TRANSITION: 'fade' | 'slide' = 'fade'
 
-const STATE_CLASSES = ['slide--active', 'slide--enter-fwd', 'slide--enter-back', 'slide--exit-fwd', 'slide--exit-back']
+const STATE_CLASSES = ['page--active', 'page--enter-fwd', 'page--enter-back', 'page--exit-fwd', 'page--exit-back']
 
-/** Read the slide index from the hash, clamped to the deck; null when the hash is not a number. */
+/** Read the page index from the hash, clamped to the deck; null when the hash is not a number. */
 function indexFromHash(total: number): number | null {
   const n = Number.parseInt(window.location.hash.replace('#', ''), 10)
   if (!Number.isFinite(n) || n < 1) return null
@@ -30,35 +30,35 @@ function indexFromHash(total: number): number | null {
 }
 
 export function initDeck(presenter: HTMLElement, config: ArtifactConfig): void {
-  const slides = Array.from(presenter.querySelectorAll<HTMLElement>('.slide'))
-  const total = slides.length
+  const pages = Array.from(presenter.querySelectorAll<HTMLElement>('.page'))
+  const total = pages.length
   if (total === 0) return
-  const steps = slides.map(initSteps)
+  const steps = pages.map(initSteps)
 
   let current = indexFromHash(total) ?? 0
-  // Navigation direction and the previously active slide, used for directional transitions.
+  // Navigation direction and the previously active page, used for directional transitions.
   let dir: -1 | 1 = 1
   let prev: number | null = null
   if (!window.location.hash) window.history.replaceState(null, '', `#${current + 1}`)
 
-  slides.forEach((slide, i) => {
-    slide.dataset.slideIndex = String(i)
+  pages.forEach((page, i) => {
+    page.dataset.pageIndex = String(i)
   })
 
-  /** Mark the active slide, apply transition classes and update the document title. */
+  /** Mark the active page, apply transition classes and update the document title. */
   const apply = () => {
-    slides.forEach((slide, i) => {
-      slide.classList.remove(...STATE_CLASSES)
+    pages.forEach((page, i) => {
+      page.classList.remove(...STATE_CLASSES)
       if (i === current) {
-        slide.classList.add('slide--active')
+        page.classList.add('page--active')
         // The page's PAGE_TITLE (its title directive, else its first h1), else the deck title.
-        const title = slide.dataset.pageTitle || config.title
+        const title = page.dataset.pageTitle || config.title
         if (title) document.title = title
         if (prev !== null && TRANSITION === 'slide') {
-          slide.classList.add(dir === 1 ? 'slide--enter-fwd' : 'slide--enter-back')
+          page.classList.add(dir === 1 ? 'page--enter-fwd' : 'page--enter-back')
         }
       } else if (i === prev && TRANSITION === 'slide') {
-        slide.classList.add(dir === 1 ? 'slide--exit-fwd' : 'slide--exit-back')
+        page.classList.add(dir === 1 ? 'page--exit-fwd' : 'page--exit-back')
       }
     })
     // Clear prev so it does not re-trigger an animation on the next apply.
@@ -66,8 +66,8 @@ export function initDeck(presenter: HTMLElement, config: ArtifactConfig): void {
   }
 
   /**
-   * Jump to a slide index, recording direction for transitions and syncing the hash. The
-   * slide opens on its first step, or on its last when `direction` is backwards and
+   * Jump to a page index, recording direction for transitions and syncing the hash. The
+   * page opens on its first step, or on its last when `direction` is backwards and
    * `lastStep` is set (so stepping back through a deck retraces every build).
    */
   const setCurrent = (next: number, direction: -1 | 1, lastStep = false) => {
@@ -79,7 +79,7 @@ export function initDeck(presenter: HTMLElement, config: ArtifactConfig): void {
     apply()
   }
 
-  /** Advance or retreat one step, spilling over to the neighbouring slide at either end. */
+  /** Advance or retreat one step, spilling over to the neighbouring page at either end. */
   const go = (direction: -1 | 1) => {
     const s = steps[current]
     const nextStep = s.current + direction
@@ -91,23 +91,23 @@ export function initDeck(presenter: HTMLElement, config: ArtifactConfig): void {
     if (next !== current) setCurrent(next, direction, direction === -1)
   }
 
-  /** Scale factor to fit one slide in the viewport with a little padding. */
+  /** Scale factor to fit one page in the viewport with a little padding. */
   const updateScale = () => {
-    const slide = slides[0]
+    const page = pages[0]
     const padding = 48
     const vw = window.innerWidth - padding
     const vh = window.innerHeight - padding
-    const scale = Math.min(vw / slide.offsetWidth, vh / slide.offsetHeight)
-    presenter.style.setProperty('--slide-scale', String(scale))
+    const scale = Math.min(vw / page.offsetWidth, vh / page.offsetHeight)
+    presenter.style.setProperty('--page-scale', String(scale))
   }
 
-  /** Jump a whole slide in `direction`, ignoring build steps; the target opens on its first step. */
+  /** Jump a whole page in `direction`, ignoring build steps; the target opens on its first step. */
   const jump = (direction: -1 | 1) => {
     const next = Math.max(0, Math.min(total - 1, current + direction))
     if (next !== current) setCurrent(next, direction)
   }
 
-  // Keyboard navigation. Shift + arrow skips build steps and moves one slide.
+  // Keyboard navigation. Shift + arrow skips build steps and moves one page.
   window.addEventListener('keydown', (e) => {
     if (e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
       e.preventDefault()

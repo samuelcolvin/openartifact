@@ -4,11 +4,11 @@
  * No highlight.js theme file is shipped: deck.css and prose.css already paint the <pre>
  * background and base text colour per theme, so only the token colours are needed. They
  * derive from the brand variables, so a user's styles.css retunes them for free. Light
- * contexts (light themes and per-slide `.light-slide`) deepen the accents with color-mix so
+ * contexts (light themes and per-page `.light`) deepen the accents with color-mix so
  * they keep contrast on a pale background.
  */
 
-.slide,
+.page,
 .prose {
   --code-comment: var(--color-muted);
   --code-keyword: var(--accent-tertiary);
@@ -19,8 +19,8 @@
   --code-meta: var(--color-muted);
 }
 
-:is(.theme-light, .theme-markdown-light) :is(.slide, .prose),
-.slide.light-slide {
+:is(.theme-light, .theme-markdown-light) :is(.page, .prose),
+.page.light {
   --code-comment: color-mix(in srgb, var(--color-muted) 85%, black);
   --code-keyword: color-mix(in srgb, var(--accent-tertiary) 70%, black);
   --code-string: color-mix(in srgb, var(--accent-aqua) 60%, black);

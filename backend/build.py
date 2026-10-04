@@ -3,7 +3,7 @@
 An artifact directory looks like:
 
     artifact.toml   type, title, theme, page_component, [context], path overrides (all optional)
-    main.md         the content: for a deck one `<slide .../>` line starts each slide; a document or page is plain markdown
+    main.md         the content: markdown, split into pages by lines containing only `---`
     styles.css      CSS variable overrides (optional)
     components/     HTML or SVG files pulled in with <component src="Name.html"></component>
     assets/         images referenced from the markdown, components or styles
@@ -177,13 +177,33 @@ def load_config(cwd: Path) -> Config:
 
 
 # ---------------------------------------------------------------------------
-# Slide structure
+# Pages
 # ---------------------------------------------------------------------------
 
-# Mirrors SLIDE_RE / FENCE_RE in frontend/src/split.ts; the runtime does the real split.
-SLIDE_RE = re.compile(r'^\s*<slide\b[^>]*?\s*/?>\s*$', re.IGNORECASE)
+# Mirrors frontend/src/split.ts; the runtime does the real split, this one fails early with line numbers.
+PAGE_BREAK_RE = re.compile(r'^ {0,3}---[ \t]*$')
 FENCE_RE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
-SELF_CLOSING_COMPONENT_RE = re.compile(r'<component\b[^>]*/>', re.IGNORECASE)
+# The old marker, reported with a migration hint rather than silently rendered as text.
+SLIDE_RE = re.compile(r'^\s*<slide\b[^>]*?\s*/?>\s*$', re.IGNORECASE)
+# A comment whose text opens with `key:` is a directive comment; any other comment is ordinary markdown.
+COMMENT_START_RE = re.compile(r'^\s*<!--')
+DIRECTIVE_INNER_RE = re.compile(r'^\s*[a-z]+\s*:')
+LATE_DIRECTIVE_RE = re.compile(r'<!--\s*(?:class|title)\s*:')
+DIRECTIVE_KEYS = ('class', 'title')
+# Entries are separated by newlines, or by `;` when a known key follows (so a title may contain `;`).
+ENTRY_SPLIT_RE = re.compile(r'\r?\n|;\s*(?=(?:class|title)\s*:)')
+ENTRY_RE = re.compile(r'^\s*([a-z]+)\s*:\s*(.*?)\s*$', re.DOTALL)
+CLASS_NAME_RE = re.compile(r'^[A-Za-z_][\w-]*$')
+
+
+@dataclass
+class RawPage:
+    """One page of the markdown, as the runtime will see it."""
+
+    line: int
+    classes: list[str]
+    title: str | None
+    body: str
 
 
 def unfenced_lines(source: str) -> Iterator[tuple[int, str]]:
@@ -201,43 +221,97 @@ def unfenced_lines(source: str) -> Iterator[tuple[int, str]]:
                 fence = None
 
 
-def check_components_closed(line: str, path: Path, number: int) -> None:
-    """A self-closing `<component .../>` is not valid HTML: the parser would swallow everything after it."""
-    if SELF_CLOSING_COMPONENT_RE.search(line):
-        raise BuildError(
-            f'{path}:{number}: self-closing <component .../> is not valid HTML; write <component src="Name.html"></component>'
-        )
-
-
-def validate_slides(source: str, path: Path) -> int:
-    """Check a deck's slide structure the way the runtime will read it; returns the slide count.
-
-    Errors: content before the first `<slide/>` line, no slides at all, or a self-closing `<component .../>`.
-    """
-    count = 0
-    for number, line in unfenced_lines(source):
-        if SLIDE_RE.match(line):
-            count += 1
+def parse_directives(inner: str, path: Path, number: int, page: RawPage) -> None:
+    """Apply the `key: value` entries of one directive comment to `page`, rejecting what the runtime would ignore."""
+    for entry in ENTRY_SPLIT_RE.split(inner):
+        if not entry.strip():
             continue
-        if count == 0 and line.strip():
-            raise BuildError(f'{path}:{number}: content before the first <slide .../> line: {line.strip()!r}')
-        check_components_closed(line, path, number)
-    if count == 0:
-        raise BuildError(f'{path}: no slides found; start each slide with a <slide .../> line')
-    return count
+        match = ENTRY_RE.match(entry)
+        if not match:
+            raise BuildError(f'{path}:{number}: cannot parse page directive {entry.strip()!r} (expected key: value)')
+        key, value = match.group(1), match.group(2)
+        if key not in DIRECTIVE_KEYS:
+            raise BuildError(f'{path}:{number}: unknown page directive {key!r}; use {" or ".join(DIRECTIVE_KEYS)}')
+        if key == 'class':
+            names = value.split()
+            for name in names:
+                if not CLASS_NAME_RE.match(name):
+                    raise BuildError(f'{path}:{number}: invalid class name {name!r} in <!-- class: ... -->')
+            page.classes.extend(names)
+        else:
+            if page.title is not None:
+                raise BuildError(f'{path}:{number}: page directive {key!r} given twice')
+            page.title = value
 
 
-def validate_prose(source: str, path: Path, artifact_type: str) -> None:
-    """Check a document or page: the markdown is rendered whole, so slide markers are a mistake."""
-    if not source.strip():
-        raise BuildError(f'{path}: no content')
-    for number, line in unfenced_lines(source):
-        if SLIDE_RE.match(line):
-            raise BuildError(
-                f'{path}:{number}: <slide .../> markers are only used when type = "deck"; this artifact is a '
-                f'{artifact_type}, so write plain markdown'
-            )
-        check_components_closed(line, path, number)
+def parse_page(lines: list[str], start: int, path: Path) -> RawPage:
+    """Build a `RawPage` from its lines, consuming leading directive comments (mirrors `parsePage` in split.ts)."""
+    page = RawPage(line=start, classes=[], title=None, body='')
+    i = 0
+    while i < len(lines):
+        if not lines[i].strip():
+            i += 1
+            continue
+        if not COMMENT_START_RE.match(lines[i]):
+            break
+        end = i
+        while end < len(lines) and '-->' not in lines[end]:
+            end += 1
+        if end == len(lines):
+            raise BuildError(f'{path}:{start + i}: page directive comment is never closed with -->')
+        text = '\n'.join(lines[i : end + 1])
+        inner = text[text.index('<!--') + 4 : text.rindex('-->')]
+        if not DIRECTIVE_INNER_RE.match(inner):
+            break  # an ordinary comment: it stays in the body
+        parse_directives(inner, path, start + i, page)
+        i = end + 1
+    page.body = '\n'.join(lines[i:])
+    # Every leading directive has been consumed, so a directive comment further down follows content and the runtime
+    # would ignore it; say so.
+    late = LATE_DIRECTIVE_RE.search(blank_code(page.body))
+    if late:
+        raise BuildError(
+            f"{path}:{start + i + line_of(page.body, late.start()) - 1}: page directives must come before the page's content"
+        )
+    return page
+
+
+def split_pages(source: str, path: Path) -> list[RawPage]:
+    """Split the markdown into pages on `---` lines, with the checks the runtime does not make.
+
+    Errors: an old `<slide .../>` marker, a `---` directly under text (a setext underline in CommonMark; the blank
+    line makes the intent unambiguous), an empty page, and a directive the runtime would ignore.
+    """
+    lines = source.split('\n')
+    unfenced = dict(unfenced_lines(source))
+    pages: list[RawPage] = []
+    page_lines: list[str] = []
+    start = 1
+    for index, line in enumerate(lines):
+        number = index + 1
+        if number in unfenced:
+            if SLIDE_RE.match(line):
+                raise BuildError(
+                    f'{path}:{number}: <slide .../> is no longer supported; separate pages with a line containing '
+                    'only --- and put <!-- class: ... --> or <!-- title: ... --> at the top of a page'
+                )
+            if PAGE_BREAK_RE.match(line):
+                if index > 0 and lines[index - 1].strip():
+                    raise BuildError(
+                        f'{path}:{number}: put a blank line before ---; directly under text it would be a markdown '
+                        'heading underline, and here it always starts a new page'
+                    )
+                pages.append(parse_page(page_lines, start, path))
+                page_lines = []
+                start = number + 1
+                continue
+        page_lines.append(line)
+    pages.append(parse_page(page_lines, start, path))
+    for index, page in enumerate(pages):
+        if not page.body.strip():
+            where = 'nothing between this --- and the previous one' if index else 'nothing before the first ---'
+            raise BuildError(f'{path}:{page.line}: empty page: {where}')
+    return pages
 
 
 # ---------------------------------------------------------------------------
@@ -680,10 +754,7 @@ def check_styles(css: str, path: Path) -> None:
 def build_page_data(cfg: Config) -> dict[str, object]:
     """Validate the inputs and gather what goes into the page: `config`, `markdown`, `components`, `styles`."""
     markdown = cfg.markdown_path.read_text(encoding='utf-8')
-    if cfg.type == 'deck':
-        validate_slides(markdown, cfg.markdown_path)
-    else:
-        validate_prose(markdown, cfg.markdown_path, cfg.type)
+    split_pages(markdown, cfg.markdown_path)
     names = BUILTINS | frozenset(cfg.context)
     check_body_placeholders(markdown, cfg.markdown_path, names)
     specs = collect_components([(markdown, cfg.markdown_path)], cfg.components_dir, names, cfg.page_component)

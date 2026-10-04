@@ -1,11 +1,11 @@
 ---
 name: openartifact
-description: Create a deck with OpenArtifact. Use when the user mentions "openartifact", "deck" or "slides", asks to build a slide deck from markdown, asks to convert a brand palette into a deck stylesheet, or asks how to convert an OpenArtifact HTML deck into a PDF. Covers project layout, artifact.toml config, main.md authoring with <slide/> breaks, HTML components, images, code blocks, the styles.css token contract, and the Chrome headless PDF command.
+description: Create a deck, document or page with OpenArtifact. Use when the user mentions "openartifact", "deck", "slides" or asks to build a slide deck, a printable document or a web page from markdown, to convert a brand palette into an OpenArtifact stylesheet, or to turn an OpenArtifact artifact into a PDF. Covers project layout, artifact.toml config (type, theme, page_component, [context]), main.md authoring with --- page breaks and <!-- class: ...; title: ... --> directives, HTML components with parameters and {{ CONTENT }}, the PAGE_NUMBER / PAGE_COUNT / PAGE_TITLE built-ins, images, code blocks, the styles.css token contract, and the Chrome headless PDF command.
 ---
 
 # OpenArtifact
 
-OpenArtifact builds a single HTML slide deck from one markdown file plus a CSS theme, an optional folder of HTML components and any images they reference. The page renders itself in the browser and converts to PDF via Chrome headless. Building a deck needs Python (via `uv`) and nothing else.
+OpenArtifact builds one HTML page from one markdown file plus a CSS theme, an optional folder of HTML components and any images they reference. An artifact is made of pages, split on `---` lines; its `type` decides whether they show as slides (`deck`), as printable sheets (`document`) or as one continuous web page (`page`). The page renders itself in the browser and converts to PDF via Chrome headless. Building needs Python (via `uv`) and nothing else.
 
 ## Installation
 
@@ -22,8 +22,8 @@ The builder is the module `backend/build.py` in that checkout, with PDF printing
 
 ```
 my-deck/
-├── artifact.toml          # config: title, theme, tabs, footer, paths (all optional)
-├── main.md             # the content: slides, or plain markdown
+├── artifact.toml          # config: type, title, theme, page_component, [context], paths (all optional)
+├── main.md             # the content: markdown, pages separated by ---
 ├── styles.css          # CSS variable overrides (optional)
 ├── components/         # optional HTML or SVG files pulled in with <component src="...">
 │   └── Hero.html
@@ -41,37 +41,37 @@ The page is not self-contained: it loads `openartifact.js` from the server and i
 
 ## Artifact types
 
-`type` in `artifact.toml` picks the overall form. It is independent of `theme`, which only picks colours.
+Every artifact is a list of pages: `main.md` split on lines containing only `---`. `type` in `artifact.toml` picks how those pages are laid out. It is independent of `theme`, which only picks colours.
 
-| `type`     | What it is                                                         | What `main.md` contains                              | Printing                        |
-| ---------- | ------------------------------------------------------------------ | ---------------------------------------------------- | ------------------------------- |
-| `deck`     | Slides with next/previous navigation, tabs and build steps         | Markdown with a `<slide .../>` line starting each slide | one 16:9 slide per page         |
-| `document` | A fixed-width sheet, like a word processor, centred on the screen  | Plain markdown structured with headings; no slide markers | A4 pages, headings kept with their text, blocks unsplit |
-| `page`     | A continuous, fluid page, like a Notion page or a Claude artifact  | Plain markdown structured with headings; no slide markers | A4 pages with ordinary margins  |
+| `type`     | What it is                                                         | How the pages show                                   | Printing                                        |
+| ---------- | ------------------------------------------------------------------ | ---------------------------------------------------- | ----------------------------------------------- |
+| `deck`     | Slides with next/previous navigation and build steps              | One 16:9 page at a time, scaled to the window        | one page per sheet, 16:9                        |
+| `document` | Fixed-width sheets, like a word processor, centred on the screen   | Stacked sheets, one per page                         | A4, each page on a new sheet, headings kept with their text |
+| `page`     | A continuous, fluid page, like a Notion page or a Claude artifact  | One column; several pages simply follow each other   | A4 with ordinary margins                        |
 
-The default is `deck`. Everything below about slides, `<slide/>` attributes, tabs and build steps applies to decks only; components, images, code blocks, the CSS variables and the `markdown-*` decorations apply to all three. For a document or page, `footer` is rendered once at the end.
+The default is `deck`. A deck page must fit **279.4mm × 157.2mm** (16:9); a document page is as long as its content and prints across as many sheets as it needs. Navigation and build steps apply to decks only; components, images, code blocks, the page component, the CSS variables and the `markdown-*` decorations apply to all three.
 
-Document and page add two variables to override in `styles.css`: `--document-width` / `--document-padding` (sheet size, default A4 with 20mm padding) and `--page-max-width` (column cap, default 52rem). To print a document on US paper, add `@page { size: letter; }` to `styles.css`. Hook type-specific rules on `.artifact-document` / `.artifact-page`; the rendered markdown sits in `article.prose`.
+Document and page add two variables to override in `styles.css`: `--document-width` / `--document-padding` (sheet size, default A4 with 20mm padding) and `--page-max-width` (column cap, default 52rem). To print a document on US paper, add `@page { size: letter; }` to `styles.css`. Hook type-specific rules on `.artifact-document` / `.artifact-page` (the artifact root); each page is `section.page` and the rendered markdown sits in `.page-body` (`.page-body.prose` for the two prose types).
 
 ## `artifact.toml`
 
-All fields are optional - a deck with only `main.md` works.
+All fields are optional - an artifact with only `main.md` works.
 
 ```toml
 type = "deck"                         # deck | document | page   (default: deck)
-title = "My Deck - April 2026"        # browser tab title
+title = "My Deck - April 2026"        # browser tab title, and the fallback when a page has no title or h1
 
 # light | dark | markdown-light | markdown-dark   (default: light)
 # "markdown-*" variants render source-style decorations on top:
-# heading "#"/"##" prefixes, "**" strong markers, traffic-light dots,
-# mono slide counter, diamond bullets.
+# heading "#"/"##" prefixes, "**" strong markers, diamond bullets.
 theme = "light"
 
-# Small footer rendered bottom-right of every slide, or once at the end of a document or page.
-footer = "Confidential - do not share"
+# A component rendered once around every page, with {{ CONTENT }} where the page body goes.
+# This is where a header, a footer, a page counter or a logo lives; see "The page component".
+page_component = "Page.html"
 
 # Relative path to a favicon for the browser tab. .svg / .png / .ico / .jpg.
-# Served by the server next to the deck's other images.
+# Served by the server next to the artifact's other images.
 favicon = "assets/favicon.svg"
 
 # Path overrides (defaults shown).
@@ -81,25 +81,20 @@ components = "components"
 
 # Global variables. Keys must be UPPERCASE; values are strings, numbers or booleans.
 # Available as {{ KEY }} in the markdown and in every component, next to the built-ins.
+# Tables must come last in a TOML file, so keep [context] at the end.
 [context]
 AUTHOR = "Jane Doe"
 DATE = "October 2026"
-
-# Optional tab nav (decks only). When present, <slide tab="..."/> highlights the matching tab.
-tabs = [
-  { id = "intro", label = "Intro" },
-  { id = "details", label = "Details" },
-]
 ```
 
-If `tabs` is omitted, the `tab` attribute on `<slide/>` is ignored and slides render with a plain title topbar.
+There is no `footer` or `tabs` key: both are a few lines of HTML in the page component, which can use `{{ PAGE_NUMBER }}` and `{{ PAGE_COUNT }}`.
 
 ## `main.md`
 
-Plain markdown (CommonMark plus GFM tables and strikethrough). A line containing only `<slide .../>` starts a new slide; the slide's body runs to the next such line or the end of the file. There is no closing tag.
+Plain markdown (CommonMark plus GFM tables and strikethrough). A line containing only `---` ends a page; the next page starts on the following line. The first page starts at the top of the file.
 
 ```markdown
-<slide layout="title" title="Investor Deck / April 2026"/>
+<!-- class: cover; title: Investor Deck / April 2026 -->
 
 ### Section Label
 
@@ -107,7 +102,7 @@ Plain markdown (CommonMark plus GFM tables and strikethrough). A line containing
 
 ## A subtitle
 
-<slide tab="intro"/>
+---
 
 # Hello world
 
@@ -116,47 +111,69 @@ Plain markdown (CommonMark plus GFM tables and strikethrough). A line containing
 
 <component src="Hero.html"></component>
 
-<slide layout="statement"/>
+---
+
+<!-- class: statement -->
 
 # One big idea.
 ```
 
 Rules:
 
-- The `<slide .../>` line must be on its own. Whitespace around it is fine; the trailing `/` is optional.
-- Anything before the first `<slide/>` line is a build error. Put nothing there.
-- Markers inside fenced code blocks are ignored, so you can show the syntax in a code sample.
-- Slides must fit **279.4mm × 157.2mm** (16:9). If overflowing, try `space="tight"` first, then drop content.
+- Put a blank line before every `---`. Directly under a line of text, `---` would be a heading underline in markdown; the blank line makes it a page break everywhere, and the build insists on it.
+- `---` is always a page break, so draw a horizontal rule inside a page with `***`.
+- `---` inside a fenced code block is ignored, so you can show the syntax in a code sample.
+- An empty page is a build error, and so is the old `<slide .../>` marker.
 - Use `-` (hyphen-minus), never `—` (em dash).
 
-### `<slide/>` attributes
+### Page directives
 
-All attributes are optional. A bare `<slide/>` renders a regular content slide using the deck theme.
+A page may start with a directive comment, before any content:
 
-#### `layout` - structural layout (default `content`)
+```markdown
+<!-- class: cover light; title: Welcome -->
+```
 
-Picks how the slide arranges its body. Adds a `.<value>-slide` class to the `.slide` element so you can target each variant from `styles.css`.
+- `class` adds classes to the page element (`section.page`), space separated. The built-in ones are listed below; any other name is a hook for your `styles.css`.
+- `title` sets the page's `PAGE_TITLE` (see "Built-in placeholders") and, in a deck, the browser tab title while the page is shown. Without it the page's first `h1` is used, then the artifact `title`.
+- Both keys may share one comment, separated by `;` or by newlines, or each may have its own comment. A `;` only separates entries when a key follows it, so a title may contain one.
+- A comment that does not start with `key:` is an ordinary HTML comment and is left alone. A directive comment after the page's content is a build error, as is an unknown key.
 
-- `content` (default) - regular slide. Headings, paragraphs, bullets, code, and tables flow top-down inside `.slide-body`. Use for the bulk of your deck.
-- `title` - cover / section slide. Bottom-aligns the hero; h1 is 4rem with tight letter-spacing; h2 renders in `--accent`. Pair with a leading `### Section Label` for a mono uppercase eyebrow.
-- `statement` - centered one-liner. The body is centered both vertically and horizontally; h1 is 3.4rem; paragraphs cap at 80% width. Use for transitions between sections or "one bold idea" beats.
+### Built-in page classes
 
-#### `theme` - color variant (defaults to the deck theme)
+- `cover` - a cover or section page. Bottom-aligns the hero; h1 is 4rem with tight letter-spacing; h2 renders in `--accent`. Pair with a leading `### Section Label` for a mono uppercase eyebrow.
+- `statement` - a centered one-liner. The body is centered both vertically and horizontally; h1 is 3.4rem; paragraphs cap at 80% width. Use for transitions between sections or "one bold idea" beats.
+- `light` - forces this page onto the light palette (`--bg-light`, `--color-text-light`, `--color-heading-light`) regardless of the artifact theme. Useful when one page needs to break out, e.g. a screenshot of a light-themed UI on an otherwise dark deck. There is no inverse: on a light theme, a single dark page is a class of your own plus a few lines of CSS.
+- `tight` - reduces bullet and paragraph spacing; try it first when a deck page is close to overflowing, then drop content.
+- `wide` - increases padding and line-height, for pages with very little text.
+- `large` - bumps body text from 1.15rem to 1.35rem and h1/h2 proportionally, for decks read from the back of a room.
 
-Per-slide palette override.
+### Built-in placeholders
 
-- Omit (or pass `dark`) - the slide inherits the deck-level `theme` from `artifact.toml`.
-- `light` - forces a single slide onto the light palette (`--bg-light`, `--color-text-light`, `--color-heading-light`) regardless of the deck theme. Useful when one slide needs to break out - e.g. a screenshot of a light-themed UI on an otherwise dark deck. Adds `.light-slide` to the slide.
+`{{ PAGE_NUMBER }}` (1-based), `{{ PAGE_COUNT }}` and `{{ PAGE_TITLE }}` can be written anywhere in the markdown and in any component, and are replaced per page. The keys of `[context]` in `artifact.toml` work the same way. Inside code they are left alone. In a component file `{{ CONTENT }}` is the component's children; it is not available in the markdown itself. Unknown uppercase placeholders fail the build; lowercase `{{ x }}` in the markdown is just text.
 
-There is no inverse override: on a light deck, `theme="dark"` has no effect. If you need a single dark slide on a light deck, target it from CSS with a custom `id`.
+### The page component
 
-#### Other attributes
+`page_component = "Page.html"` in `artifact.toml` names a component rendered once around every page. It takes no attributes; `{{ CONTENT }}` is the rendered page body, and the built-ins above describe the page. Everything that used to be deck chrome is written here, so it is yours to style:
 
-- `tab` - string matching an `id` from the `tabs` array in `artifact.toml`. Replaces the plain topbar title with the tab bar, with this slide's tab highlighted. Clicking any tab in any slide jumps to the first slide whose `tab` matches. If `tabs` is not configured, the attribute is silently ignored.
-- `title` - plain text rendered in the topbar when `tab` is not set. Also drives `document.title`, so the browser tab updates as the active slide changes. Ignored when `tab` is set.
-- `space` - `tight` reduces bullet/paragraph spacing (use when a slide is close to overflowing); `wide` increases padding and line-height (use for slides with very little text where you want generous breathing room).
-- `fontSize` - `large` bumps body text from 1.15rem to 1.35rem, and h1/h2 proportionally. Useful for slides that need to read from the back of a room.
-- `id` - sets the HTML `id` on the underlying `<section>`. Useful for targeting one slide from `styles.css` (`.slide#hero { ... }`).
+```html
+<header class="page-header">
+  <span>{{ PAGE_TITLE }}</span>
+  <nav>
+    <button data-nav="prev">&larr;</button>
+    {{ PAGE_NUMBER }} / {{ PAGE_COUNT }}
+    <button data-nav="next">&rarr;</button>
+  </nav>
+</header>
+{{ CONTENT }}
+<footer>Confidential - {{ DATE }}</footer>
+```
+
+- `{{ CONTENT }}` must appear exactly once. The body it inserts is `<div class="page-body">` (plus `prose` for documents and pages), which carries the page padding; a header or footer outside it sits flush with the page edge.
+- In a deck, an element with `data-nav="prev" | "next" | "first" | "last"` navigates when clicked, and `<a href="#3">` jumps to page 3. These controls are hidden when printing.
+- For a document the component wraps each sheet, so a footer lands at the bottom of each printed page's content; for a `page` artifact it wraps the whole column.
+- The component may declare parameters, but since nothing passes attributes they all need defaults. It may use other components.
+- `examples/starter/components/Page.html` is a complete header with traffic lights, the title and a counter.
 
 ### Inline HTML and components
 
@@ -202,9 +219,9 @@ Body text, rendered as **markdown** because of the blank lines.
 
 ### Build steps
 
-A slide can reveal its content in steps, like Keynote builds. Put `data-step="N"` on any element, in the markdown or inside a component, and it stays hidden until the slide reaches step N. Add `data-step-end="M"` to hide it again after step M. The slide's step count is the highest step mentioned plus one; a slide with no `data-step` attributes has a single step.
+A deck page can reveal its content in steps, like Keynote builds. Put `data-step="N"` on any element, in the markdown or inside a component, and it stays hidden until the slide reaches step N. Add `data-step-end="M"` to hide it again after step M. The slide's step count is the highest step mentioned plus one; a slide with no `data-step` attributes has a single step.
 
-The next/previous keys, the wheel and the topbar arrows step through a slide's builds before moving to the next slide, and a slide entered backwards opens on its last step. Shift+Right and Shift+Left jump a whole slide, skipping the builds, and land on the target's first step.
+The next/previous keys, the wheel and any `data-nav` control in the page component step through a page's builds before moving to the next page, and a slide entered backwards opens on its last step. Shift+Right and Shift+Left jump a whole slide, skipping the builds, and land on the target's first step.
 
 ```html
 <ul>
@@ -230,7 +247,7 @@ Hidden elements keep their layout (`visibility: hidden`, so build-up lists don't
 [data-step-state='done'] { visibility: visible; opacity: 0.35; }
 ```
 
-PDF output shows every slide at its final step.
+PDF output shows every page at its final step.
 
 ### Images
 
@@ -262,7 +279,7 @@ Token colours derive from the deck's accent variables (`--accent`, `--accent-sec
 
 ## Authoring `styles.css`
 
-The base stylesheet handles all layout, typography, slide dimensions, the topbar, transitions, and the PDF `@page` setup. `styles.css` only needs to override CSS variables on `:root` to set brand tokens.
+The base stylesheet handles all layout, typography, page dimensions, transitions, and the PDF `@page` setup. `styles.css` only needs to override CSS variables on `:root` to set brand tokens.
 
 ### Variable contract
 
@@ -270,14 +287,14 @@ Backgrounds:
 
 - `--bg-deck` (default `#0d0d0d`) - background outside the slide, presenter mode only.
 - `--bg-slide` (default `#1a1a1a`) - default slide background.
-- `--bg-light` (default `#ffffff`) - slide bg for `light` / `markdown-light` decks and `<slide theme="light"/>`.
+- `--bg-light` (default `#ffffff`) - page bg for `light` / `markdown-light` themes and pages with the `light` class.
 - `--surface` (default `#2a2a2a`) - inline code background, table headers.
 
 Text:
 
 - `--color-text` (default white @ 85%) - body text on dark slides.
 - `--color-heading` (default `#ffffff`) - h1, h2, h4, strong on dark slides.
-- `--color-muted` (default `#8f888e`) - heading prefixes, slide counter, subdued UI.
+- `--color-muted` (default `#8f888e`) - heading prefixes, subdued UI; `--topbar-muted` and `--topbar-divider` derive from it for a page component's header.
 - `--color-text-light` (default `#2a2230`) - body text on light slides.
 - `--color-heading-light` (default `#1a1018`) - headings on light slides.
 
@@ -286,18 +303,18 @@ Accents:
 - `--accent` (default `#4a9eff`) - primary accent: bullets, h3, links, blockquote bar.
 - `--accent-secondary` (default `#ff6b6b`) - em, link hover.
 - `--accent-tertiary` (default `#b388ff`) - hr gradient stop.
-- `--accent-aqua` (default `#4ad7c5`) - inline code text, active tab, topbar tabs.
+- `--accent-aqua` (default `#4ad7c5`) - inline code text.
 
 Fonts:
 
 - `--font-body` (default system sans stack) - body and headings, unless `--font-heading` overrides.
 - `--font-heading` (default inherits body) - headings.
-- `--font-mono` (default system mono) - inline code, code blocks, tabs, counter, h3.
-- `--font-terminal` (default inherits body) - body inside `.slide-body`.
+- `--font-mono` (default system mono) - inline code, code blocks, h3.
+- `--font-terminal` (default inherits body) - body inside `.page-body`.
 
 ### Layout helpers
 
-Markdown has no columns, so `deck.css` ships a few opt-in classes for the wrapper HTML you write in `main.md`. Leave a blank line between the wrapper tags and the markdown inside them, or the markdown is not rendered.
+Markdown has no columns, so `deck.css` ships a few opt-in classes for the wrapper HTML you write in `main.md` (decks only). Leave a blank line between the wrapper tags and the markdown inside them, or the markdown is not rendered.
 
 - `.row` - a flex row of `.col` children, vertically centred, filling the remaining slide height. Add `.row-top` to align children to the top.
 - `.col` - an equal-width column inside `.row`. Override with inline `style="flex: 0 0 40%"` for an uneven split.
@@ -325,51 +342,22 @@ print("code on the right")
 
 ### CSS class hooks
 
-For finer control beyond the variable contract, target these classes from `styles.css`. Most decks won't need them - prefer overriding variables first.
+For finer control beyond the variable contract, target these classes from `styles.css`. Most artifacts won't need them - prefer overriding variables first.
 
-Slide structure:
+Structure:
 
-- `.deck-presenter` - outermost wrapper. Owns the viewport background and the fit-to-window scaling transform.
-- `.deck` - inner slide stream (direct child of `.deck-presenter`).
-- `.slide` - a single slide (`<section>`). Sized 16:9, holds topbar + content + optional footer.
-- `.slide-topbar` - 48px window-chrome bar at the top of every slide.
-- `.slide-content` - padded body wrapper below the topbar (this is what `--slide-padding` applies to).
-- `.slide-body` - inner markdown content container, descendant of `.slide-content`.
-- `.slide-footer` - bottom-right footer text, rendered when `footer` is set in `artifact.toml`.
+- `.artifact` - the artifact root, also `.artifact-deck` / `.artifact-document` / `.artifact-page` by type. In a deck it is the `.deck-presenter`, which owns the viewport background and the fit-to-window scaling; its child `.deck` is the page stream.
+- `.page` - one page (`<section>`): a 16:9 slide in a deck, a sheet in a document, a block of the column in a page artifact. The page component renders inside it.
+- `.page-body` - the rendered markdown, padded by `--slide-padding` in a deck. `.page-body.prose` in the two prose types.
+- `.page--active` - the page a deck is currently showing.
 
-Slide modifiers (added to `.slide` based on attributes):
+Page classes from the `class` directive: `.cover`, `.statement`, `.light`, `.tight`, `.wide`, `.large`, always as `.page.cover` and so on, plus any of your own.
 
-- `.title-slide` - `layout="title"`, bottom-aligned hero.
-- `.statement-slide` - `layout="statement"`, centered hero.
-- `.light-slide` - `theme="light"`, forces the light palette.
-- `.space-tight` / `.space-wide` - vertical spacing density.
-- `.font-large` - bumps body text size.
-
-Topbar - left (traffic lights + title/tabs):
-
-- `.topbar-dots` - the traffic-light anchor (clicking jumps to slide 1). Only visible under `markdown-*` themes.
-- `.topbar-dot` plus `.topbar-dot--red` / `.topbar-dot--yellow` / `.topbar-dot--green` - individual dots.
-- `.topbar-title` - plain title text, shown when `<slide title="..."/>` is set without a `tab`.
-
-Topbar - tabs (rendered when `<slide tab="..."/>` is set and `tabs` are configured in `artifact.toml`):
-
-- `.topbar-tabs` - the tab bar container.
-- `.topbar-tab-group` - per-tab wrapper containing the link plus its leading separator.
-- `.topbar-tab-sep` - the `→` glyph between tabs.
-- `.topbar-tab` - the tab link.
-- `.topbar-tab--active` - applied to the currently-selected tab.
-
-Topbar - right (prev/next + counter):
-
-- `.topbar-nav` - container holding the prev/next buttons and slide counter.
-- `.topbar-nav-btn` plus `.topbar-nav-prev` / `.topbar-nav-next` - the nav buttons (auto-hidden in print).
-- `.topbar-nav-counter` - the `01/12` slide counter.
-
-Deck-level theme classes (applied to both `<html>` and `.deck-presenter` based on `theme` in `artifact.toml`):
+Theme classes (applied to both `<html>` and the artifact root based on `theme` in `artifact.toml`):
 
 - `.theme-light` / `.theme-dark` / `.theme-markdown-light` / `.theme-markdown-dark`
 
-Markdown inside `.slide-body` renders as plain HTML (`h1`-`h4`, `p`, `ul`, `ol`, `pre`, `code`, `table`, `blockquote`, `a`, `img`, `hr`) - target those tags directly with `.slide <tag>` selectors rather than expecting OpenArtifact to add wrapper classes.
+Markdown inside `.page-body` renders as plain HTML (`h1`-`h4`, `p`, `ul`, `ol`, `pre`, `code`, `table`, `blockquote`, `a`, `img`, `hr`) - target those tags directly with `.page <tag>` selectors rather than expecting OpenArtifact to add wrapper classes. Header, footer and navigation markup is whatever your page component contains, with whatever classes you give it.
 
 ### Mapping a brand palette
 
@@ -411,7 +399,7 @@ Build the HTML with `build.build_html`, serve it, then print it with `pdf.print_
 
 If Chrome / Chromium can't be found, or it exits with an error, the `BuildError` message carries the exact command: copy it and run it yourself with the right binary path. On Linux `pdf.find_chrome` auto-detects `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser`.
 
-Paper size in that command matches the slide dimensions (11in × 6.1875in = 16:9). If you override `--slide-width` / `--slide-height` in `styles.css`, edit the `--paper-*` flags to match before running.
+The paper size comes from each type's stylesheet (`@page`): 16:9 for a deck, A4 for the others. If you override `--slide-width` / `--slide-height` in `styles.css`, add a matching `@page { size: ... }` there too.
 
 To spot-check the PDF (requires `pdftoppm` from poppler):
 
@@ -419,4 +407,4 @@ To spot-check the PDF (requires `pdftoppm` from poppler):
 mkdir -p ./tmp && pdftoppm -r 100 ./dist/deck.pdf ./tmp/page -png
 ```
 
-One PNG per slide lands in `./tmp/`, gitignore that path.
+One PNG per printed page lands in `./tmp/`, gitignore that path.

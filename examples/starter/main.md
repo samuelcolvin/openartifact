@@ -1,4 +1,4 @@
-<slide layout="title"/>
+<!-- class: cover; title: OpenArtifact Starter -->
 
 ### OpenArtifact Starter
 
@@ -6,12 +6,13 @@
 
 ## Built from markdown, HTML and CSS
 
-<slide tab="intro"/>
+---
 
-# Hello, slide
+# Hello, page
 
-- Slides are markdown, separated by `<slide .../>` lines
-- Bigger blocks of HTML live in `components/*.html`
+- Pages are markdown, separated by a line containing only `---`
+- A comment at the top of a page sets its classes and title: `<!-- class: light; title: ... -->`
+- Bigger blocks of HTML live in `components/*.html`; the header above is `Page.html`
 - Theme is plain CSS variables in `styles.css`
 
 <div data-step="1">
@@ -20,7 +21,9 @@ Press next: this paragraph is a build step (`data-step="1"`).
 
 </div>
 
-<slide tab="intro" title="Components"/>
+---
+
+<!-- title: Components -->
 
 # A component
 
@@ -29,7 +32,7 @@ Anything longer than a few lines of HTML goes in a file and is pulled in with a
 
 <component src="Hero.html"></component>
 
-<slide tab="intro"/>
+---
 
 # Components with parameters
 
@@ -50,7 +53,7 @@ Leave a blank line after the opening tag and before the closing one, so this tex
 <component src="Card.html" title="Defaults"></component>
 </div>
 
-<slide tab="intro"/>
+---
 
 # Columns and an SVG component
 
@@ -67,20 +70,26 @@ Leave a blank line after the opening tag and before the closing one, so this tex
 </div>
 </div>
 
-<slide tab="details" space="tight"/>
+---
+
+<!-- class: tight -->
 
 # Details
 
 | Feature       | Where it lives        |
 | ------------- | --------------------- |
-| Slide content | `main.md`             |
+| Page content  | `main.md`             |
 | Theme tokens  | `styles.css`          |
 | Components    | `components/*.html`   |
 | Config        | `artifact.toml`          |
 
-<slide theme="light"/>
+This is page {{ PAGE_NUMBER }} of {{ PAGE_COUNT }}.
 
-# A light slide
+---
+
+<!-- class: light -->
+
+# A light page
 
 Lorem ipsum dolor sit amet.
 
@@ -88,7 +97,7 @@ Lorem ipsum dolor sit amet.
 - Two
 - Three
 
-<slide tab="details"/>
+---
 
 # Code blocks
 
@@ -102,9 +111,11 @@ export function greet(name: string): string {
 console.log(greet("openartifact"));
 ```
 
-<slide theme="light"/>
+---
 
-# Code on a light slide
+<!-- class: light -->
+
+# Code on a light page
 
 ```py
 def greet(name: str) -> str:
@@ -113,6 +124,8 @@ def greet(name: str) -> str:
 print(greet("openartifact"))
 ```
 
-<slide layout="statement"/>
+---
+
+<!-- class: statement -->
 
 # One bold statement.

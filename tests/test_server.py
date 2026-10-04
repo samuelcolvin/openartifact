@@ -91,12 +91,12 @@ def test_artifact_build_failure_is_422(client: TestClient):
 
     async def break_it() -> None:
         async with workspace.edit(artifact.workspace_id, 'break') as tx:
-            (tx.artifact_dir(artifact.id) / 'main.md').write_text('# preamble\n<slide/>\n')
+            (tx.artifact_dir(artifact.id) / 'main.md').write_text('# hi\n\n<component src="Nope.html"></component>\n')
 
     in_app(client, break_it)
     response = client.get(f'/artifacts/{artifact.id}/')
     assert response.status_code == 422
-    assert 'content before the first' in response.json()['detail']
+    assert 'component not found' in response.json()['detail']
     assert not (directory / 'dist').exists()
 
 
@@ -202,13 +202,13 @@ async def test_mcp_over_http(live_server: str):
     async with Client(f'{live_server}/mcp/', auth=DEV_TOKEN) as client:
         tools = {tool.name for tool in await client.list_tools()}
         assert tools == {'new_artifact', 'run_code', 'build', 'list_artifacts'}
-        created = await client.call_tool('new_artifact', {'title': 'Demo', 'content': '<slide/>\n# Demo\n'})
+        created = await client.call_tool('new_artifact', {'title': 'Demo', 'content': '# Demo\n'})
         name = created.data.partition('\n')[0].removeprefix('artifact: ')
         result = await client.call_tool(
             'run_code',
-            {'artifact': name, 'code': "from pathlib import Path\nPath('main.md').write_text('<slide/>\\n')"},
+            {'artifact': name, 'code': "from pathlib import Path\nPath('main.md').write_text('# Demo\\n')"},
         )
-        assert result.data == '9\n'
+        assert result.data == '7\n'
         built = await client.call_tool('build', {'artifact': name})
         assert built.data.endswith(f'page: http://127.0.0.1:8765/artifacts/{name}/\n')
         listed = await client.call_tool('list_artifacts', {})
@@ -226,7 +226,7 @@ async def test_native_telemetry_reaches_logfire(live_server: str, capfire: Captu
     async with httpx2.AsyncClient() as http:
         assert (await http.get(f'{live_server}/')).status_code == 200
     async with Client(f'{live_server}/mcp/', auth=DEV_TOKEN) as client:
-        created = await client.call_tool('new_artifact', {'title': 'T', 'content': '<slide/>\n# T\n'})
+        created = await client.call_tool('new_artifact', {'title': 'T', 'content': '# T\n'})
         name = created.data.partition('\n')[0].removeprefix('artifact: ')
         await client.call_tool('run_code', {'artifact': name, 'code': "print('hi')"})
     spans = capfire.exporter.exported_spans_as_dict()

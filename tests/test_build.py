@@ -20,31 +20,68 @@ def write(path: Path, text: str) -> Path:
     return path
 
 
-# --- slide validation ------------------------------------------------------
+# --- pages -----------------------------------------------------------------
 
 
-def test_validate_slides_counts_markers():
-    assert build.validate_slides('<slide/>\n# one\n<slide layout="title">\n# two\n', Path('main.md')) == 2
+def pages(source: str) -> list[build.RawPage]:
+    return build.split_pages(source, Path('main.md'))
 
 
-def test_validate_slides_ignores_markers_in_fences():
-    source = '<slide/>\n```html\n<slide/>\n```\n~~~\n<slide/>\n~~~\n'
-    assert build.validate_slides(source, Path('main.md')) == 1
+def test_split_pages_on_dashes():
+    found = pages('# one\n\n---\n\n# two\n\n---\n# three\n')
+    # Leading blank lines of a page are dropped with the directives; the rest of the body is kept verbatim.
+    assert [(p.line, p.body) for p in found] == [(1, '# one\n'), (4, '# two\n'), (8, '# three\n')]
+    assert [p.classes for p in found] == [[], [], []]
+    assert [p.title for p in found] == [None, None, None]
 
 
-def test_validate_slides_rejects_preamble():
-    with pytest.raises(BuildError, match=r'main\.md:1: content before the first'):
-        build.validate_slides('# hello\n<slide/>\n', Path('main.md'))
+def test_split_pages_ignores_dashes_in_fences_and_rules():
+    source = '# one\n\n```md\n---\n```\n\n~~~\n---\n~~~\n\n***\n\n  --- \n\n# two\n'
+    assert [p.line for p in pages(source)] == [1, 14]
 
 
-def test_validate_slides_rejects_empty():
-    with pytest.raises(BuildError, match='no slides found'):
-        build.validate_slides('\n\n', Path('main.md'))
+def test_split_pages_reads_directives():
+    source = (
+        '<!-- class: cover light; title: Welcome; home -->\n\n# one\n\n---\n\n<!--\nclass: tight\ntitle: Two; and more\n-->\n'
+        '<!-- class: extra -->\n# two\n\n---\n\n<!-- just a note -->\n# three\n'
+    )
+    [one, two, three] = pages(source)
+    assert (one.classes, one.title, one.body) == (['cover', 'light'], 'Welcome; home', '# one\n')
+    assert (two.classes, two.title, two.body) == (['tight', 'extra'], 'Two; and more', '# two\n')
+    # A comment that does not open with `key:` is ordinary markdown and stays in the body.
+    assert (three.classes, three.title, three.body) == ([], None, '<!-- just a note -->\n# three\n')
 
 
-def test_validate_slides_rejects_self_closing_component():
+@pytest.mark.parametrize(
+    ('source', 'message'),
+    [
+        ('<slide/>\n# one\n', r'main\.md:1: <slide \.\.\./> is no longer supported; separate pages'),
+        ('# one\n---\n# two\n', r'main\.md:2: put a blank line before ---'),
+        ('---\n\n# one\n', r'main\.md:1: empty page: nothing before the first ---'),
+        ('# one\n\n---\n\n---\n\n# two\n', r'main\.md:4: empty page: nothing between this --- and the previous one'),
+        ('# one\n\n---\n\n<!-- class: x -->\n', r'main\.md:4: empty page'),
+        ('\n\n', r'main\.md:1: empty page'),
+        ('<!-- layout: cover -->\n# one\n', r"main\.md:1: unknown page directive 'layout'; use class or title"),
+        ('<!-- class: a; title: x -->\n<!-- title: y -->\n# one\n', r"main\.md:2: page directive 'title' given twice"),
+        ('<!-- class: cover; light -->\n# one\n', r"main\.md:1: invalid class name 'cover;'"),
+        (
+            '<!--\nclass: a\nnonsense\n-->\n# one\n',
+            r"main\.md:1: cannot parse page directive 'nonsense' \(expected key: value\)",
+        ),
+        ('<!-- class: 1st -->\n# one\n', r"main\.md:1: invalid class name '1st'"),
+        ('<!-- class: cover\n# one\n', r'main\.md:1: page directive comment is never closed'),
+        ('# one\n\n<!-- class: light -->\n', r"main\.md:3: page directives must come before the page's content"),
+    ],
+)
+def test_split_pages_errors(source: str, message: str):
+    with pytest.raises(BuildError, match=message):
+        pages(source)
+
+
+def test_build_rejects_self_closing_component(tmp_path: Path):
+    write(tmp_path / 'main.md', '# hi\n<component src="X.html"/>\n')
     with pytest.raises(BuildError, match=r'main\.md:2: self-closing'):
-        build.validate_slides('<slide/>\n<component src="X.html"/>\n', Path('main.md'))
+        build.build_html(tmp_path)
 
 
 # --- components ------------------------------------------------------------
@@ -310,7 +347,7 @@ def test_context_names_are_valid_everywhere(tmp_path: Path):
 
 
 def test_load_context(tmp_path: Path):
-    write(tmp_path / 'main.md', '<slide/>\n# hi {{ DATE }} {{ N }} {{ FLAG }}\n')
+    write(tmp_path / 'main.md', '# hi {{ DATE }} {{ N }} {{ FLAG }}\n')
     write(tmp_path / 'artifact.toml', '[context]\nDATE = "April 2026"\nN = 3\nFLAG = true\n')
     cfg = build.load_config(tmp_path)
     assert cfg.context == {'DATE': 'April 2026', 'N': '3', 'FLAG': 'true'}
@@ -419,7 +456,7 @@ def test_render_page_links_favicon_and_runtime_relatively():
 
 
 def test_styles_cannot_close_the_style_element(tmp_path: Path):
-    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'main.md', '# hi\n')
     write(tmp_path / 'styles.css', ':root {}\n</STYLE><script>alert(1)</script>\n')
     with pytest.raises(BuildError, match=r"styles\.css:2: '</style' cannot appear"):
         build.build_html(tmp_path)
@@ -448,13 +485,13 @@ def test_build_starter_example(tmp_path: Path):
 
 
 def test_build_uses_given_runtime_url(tmp_path: Path):
-    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'main.md', '# hi\n')
     page = build.build_html(tmp_path, runtime_url='/static/openartifact.js').read_text()
     assert '<script src="/static/openartifact.js"></script>' in page
 
 
 def test_load_config_favicon(tmp_path: Path):
-    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'main.md', '# hi\n')
     write(tmp_path / 'assets' / 'fav.svg', '<svg/>')
     write(tmp_path / 'artifact.toml', 'favicon = "assets/fav.svg"\n')
     assert build.load_config(tmp_path).favicon == 'assets/fav.svg'
@@ -474,13 +511,12 @@ def test_build_prose_examples(tmp_path: Path, name: str):
     out = build.build_html(ROOT / 'examples' / name, tmp_path / 'index.html')
     page = out.read_text()
     assert config_of(page)['type'] == name
-    # The examples talk about slide markers in prose, but contain none.
     markdown = build.decode_block(block_of(page, 'id="artifact-markdown"'))
-    assert not any(build.SLIDE_RE.match(line) for line in markdown.splitlines())
+    assert markdown == (ROOT / 'examples' / name / 'main.md').read_text()
 
 
 def test_type_defaults_to_deck(tmp_path: Path):
-    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'main.md', '# hi\n')
     assert build.load_config(tmp_path).type == 'deck'
 
 
@@ -493,7 +529,7 @@ def test_load_config_rejects_bad_type(tmp_path: Path):
 
 @pytest.mark.parametrize('toml', ['footer = "x"\n', 'tabs = [{ id = "a", label = "A" }]\n'])
 def test_footer_and_tabs_are_gone(tmp_path: Path, toml: str):
-    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'main.md', '# hi\n')
     write(tmp_path / 'artifact.toml', toml)
     with pytest.raises(BuildError, match='is no longer supported; render it from a `page_component`'):
         build.load_config(tmp_path)
@@ -503,7 +539,7 @@ def test_footer_and_tabs_are_gone(tmp_path: Path, toml: str):
 
 
 def page_component_dir(tmp_path: Path, frame: str, toml: str = '') -> Path:
-    write(tmp_path / 'main.md', '<slide/>\n# Hi\n\nPage {{ PAGE_NUMBER }}.\n')
+    write(tmp_path / 'main.md', '# Hi\n\nPage {{ PAGE_NUMBER }}.\n')
     write(tmp_path / 'artifact.toml', f'page_component = "Page.html"\n{toml}')
     write(tmp_path / 'components' / 'Page.html', frame)
     return tmp_path
@@ -550,39 +586,25 @@ def test_page_component_must_be_html(tmp_path: Path):
         build.build_html(tmp_path)
 
 
-def test_prose_rejects_slide_markers():
-    with pytest.raises(BuildError, match=r'main\.md:3: <slide .../> markers are only used when type = "deck"'):
-        build.validate_prose('# Title\n\n<slide/>\n', Path('main.md'), 'document')
-
-
-def test_prose_allows_markers_in_fences_and_rejects_self_closing_components():
-    build.validate_prose('# Title\n```md\n<slide/>\n```\n', Path('main.md'), 'page')
-    with pytest.raises(BuildError, match='self-closing'):
-        build.validate_prose('# Title\n<component src="X.html"/>\n', Path('main.md'), 'page')
-    with pytest.raises(BuildError, match='no content'):
-        build.validate_prose('\n\n', Path('main.md'), 'page')
-
-
-def test_build_document_from_plain_markdown(tmp_path: Path):
-    write(tmp_path / 'main.md', '# Report\n\nBody text.\n')
+def test_build_document_with_pages(tmp_path: Path):
+    write(tmp_path / 'main.md', '# Report\n\nBody text.\n\n---\n\n## Appendix\n')
     write(tmp_path / 'artifact.toml', 'type = "document"\n')
     page = build.build_html(tmp_path).read_text()
     assert config_of(page)['type'] == 'document'
-    # A deck with the same markdown fails: the marker rule is per type.
+    # The same markdown is a two-page deck: pages are an artifact concept, the type only lays them out.
     write(tmp_path / 'artifact.toml', 'type = "deck"\n')
-    with pytest.raises(BuildError, match='content before the first'):
-        build.build_html(tmp_path)
+    assert build.build_html(tmp_path).is_file()
 
 
 def test_load_config_rejects_bad_theme(tmp_path: Path):
-    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'main.md', '# hi\n')
     write(tmp_path / 'artifact.toml', 'theme = "neon"\n')
     with pytest.raises(BuildError, match='invalid theme'):
         build.load_config(tmp_path)
 
 
 def test_load_config_rejects_dropped_keys(tmp_path: Path):
-    write(tmp_path / 'main.md', '<slide/>\n# hi\n')
+    write(tmp_path / 'main.md', '# hi\n')
     write(tmp_path / 'artifact.toml', 'code_light_theme = "github-light"\n')
     with pytest.raises(BuildError, match='no longer supported'):
         build.load_config(tmp_path)

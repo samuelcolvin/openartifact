@@ -1,7 +1,7 @@
 /*
  * OpenArtifact prose stylesheet: typography for the `document` and `page` types, whose
  * pages render the markdown into an `<article class="prose">`. It mirrors the deck's
- * `.slide` typography on the same variables, at reading sizes rather than projection sizes,
+ * `.page` typography on the same variables, at reading sizes rather than projection sizes,
  * and adds print rules so headings stay with their text and blocks are not split.
  * The markdown decorations (`#` prefixes, `**` markers, diamond bullets) follow the
  * `markdown-*` themes exactly as they do on slides.

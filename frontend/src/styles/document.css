@@ -24,7 +24,7 @@ body {
 .artifact-document .page {
   width: min(100%, var(--document-width));
   min-height: 297mm;
-  margin: 0 auto;
+  margin: 0 auto 2.5rem;
   padding: var(--document-padding);
   background: var(--slide-bg);
   box-shadow: 0 2px 28px rgba(0, 0, 0, 0.35);
@@ -51,5 +51,10 @@ body {
     min-height: 0;
     margin: 0;
     padding: 0;
+  }
+
+  /* `---` in the markdown is an explicit page break when printing. */
+  .artifact-document .page + .page {
+    break-before: page;
   }
 }

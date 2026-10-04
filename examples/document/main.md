@@ -4,7 +4,7 @@ This example uses `type = "document"`. The markdown is rendered as one fixed-wid
 
 ## What goes in
 
-Plain markdown, structured with headings. There are no `<slide .../>` markers: a document flows, and the browser or the printer decides where the pages fall.
+Plain markdown, structured with headings. A line containing only `---` starts a new page, which prints on a new sheet; otherwise a document flows and the printer decides where the pages fall.
 
 - Paragraphs, lists, tables and code blocks all work as on slides
 - Components still work: a `component` tag pulls in a file from `components/`
@@ -27,6 +27,8 @@ def build(artifact: str) -> str:
 ```
 
 > Blockquotes are set in the accent colour, as on slides, and are kept on one page when printing.
+
+---
 
 ## Styling
 

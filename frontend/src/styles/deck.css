@@ -33,14 +33,14 @@ body {
   gap: 0;
   padding: 0;
   /* Scale the slide stream to fit the viewport. */
-  transform: scale(var(--slide-scale, 1));
+  transform: scale(var(--page-scale, 1));
   transform-origin: center center;
   /* Clip exiting slides during directional transitions. */
   overflow: hidden;
 }
 
 /* Non-active slides are hidden but keep their layout, so switching does not reflow. */
-.deck-presenter .slide {
+.deck-presenter .page {
   position: absolute;
   visibility: hidden;
   pointer-events: none;
@@ -48,7 +48,7 @@ body {
   transition: opacity 0.3s ease;
 }
 
-.deck-presenter .slide.slide--active {
+.deck-presenter .page.page--active {
   position: relative;
   visibility: visible;
   pointer-events: auto;
@@ -56,22 +56,22 @@ body {
 }
 
 /* Directional slide transition animations (active when TRANSITION = 'slide'). */
-.deck-presenter .slide.slide--enter-fwd {
+.deck-presenter .page.page--enter-fwd {
   animation: slide-in-right 0.35s ease both;
 }
-.deck-presenter .slide.slide--enter-back {
+.deck-presenter .page.page--enter-back {
   animation: slide-in-left 0.35s ease both;
 }
-.deck-presenter .slide.slide--exit-fwd,
-.deck-presenter .slide.slide--exit-back {
+.deck-presenter .page.page--exit-fwd,
+.deck-presenter .page.page--exit-back {
   position: absolute;
   visibility: visible;
   pointer-events: none;
 }
-.deck-presenter .slide.slide--exit-fwd {
+.deck-presenter .page.page--exit-fwd {
   animation: slide-out-left 0.35s ease both;
 }
-.deck-presenter .slide.slide--exit-back {
+.deck-presenter .page.page--exit-back {
   animation: slide-out-right 0.35s ease both;
 }
 
@@ -117,9 +117,9 @@ body {
 }
 
 /* ========================================
-   BASE SLIDE
+   BASE PAGE
    ======================================== */
-.slide {
+.page {
   width: var(--slide-width);
   height: var(--slide-height);
   padding: 0;
@@ -132,7 +132,7 @@ body {
   justify-content: flex-start;
 }
 
-.slide > * {
+.page > * {
   position: relative;
   z-index: 1;
 }
@@ -205,9 +205,9 @@ body {
 }
 
 /* ========================================
-   SLIDE BODY - the rendered markdown; a page component's header and footer sit around it
+   PAGE BODY - the rendered markdown; a page component's header and footer sit around it
    ======================================== */
-.slide-body {
+.page-body {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -215,19 +215,19 @@ body {
   padding: var(--slide-padding);
 }
 
-.slide-body,
-.slide-body p,
-.slide-body li,
-.slide-body td,
-.slide-body th,
-.slide-body blockquote {
+.page-body,
+.page-body p,
+.page-body li,
+.page-body td,
+.page-body th,
+.page-body blockquote {
   font-family: var(--font-terminal);
 }
 
-.slide-body h1,
-.slide-body h2,
-.slide-body h3,
-.slide-body h4 {
+.page-body h1,
+.page-body h2,
+.page-body h3,
+.page-body h4 {
   font-family: var(--font-terminal);
 }
 
@@ -235,44 +235,44 @@ body {
    MARKDOWN DECORATIONS
    Heading `#` prefixes and `**` strong markers - markdown themes only.
    ======================================== */
-:is(.theme-markdown-light, .theme-markdown-dark) .slide-body h1::before {
+:is(.theme-markdown-light, .theme-markdown-dark) .page-body h1::before {
   content: '# ';
   color: var(--color-muted);
   font-weight: 400;
 }
-:is(.theme-markdown-light, .theme-markdown-dark) .slide-body h2::before {
+:is(.theme-markdown-light, .theme-markdown-dark) .page-body h2::before {
   content: '## ';
   color: var(--color-muted);
   font-weight: 400;
 }
-:is(.theme-markdown-light, .theme-markdown-dark) .slide .slide-body h3::before {
+:is(.theme-markdown-light, .theme-markdown-dark) .page .page-body h3::before {
   content: '### ';
   color: var(--color-muted);
   font-weight: 400;
   font-size: inherit;
 }
-:is(.theme-markdown-light, .theme-markdown-dark) .slide-body h4::before {
+:is(.theme-markdown-light, .theme-markdown-dark) .page-body h4::before {
   content: '#### ';
   color: var(--color-muted);
   font-weight: 400;
 }
 
-:is(.theme-markdown-light, .theme-markdown-dark) .slide-body strong::before,
-:is(.theme-markdown-light, .theme-markdown-dark) .slide-body strong::after {
+:is(.theme-markdown-light, .theme-markdown-dark) .page-body strong::before,
+:is(.theme-markdown-light, .theme-markdown-dark) .page-body strong::after {
   content: '**';
   color: var(--color-muted);
   font-weight: 400;
 }
 
 /* Strong is always emphasized via the heading color. */
-.slide-body strong {
+.page-body strong {
   color: var(--slide-heading);
 }
 
 /* ========================================
    TYPOGRAPHY - HEADINGS
    ======================================== */
-.slide h1 {
+.page h1 {
   font-family: var(--font-heading);
   font-size: 2.8rem;
   font-weight: 700;
@@ -282,7 +282,7 @@ body {
   letter-spacing: -0.02em;
 }
 
-.slide h2 {
+.page h2 {
   font-family: var(--font-heading);
   font-size: 1.8rem;
   font-weight: 500;
@@ -292,7 +292,7 @@ body {
 }
 
 /* h3 - default: a slightly smaller bold heading. */
-.slide h3 {
+.page h3 {
   font-family: var(--font-heading);
   font-size: 1.3rem;
   font-weight: 700;
@@ -303,7 +303,7 @@ body {
 }
 
 /* h3 - markdown themes: diamond + uppercase mono accent. */
-:is(.theme-markdown-light, .theme-markdown-dark) .slide h3 {
+:is(.theme-markdown-light, .theme-markdown-dark) .page h3 {
   font-family: var(--font-mono);
   font-size: 0.75rem;
   color: var(--accent);
@@ -317,13 +317,13 @@ body {
   gap: 0.6em;
 }
 
-:is(.theme-markdown-light, .theme-markdown-dark) .slide h3::before {
+:is(.theme-markdown-light, .theme-markdown-dark) .page h3::before {
   content: '\25C6';
   font-size: 0.7em;
   color: var(--accent);
 }
 
-.slide h4 {
+.page h4 {
   font-family: var(--font-heading);
   font-size: 1.2rem;
   font-weight: 700;
@@ -335,35 +335,35 @@ body {
 /* ========================================
    TYPOGRAPHY - BODY
    ======================================== */
-.slide p {
+.page p {
   font-size: 1.15rem;
   margin-bottom: 0.75em;
   line-height: 1.65;
 }
 
 /* Default lists: standard disc/decimal markers. */
-.slide ul,
-.slide ol {
+.page ul,
+.page ol {
   font-size: 1.15rem;
   margin-bottom: 0.8em;
   padding-left: 1.4em;
 }
 
 /* Markdown themes: drop standard markers and render diamond / mono-accent counters. */
-:is(.theme-markdown-light, .theme-markdown-dark) .slide ul,
-:is(.theme-markdown-light, .theme-markdown-dark) .slide ol {
+:is(.theme-markdown-light, .theme-markdown-dark) .page ul,
+:is(.theme-markdown-light, .theme-markdown-dark) .page ol {
   padding-left: 0;
   list-style: none;
 }
 
-:is(.theme-markdown-light, .theme-markdown-dark) .slide ol {
+:is(.theme-markdown-light, .theme-markdown-dark) .page ol {
   counter-reset: list-counter;
 }
-:is(.theme-markdown-light, .theme-markdown-dark) .slide ol li {
+:is(.theme-markdown-light, .theme-markdown-dark) .page ol li {
   counter-increment: list-counter;
 }
 
-:is(.theme-markdown-light, .theme-markdown-dark) .slide ol li::before {
+:is(.theme-markdown-light, .theme-markdown-dark) .page ol li::before {
   content: counter(list-counter);
   font-family: var(--font-mono);
   font-weight: 700;
@@ -372,12 +372,12 @@ body {
   margin-right: 0.6em;
 }
 
-:is(.theme-markdown-light, .theme-markdown-dark) .slide ul li {
+:is(.theme-markdown-light, .theme-markdown-dark) .page ul li {
   position: relative;
   padding-left: 1.6em;
 }
 
-:is(.theme-markdown-light, .theme-markdown-dark) .slide ul li::before {
+:is(.theme-markdown-light, .theme-markdown-dark) .page ul li::before {
   content: '\25C6';
   position: absolute;
   left: 0.5em;
@@ -386,70 +386,70 @@ body {
   top: 0.05em;
 }
 
-.slide li {
+.page li {
   margin-bottom: 0.4em;
   line-height: 1.55;
 }
 
 /* Tight spacing modifier. */
-.slide.space-tight li {
+.page.tight li {
   margin-bottom: 0.15em;
   line-height: 1.35;
 }
-.slide.space-tight p {
+.page.tight p {
   margin-bottom: 0.3em;
 }
-.slide.space-tight ul ul,
-.slide.space-tight ol ul {
+.page.tight ul ul,
+.page.tight ol ul {
   margin-top: 0.15em;
   margin-bottom: 0.15em;
 }
 
 /* Wide spacing modifier. */
-.slide.space-wide .slide-body {
+.page.wide .page-body {
   padding: 40px 60px;
 }
-.slide.space-wide li {
+.page.wide li {
   margin-bottom: 0.65em;
   line-height: 1.75;
 }
-.slide.space-wide p {
+.page.wide p {
   margin-bottom: 1em;
 }
 
 /* Large font modifier. */
-.slide.font-large p,
-.slide.font-large li,
-.slide.font-large td,
-.slide.font-large th,
-.slide.font-large blockquote {
+.page.large p,
+.page.large li,
+.page.large td,
+.page.large th,
+.page.large blockquote {
   font-size: 1.35rem;
 }
-.slide.font-large h1 {
+.page.large h1 {
   font-size: 3.2rem;
 }
-.slide.font-large h2 {
+.page.large h2 {
   font-size: 2.1rem;
 }
 
-.slide ul ul,
-.slide ol ul {
+.page ul ul,
+.page ol ul {
   margin-top: 0.3em;
   margin-bottom: 0.3em;
 }
 
-.slide strong {
+.page strong {
   font-weight: 700;
   color: var(--slide-heading);
 }
 
-.slide em {
+.page em {
   font-style: italic;
   color: var(--accent-secondary);
 }
 
 /* Inline code. */
-.slide code {
+.page code {
   font-family: var(--font-mono);
   font-size: 0.85em;
   background: color-mix(in srgb, var(--slide-heading) 8%, transparent);
@@ -458,7 +458,7 @@ body {
   border-radius: 4px;
 }
 
-:is(.theme-markdown-light, .theme-markdown-dark) .slide code {
+:is(.theme-markdown-light, .theme-markdown-dark) .page code {
   background: var(--surface);
   color: var(--accent-aqua);
 }
@@ -466,7 +466,7 @@ body {
 /* Code blocks. Background/color are guarded with :not(.shiki) so Shiki-highlighted
    blocks can supply their own theme palette while keeping OpenArtifact's chrome (padding,
    border, radius, font-size). */
-.slide pre {
+.page pre {
   padding: 1.2em 1.4em;
   border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--slide-heading) 10%, transparent);
@@ -475,18 +475,18 @@ body {
   font-size: 0.95rem;
 }
 
-.slide pre:not(.shiki) {
+.page pre:not(.shiki) {
   background: color-mix(in srgb, var(--slide-heading) 6%, transparent);
   color: var(--slide-heading);
 }
 
-:is(.theme-markdown-light, .theme-markdown-dark) .slide pre:not(.shiki) {
+:is(.theme-markdown-light, .theme-markdown-dark) .page pre:not(.shiki) {
   background: var(--bg-deck);
   color: var(--color-heading);
   border-color: color-mix(in srgb, var(--accent-aqua) 12%, transparent);
 }
 
-.slide pre code {
+.page pre code {
   background: none;
   padding: 0;
   color: inherit;
@@ -494,9 +494,9 @@ body {
 }
 
 /* The markdown-theme inline-code rule above has higher specificity than
-   `.slide pre code`, so explicitly reset code-in-pre under those themes too -
+   `.page pre code`, so explicitly reset code-in-pre under those themes too -
    otherwise the surface colour would paint behind every Shiki token. */
-:is(.theme-markdown-light, .theme-markdown-dark) .slide pre code {
+:is(.theme-markdown-light, .theme-markdown-dark) .page pre code {
   background: none;
   color: inherit;
 }
@@ -507,53 +507,44 @@ body {
    variable resolves to a real colour based on the active deck/slide theme. No
    per-token classes or theme stylesheet are shipped: only the inline style
    attributes Shiki already wrote. */
-.slide pre.shiki {
+.page pre.shiki {
   background-color: var(--shiki-light-bg);
   color: var(--shiki-light);
 }
-.slide pre.shiki span {
+.page pre.shiki span {
   color: var(--shiki-light);
 }
 
-:is(.theme-dark, .theme-markdown-dark) .slide pre.shiki {
+:is(.theme-dark, .theme-markdown-dark) .page pre.shiki {
   background-color: var(--shiki-dark-bg);
   color: var(--shiki-dark);
 }
-:is(.theme-dark, .theme-markdown-dark) .slide pre.shiki span {
+:is(.theme-dark, .theme-markdown-dark) .page pre.shiki span {
   color: var(--shiki-dark);
 }
 
-/* Per-slide light override beats the deck-level dark theme. */
-.slide.light-slide pre.shiki {
-  background-color: var(--shiki-light-bg);
-  color: var(--shiki-light);
-}
-.slide.light-slide pre.shiki span {
-  color: var(--shiki-light);
-}
-
 /* Links. */
-.slide a {
+.page a {
   color: var(--accent);
   text-decoration: none;
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   transition: border-color 0.15s;
 }
 
-.slide a:hover {
+.page a:hover {
   color: var(--accent-secondary);
   border-bottom-color: var(--accent-secondary);
 }
 
 /* Images. */
-.slide img {
+.page img {
   max-width: 100%;
   object-fit: contain;
   border-radius: 6px;
 }
 
 /* Blockquotes. */
-.slide blockquote {
+.page blockquote {
   border-left: 3px solid var(--accent);
   padding: 0.8em 1.2em;
   margin: 0.8em 0;
@@ -564,29 +555,29 @@ body {
 }
 
 /* Hide bold markers inside table cells (markdown themes only). */
-:is(.theme-markdown-light, .theme-markdown-dark) .slide-body td strong::before,
-:is(.theme-markdown-light, .theme-markdown-dark) .slide-body td strong::after,
-:is(.theme-markdown-light, .theme-markdown-dark) .slide-body th strong::before,
-:is(.theme-markdown-light, .theme-markdown-dark) .slide-body th strong::after {
+:is(.theme-markdown-light, .theme-markdown-dark) .page-body td strong::before,
+:is(.theme-markdown-light, .theme-markdown-dark) .page-body td strong::after,
+:is(.theme-markdown-light, .theme-markdown-dark) .page-body th strong::before,
+:is(.theme-markdown-light, .theme-markdown-dark) .page-body th strong::after {
   content: none;
 }
 
 /* Tables. */
-.slide table {
+.page table {
   width: 100%;
   border-collapse: collapse;
   margin-bottom: 0.8em;
   font-size: 0.95rem;
 }
 
-.slide th,
-.slide td {
+.page th,
+.page td {
   border: 1px solid color-mix(in srgb, var(--slide-heading) 8%, transparent);
   padding: 0.55em 0.85em;
   text-align: left;
 }
 
-.slide th {
+.page th {
   background: color-mix(in srgb, var(--slide-heading) 6%, transparent);
   font-weight: 700;
   color: var(--slide-heading);
@@ -596,12 +587,12 @@ body {
   letter-spacing: 0.04em;
 }
 
-:is(.theme-markdown-dark) .slide th {
+:is(.theme-markdown-dark) .page th {
   background: var(--surface);
 }
 
 /* Horizontal rules as visual dividers. */
-.slide hr {
+.page hr {
   border: none;
   height: 1px;
   background: color-mix(in srgb, var(--slide-heading) 20%, transparent);
@@ -609,16 +600,16 @@ body {
   opacity: 0.7;
 }
 
-:is(.theme-markdown-light, .theme-markdown-dark) .slide hr {
+:is(.theme-markdown-light, .theme-markdown-dark) .page hr {
   background: linear-gradient(90deg, var(--accent), var(--accent-secondary), var(--accent-tertiary));
   opacity: 0.5;
 }
 
 /* ========================================
-   PER-SLIDE LIGHT VARIANT (<slide theme="light"/>)
+   LIGHT PAGE (<!-- class: light -->)
    Reassigns the slide tokens, so everything written against --slide-* follows.
    ======================================== */
-.slide.light-slide {
+.page.light {
   --slide-bg: var(--bg-light);
   --slide-text: var(--color-text-light);
   --slide-heading: var(--color-heading-light);
@@ -626,95 +617,95 @@ body {
   --topbar-muted: color-mix(in srgb, var(--color-heading-light) 45%, transparent);
 }
 
-.slide.light-slide code {
+.page.light code {
   background: color-mix(in srgb, var(--color-heading-light) 8%, transparent);
 }
 
-.slide.light-slide blockquote {
+.page.light blockquote {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
   color: color-mix(in srgb, var(--color-text-light) 70%, transparent);
 }
 
-.slide.light-slide th {
+.page.light th {
   background: color-mix(in srgb, var(--color-heading-light) 6%, transparent);
 }
 
-.slide.light-slide th,
-.slide.light-slide td {
+.page.light th,
+.page.light td {
   border-color: color-mix(in srgb, var(--color-heading-light) 12%, transparent);
 }
 
-:is(.theme-markdown-light, .theme-markdown-dark) .slide.light-slide h3 {
+:is(.theme-markdown-light, .theme-markdown-dark) .page.light h3 {
   color: var(--accent);
 }
 
-.slide.light-slide .slide-body h1::before,
-.slide.light-slide .slide-body h2::before,
-.slide.light-slide .slide-body h3::before,
-.slide.light-slide .slide-body h4::before,
-.slide.light-slide .slide-body strong::before,
-.slide.light-slide .slide-body strong::after {
+.page.light .page-body h1::before,
+.page.light .page-body h2::before,
+.page.light .page-body h3::before,
+.page.light .page-body h4::before,
+.page.light .page-body strong::before,
+.page.light .page-body strong::after {
   color: color-mix(in srgb, var(--color-heading-light) 30%, transparent);
 }
 
 /* ========================================
-   TITLE SLIDE - bottom-aligned hero
+   COVER PAGE - bottom-aligned hero
    ======================================== */
-.slide.title-slide {
+.page.cover {
   justify-content: space-between;
   padding-bottom: 60px;
 }
 
-.slide.title-slide h1 {
+.page.cover h1 {
   font-size: 4rem;
   letter-spacing: -0.03em;
   line-height: 1.05;
 }
 
-.slide.title-slide h2 {
+.page.cover h2 {
   font-size: 1.6rem;
   color: var(--accent);
   font-weight: 400;
   margin-top: 0.2em;
 }
 
-.slide.title-slide .slide-body {
+.page.cover .page-body {
   justify-content: flex-end;
 }
 
 /* ========================================
-   STATEMENT SLIDE - centered hero text
+   STATEMENT PAGE - centered hero text
    ======================================== */
-.slide.statement-slide {
+.page.statement {
   justify-content: center;
   text-align: center;
 }
 
-.slide.statement-slide .slide-body {
+.page.statement .page-body {
   justify-content: center;
   align-items: center;
 }
 
-.slide.statement-slide h1 {
+.page.statement h1 {
   font-size: 3.4rem;
   line-height: 1.15;
 }
 
 /* Statement slide hides any markdown heading-prefix markers. */
-.slide.statement-slide .slide-body h1::before,
-.slide.statement-slide .slide-body h2::before,
-.slide.statement-slide .slide-body h3::before,
-.slide.statement-slide .slide-body h4::before {
+.page.statement .page-body h1::before,
+.page.statement .page-body h2::before,
+.page.statement .page-body h3::before,
+.page.statement .page-body h4::before {
   content: none;
 }
 
-.slide.statement-slide h2 {
+.page.statement h2 {
   font-size: 2.2rem;
   color: var(--accent);
   font-weight: 500;
 }
 
-.slide.statement-slide p {
+.page.statement p {
   font-size: 1.4rem;
   max-width: 80%;
   margin-left: auto;
@@ -767,7 +758,7 @@ body {
   }
 
   /* Show every slide in print, one per page. */
-  .deck-presenter .slide {
+  .deck-presenter .page {
     display: flex;
     position: relative;
     visibility: visible;
@@ -783,7 +774,7 @@ body {
     print-color-adjust: exact;
   }
 
-  .slide:last-child {
+  .page:last-child {
     page-break-after: auto;
     break-after: auto;
   }
