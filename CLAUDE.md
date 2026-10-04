@@ -52,7 +52,7 @@ pnpm -C frontend lint                 # biome check
 pnpm -C frontend format               # biome check --fix
 
 uv sync                               # create .venv with the dependencies and dev tools (uv run does this on demand too)
-make pg-start                         # Postgres 17 in Docker (docker-compose.yml) at DATABASE_URL's default; `make pg-stop` stops it
+make pg-start                         # Postgres 18 in Docker (docker-compose.yml) at DATABASE_URL's default; `make pg-stop` stops it
 make dev                              # the server on the host at :8765 with reload, dev token `dev` (OPENARTIFACT_DEV_TOKEN overrides)
 make docker-up                        # build the image (Dockerfile) and run server and database with compose; docker-down, docker-logs
 PYTHONPATH=backend uv run python -c 'from pathlib import Path; import build; build.build_html(Path("examples/starter"))'  # by hand

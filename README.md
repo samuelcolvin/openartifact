@@ -49,7 +49,7 @@ Then start Postgres and the server, and let an agent drive it over MCP:
 
 ```bash
 uv sync
-make pg-start                                 # Postgres 17 in Docker
+make pg-start                                 # Postgres 18 in Docker
 make dev                                      # http://127.0.0.1:8765, MCP at /mcp/ with bearer token `dev`
 make docker-up                                # or build the Docker image and run server and database together
 ```
