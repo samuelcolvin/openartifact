@@ -53,5 +53,5 @@ ENV PATH=/app/.venv/bin:$PATH \
 VOLUME /data
 EXPOSE 8765
 HEALTHCHECK --interval=10s --timeout=3s --start-period=15s \
-    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"PORT\"]}/')" || exit 1
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"PORT\"]}/health/')" || exit 1
 CMD ["python", "backend/server.py"]

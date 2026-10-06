@@ -80,6 +80,7 @@ def migration_files(directory: Path = MIGRATIONS_DIR) -> list[tuple[int, str, Pa
     return found
 
 
+@logfire.instrument
 async def migrate(conn: Connection, directory: Path = MIGRATIONS_DIR) -> list[str]:
     """Apply every migration not yet recorded in `schema_migrations`; returns the file names applied, in order.
 

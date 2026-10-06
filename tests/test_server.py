@@ -56,6 +56,10 @@ def test_index(client: TestClient):
     assert client.get('/').json() == {'mcp': '/mcp/', 'runtime': '/openartifact.js'}
 
 
+def test_health(client: TestClient):
+    assert client.get('/health/').json() == {'status': 'ok'}
+
+
 def test_runtime_js(client: TestClient):
     response = client.get('/openartifact.js')
     assert response.status_code == 200

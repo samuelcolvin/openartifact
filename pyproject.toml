@@ -10,7 +10,7 @@ dependencies = [
     "asyncpg>=0.31.0",
     "fastapi>=0.142.2",
     "fastmcp>=4.0.10",
-    "logfire[asyncpg]>=5.1.1",
+    "logfire[asyncpg]==6.0.0b7",
     "obstore>=0.11.1",
     "py-key-value-aio[postgresql,wrappers-encryption]>=0.4.6",
     "pydantic-monty>=1.0.0",

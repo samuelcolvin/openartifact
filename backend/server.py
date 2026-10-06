@@ -35,11 +35,9 @@ from pathlib import Path
 
 import config
 import logfire
-import pydantic_monty
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
-from opentelemetry import _logs, metrics, trace
 
 import build
 import db
@@ -64,24 +62,10 @@ SOURCE_MEDIA_TYPES = {
 }
 
 
-def configure_telemetry() -> None:
-    """Configure Logfire and hook up the libraries that need telling: asyncpg and monty.
-
-    FastAPI (its own `telemetry` support) and FastMCP (`telemetry_mode='native'`) emit spans through the global
-    OpenTelemetry providers that `logfire.configure()` installs, so they need nothing more. Monty wants its tracer,
-    meter and logger handed over once per process; this is what `logfire.instrument_monty()` will do in newer
-    Logfire releases.
-    """
-    logfire.configure(service_name='openartifact', send_to_logfire='if-token-present')
-    logfire.instrument_asyncpg()
-    pydantic_monty.instrument_telemetry(
-        tracer=trace.get_tracer('pydantic_monty'),
-        meter=metrics.get_meter('pydantic_monty'),
-        logger=_logs.get_logger('pydantic_monty'),
-    )
-
-
-configure_telemetry()
+# Configure Logfire and hook up the libraries that need telling.
+logfire.configure(service_name='openartifact', send_to_logfire='if-token-present')
+logfire.instrument_asyncpg()
+logfire.instrument_monty()
 
 # `path='/'` inside the mount makes the endpoint `/mcp/`.
 mcp_app = mcp_server.mcp.http_app(path='/')
@@ -98,8 +82,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 
 # `auto_configure=False` stops FastAPI adding its own OTLP exporters from `OTEL_*` variables: Logfire owns export here,
-# and both would double-send.
-app = FastAPI(title='openartifact', lifespan=lifespan, telemetry={'auto_configure': False})
+# and both would double-send. `/health/` is the container health check, every 10s; tracing it would only add noise.
+app = FastAPI(
+    title='openartifact',
+    lifespan=lifespan,
+    telemetry={'auto_configure': False, 'exclude': lambda scope: scope['path'] == '/health/'},
+)
 app.mount('/mcp', mcp_app)
 
 
@@ -134,6 +122,12 @@ def contained_file(directory: Path, relative: str, allowed: tuple[str, ...]) -> 
 def index() -> dict[str, object]:
     """The MCP endpoint and the runtime; artifacts are listed per user by the `list_artifacts` tool."""
     return {'mcp': '/mcp/', 'runtime': '/openartifact.js'}
+
+
+@app.get('/health/')
+def health() -> dict[str, str]:
+    """Liveness probe for the container health check; touches nothing, so it answers while the app is up."""
+    return {'status': 'ok'}
 
 
 @app.get('/openartifact.js')

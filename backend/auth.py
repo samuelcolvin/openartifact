@@ -18,6 +18,7 @@ import uuid
 from collections.abc import Generator
 from dataclasses import dataclass
 
+import logfire
 from config import base_url
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
@@ -111,6 +112,7 @@ def as_principal(principal: Principal) -> Generator[None]:
         _override = previous
 
 
+@logfire.instrument
 async def upsert_user(
     conn: db.Connection, *, sub: str, email: str | None, name: str | None, picture: str | None
 ) -> Principal:
