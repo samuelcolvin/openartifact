@@ -1,0 +1,29 @@
+CLAUDE.md
+  s_d9c84d24ba8b7a::t_122d038aea4363 152
+backend/server.py
+  s_d9c84d24ba8b7a::t_bb5341d31f3b9d 350-359
+  s_d9c84d24ba8b7a::t_24a347ae230eb5 7-8
+  s_d9c84d24ba8b7a::t_a376fc4c167ccf 198-199,205-235
+skills/openartifact/SKILL.md
+  s_d9c84d24ba8b7a::t_237304da358bb2 30
+backend/instructions.md
+  s_d9c84d24ba8b7a::t_c7097f6820b9b9 23-24
+tests/test_server.py
+  s_d9c84d24ba8b7a::t_f3efd6e386cda8 214-242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "88b0e487236fbf213b95816222492c77318f6dc1",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
