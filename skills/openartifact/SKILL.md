@@ -27,7 +27,7 @@ curl -T assets/logo.png "https://.../artifacts/<id>/assets/logo.png?token=..."
 
 The response is JSON with the file's `sha256`; compare it with `shasum -a 256 assets/logo.png`. Each upload is one commit. URLs last an hour and take up to 10 MB per file; the size must match exactly. If `main.md` already refers to files you have still to add, create the artifact with `build=False`, upload them, then call `build`.
 
-Beside the page at `/artifacts/<id>/`, the server offers `/artifacts/<id>.md` (the markdown source behind a frontmatter summary: title, type, theme, URL, dates and the list of source files; read this rather than the page), `/artifacts/<id>.zip` (every source file) and `/artifacts/<id>.pdf` (the page printed to PDF).
+Beside the page at `/artifacts/<id>/`, the server offers `/artifacts/<id>.md` (the markdown source behind a frontmatter summary: title, type, theme, URL, dates and the list of source files; read this rather than the page), `/artifacts/<id>.zip` (every source file) and `/artifacts/<id>.pdf` (the page printed to PDF). Fetching the page URL itself with `Accept: text/markdown` (or `text/plain`) returns the same markdown export.
 
 ## Project layout
 

@@ -211,6 +211,35 @@ def last_commit(client: TestClient, artifact: workspace.Artifact) -> str:
     return log.strip()[:7]
 
 
+def test_page_url_serves_markdown_to_clients_that_prefer_text(client: TestClient):
+    artifact = starter(client)
+    url = f'/artifacts/{artifact.id}/'
+    markdown = client.get(f'{url[:-1]}.md').text
+    for accept in ('text/markdown', 'text/plain', 'text/plain;q=0.9, text/html;q=0.8', 'text/markdown, */*;q=0.1'):
+        response = client.get(url, headers={'accept': accept})
+        assert response.headers['content-type'] == 'text/markdown; charset=utf-8', accept
+        assert response.headers['vary'] == 'Accept'
+        assert response.text == markdown
+    # Browsers, `*/*`, `text/*` and no header at all get the page: HTML wins ties.
+    browser = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    for headers in ({'accept': browser}, {'accept': '*/*'}, {'accept': 'text/*'}, {}):
+        response = client.get(url, headers=headers)
+        assert response.headers['content-type'].startswith('text/html'), headers
+        assert response.headers['vary'] == 'Accept'
+        assert 'id="artifact-markdown"' in response.text
+
+
+def test_prefers_text():
+    assert server.prefers_text('text/markdown')
+    assert server.prefers_text('text/plain, text/html;q=0.5')
+    assert not server.prefers_text(None)
+    assert not server.prefers_text('')
+    assert not server.prefers_text('text/html, text/plain')
+    assert not server.prefers_text('text/plain;q=0, text/html;q=0')
+    assert not server.prefers_text('text/plain;q=nonsense')
+    assert server.prefers_text('TEXT/PLAIN ; q=0.5')
+
+
 def test_artifact_zip_packs_the_sources(client: TestClient):
     artifact = starter(client)
     # Build first, so there is a dist/ to leave out.

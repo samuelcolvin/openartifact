@@ -4,7 +4,8 @@ Routes:
 
     /mcp/                       the MCP endpoint (streamable HTTP) from `mcp_server.py`, behind Google login
     /openartifact.js            the browser runtime, `frontend/dist/openartifact.js`, which every built page links
-    /artifacts/{id}/            an artifact's page, built on demand from its workspace checkout
+    /artifacts/{id}/            an artifact's page, built on demand from its workspace checkout; the markdown
+                                export instead when the Accept header prefers text/markdown or text/plain
     /artifacts/{id}/{path}      an image or font from the artifact directory, referenced relatively by the page
     PUT /artifacts/{id}/{path}  an upload to the artifact directory, with a token from the `upload_url` tool
     /artifacts/{id}.md          the markdown source behind a frontmatter summary of the artifact
@@ -194,13 +195,44 @@ def artifact_summary(found: workspace.Artifact, directory: Path) -> tuple[dict[s
     return fields, markdown
 
 
-@app.get('/artifacts/{artifact_id}.md')
-async def artifact_markdown(artifact_id: str) -> Response:
-    """The markdown source behind a frontmatter summary: what an agent should read instead of parsing the page."""
-    found = await load_artifact(artifact_id)
+async def markdown_response(found: workspace.Artifact) -> Response:
+    """The markdown export: the frontmatter summary followed by the markdown source."""
     async with workspace.open_artifact(found) as directory:
         fields, markdown = await asyncio.to_thread(artifact_summary, found, directory)
     return Response(frontmatter(fields) + markdown, media_type='text/markdown; charset=utf-8')
+
+
+@app.get('/artifacts/{artifact_id}.md')
+async def artifact_markdown(artifact_id: str) -> Response:
+    """The markdown source behind a frontmatter summary: what an agent should read instead of parsing the page."""
+    return await markdown_response(await load_artifact(artifact_id))
+
+
+def prefers_text(accept: str | None) -> bool:
+    """Whether an `Accept` header rates `text/markdown` or `text/plain` above `text/html`.
+
+    A browser's `text/html,...,*/*;q=0.8`, a bare `*/*` or `text/*`, or no header at all, all mean HTML: the page
+    wins ties. An agent or a terminal asking for `text/markdown` or `text/plain` gets the markdown export.
+    """
+    if not accept:
+        return False
+    html = text = 0.0
+    for part in accept.split(','):
+        media, _, params = part.strip().partition(';')
+        quality = 1.0
+        for param in params.split(';'):
+            key, _, value = param.strip().partition('=')
+            if key == 'q':
+                try:
+                    quality = float(value)
+                except ValueError:
+                    quality = 0.0
+        media = media.strip().lower()
+        if media in ('text/html', 'text/*', '*/*'):
+            html = max(html, quality)
+        if media in ('text/markdown', 'text/plain', 'text/*', '*/*'):
+            text = max(text, quality)
+    return text > html
 
 
 def zip_directory(directory: Path, prefix: str) -> bytes:
@@ -315,9 +347,16 @@ async def built_page(found: workspace.Artifact) -> str:
 
 
 @app.get('/artifacts/{artifact_id}/')
-async def artifact_index(artifact_id: str) -> HTMLResponse:
-    """The artifact's page."""
-    return HTMLResponse(await built_page(await load_artifact(artifact_id)))
+async def artifact_index(artifact_id: str, request: Request) -> Response:
+    """The artifact's page; or its markdown export when the client asks for text rather than HTML."""
+    found = await load_artifact(artifact_id)
+    if prefers_text(request.headers.get('accept')):
+        response = await markdown_response(found)
+    else:
+        response = HTMLResponse(await built_page(found))
+    # The same URL answers two ways, so caches must key on the header that decides.
+    response.headers['Vary'] = 'Accept'
+    return response
 
 
 @app.get('/artifacts/{artifact_id}/{path:path}')
