@@ -3,11 +3,11 @@
 # Bearer token the dev server and `docker-up` accept when Google login is not configured.
 OPENARTIFACT_DEV_TOKEN ?= dev
 export OPENARTIFACT_DEV_TOKEN
-# Where `make dev` finds the PDF render service: `make render-dev` on the host, or the compose container, which
+# Where `make dev` finds the chrome service: `make chrome-dev` on the host, or the compose container, which
 # reaches the host server as host.docker.internal (so set OPENARTIFACT_INTERNAL_URL=http://host.docker.internal:8765
 # when using the container).
-OPENARTIFACT_RENDER_URL ?= http://127.0.0.1:8766
-export OPENARTIFACT_RENDER_URL
+OPENARTIFACT_CHROME_URL ?= http://127.0.0.1:8766
+export OPENARTIFACT_CHROME_URL
 
 .PHONY: .uv
 .uv:
@@ -57,12 +57,12 @@ pg-stop: ## Stop the database
 dev: ## Start the server on the host at http://127.0.0.1:8765 with reload, MCP at /mcp/ with the dev token
 	uv run uvicorn --app-dir backend main:app --reload --port 8765
 
-.PHONY: render-dev
-render-dev: ## Start the PDF render service on the host at http://127.0.0.1:8766, using the local Chrome
-	uv run uvicorn render.server:app --reload --port 8766
+.PHONY: chrome-dev
+chrome-dev: ## Start the chrome service on the host at http://127.0.0.1:8766, using the local Chrome
+	uv run uvicorn chrome.main:app --reload --port 8766
 
 .PHONY: docker-up
-docker-up: ## Build the images and start the server, the render service and the database via docker compose
+docker-up: ## Build the images and start the server, the chrome service and the database via docker compose
 	docker compose up --build -d --wait
 
 .PHONY: docker-down

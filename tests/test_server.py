@@ -217,58 +217,99 @@ def test_artifact_zip_packs_the_sources(client: TestClient):
         assert archive.read(f'{artifact.id}/main.md') == (STARTER / 'main.md').read_bytes()
 
 
-def test_artifact_pdf_needs_the_render_service(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+def test_artifact_pdf_needs_the_chrome_service(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     artifact = starter(client)
-    monkeypatch.delenv('OPENARTIFACT_RENDER_URL', raising=False)
+    monkeypatch.delenv('OPENARTIFACT_CHROME_URL', raising=False)
     response = client.get(f'/artifacts/{artifact.id}.pdf')
     assert response.status_code == 503
-    assert 'OPENARTIFACT_RENDER_URL' in response.json()['detail']
+    assert 'OPENARTIFACT_CHROME_URL' in response.json()['detail']
 
 
-def stub_render(monkeypatch: pytest.MonkeyPatch, status: int, body: bytes) -> list[str]:
-    """Point the server at an in-process stand-in for the render service; returns the URLs it was asked to print."""
+def stub_chrome(monkeypatch: pytest.MonkeyPatch, status: int, body: bytes) -> list[str]:
+    """Point the server at an in-process stand-in for the chrome service; returns the URLs it was asked to print."""
     asked: list[str] = []
     stub = FastAPI()
 
     @stub.post('/pdf/')
-    async def render_pdf(request: Request) -> Response:
+    async def print_pdf(request: Request) -> Response:
         asked.append((await request.json())['url'])
         return Response(body, status_code=status, media_type='application/pdf' if status == 200 else 'text/plain')
 
-    monkeypatch.setenv('OPENARTIFACT_RENDER_URL', 'http://render:8766/')
+    monkeypatch.setenv('OPENARTIFACT_CHROME_URL', 'http://chrome:8766/')
     monkeypatch.setenv('OPENARTIFACT_INTERNAL_URL', 'http://app:8765')
-    monkeypatch.setattr(server, 'render_client', lambda: httpx2.AsyncClient(transport=httpx2.ASGITransport(app=stub)))
+    monkeypatch.setattr(server, 'chrome_client', lambda: httpx2.AsyncClient(transport=httpx2.ASGITransport(app=stub)))
     return asked
 
 
-def test_artifact_pdf_is_printed_by_the_render_service(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+def test_artifact_pdf_is_printed_by_the_chrome_service(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     artifact = starter(client)
-    asked = stub_render(monkeypatch, 200, b'%PDF-1.4 stub')
+    asked = stub_chrome(monkeypatch, 200, b'%PDF-1.4 stub')
     response = client.get(f'/artifacts/{artifact.id}.pdf')
     assert response.status_code == 200, response.text
     assert response.headers['content-type'] == 'application/pdf'
     assert response.headers['content-disposition'] == f'attachment; filename="{artifact.id}.pdf"'
     assert response.content == b'%PDF-1.4 stub'
-    # The render service was given the internal address, and the page had been built for it to fetch.
+    # The chrome service was given the internal address, and the page had been built for it to fetch.
     assert asked == [f'http://app:8765/artifacts/{artifact.id}/']
     directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
     assert (directory / 'dist' / 'index.html').is_file()
 
 
-def test_artifact_pdf_reports_render_failures(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+def test_artifact_pdf_reports_chrome_failures(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     artifact = starter(client)
-    stub_render(monkeypatch, 502, b'Chrome exited with code 3')
+    stub_chrome(monkeypatch, 502, b'Chrome exited with code 3')
     response = client.get(f'/artifacts/{artifact.id}.pdf')
     assert response.status_code == 502
-    assert response.json()['detail'] == 'render service failed (502): Chrome exited with code 3'
-    # A page that does not build is reported before anything is sent to the render service.
-    asked = stub_render(monkeypatch, 200, b'%PDF-1.4 stub')
+    assert response.json()['detail'] == 'chrome service failed (502): Chrome exited with code 3'
+    # A page that does not build is reported before anything is sent to the chrome service.
+    asked = stub_chrome(monkeypatch, 200, b'%PDF-1.4 stub')
     directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
     shutil.rmtree(directory / 'dist', ignore_errors=True)
     (directory / 'main.md').write_text('# a\n---\n# b\n')
     response = client.get(f'/artifacts/{artifact.id}.pdf')
     assert response.status_code == 422
     assert asked == []
+
+
+# The stub stands in for the chrome service, which accepts incoming trace context (`distributed_tracing=True` in
+# `chrome/main.py`); here it runs under the test's Logfire configuration, which warns about it instead.
+@pytest.mark.filterwarnings('ignore:Found propagated trace context')
+def test_artifact_pdf_request_carries_the_trace(
+    capfire: CaptureLogfire, client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    """With httpx instrumented (as `main.py` does), the chrome service is called inside the request's trace."""
+    artifact = starter(client)
+    seen: list[dict[str, str]] = []
+    stub = FastAPI()
+
+    @stub.post('/pdf/')
+    async def print_pdf(request: Request) -> Response:
+        seen.append(dict(request.headers))
+        return Response(b'%PDF-1.4 stub', media_type='application/pdf')
+
+    def instrumented() -> httpx2.AsyncClient:
+        http = httpx2.AsyncClient(transport=httpx2.ASGITransport(app=stub))
+        # Logfire's signature mentions `httpx.Client`, and only httpx2 is installed here, so pyright sees Unknown.
+        logfire.instrument_httpx(http)  # pyright: ignore[reportUnknownMemberType]
+        return http
+
+    monkeypatch.setenv('OPENARTIFACT_CHROME_URL', 'http://chrome:8766')
+    monkeypatch.setattr(server, 'chrome_client', instrumented)
+    assert client.get(f'/artifacts/{artifact.id}.pdf').status_code == 200
+    [headers] = seen
+    assert 'traceparent' in headers
+    # One trace: the request span, the httpx client span inside it (named by method alone, as the stable HTTP
+    # conventions say for a client; FastAPI's `fastapi.endpoint` span sits between them), and the stub's own
+    # server span as the client span's child, since the header reached it.
+    spans = {span['name']: span for span in capfire.exporter.exported_spans_as_dict()}
+    request_span = spans['GET /artifacts/{artifact_id}.pdf']
+    client_span = spans['POST']
+    stub_span = spans['POST /pdf/']
+    trace_id = request_span['context']['trace_id']
+    assert client_span['context']['trace_id'] == trace_id
+    # The stub's parent came in over the wire, so it is the client span's context marked remote.
+    assert stub_span['parent'] == {**client_span['context'], 'is_remote': True}
+    assert headers['traceparent'].split('-')[1] == format(trace_id, '032x')
 
 
 def test_exports_of_unknown_artifacts_are_404(client: TestClient):

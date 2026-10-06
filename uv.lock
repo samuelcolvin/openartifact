@@ -949,6 +949,9 @@ wheels = [
 asyncpg = [
     { name = "logfire-sdk", extra = ["asyncpg"] },
 ]
+httpx = [
+    { name = "logfire-sdk", extra = ["httpx"] },
+]
 
 [[package]]
 name = "logfire-cli"
@@ -977,25 +980,26 @@ wheels = [
 [[package]]
 name = "logfire-sdk"
 version = "6.0.0b7"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/pydantic/logfire?subdirectory=logfire-sdk&branch=stable-semconv-http-message#3027913c4dd087b7464233fcbb875296388e7d26" }
 dependencies = [
     { name = "executing" },
+    { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-instrumentation" },
     { name = "opentelemetry-sdk" },
+    { name = "opentelemetry-semantic-conventions" },
     { name = "protobuf" },
     { name = "requests" },
     { name = "rich" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/20/b6/c14015c3a33ed2b7fdf7262783af5486f46e53cd22aa364a1c41401fdf6e/logfire_sdk-6.0.0b7.tar.gz", hash = "sha256:b6353bfd88faf4170f31bc2879b3b4bba09a0d26fe381cc6b9bd17d3b2e49e63", size = 1385693, upload-time = "2026-09-25T09:19:51.813Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f4/56/273779a9ee1cdd2ac44a79560ed61be2f3fc271e7dc64c6ec6f9cd5c1f5d/logfire_sdk-6.0.0b7-py3-none-any.whl", hash = "sha256:ac386f11b332a13bc9c62a095c520b1b3e3b6d51ef1d8586dc09978c1135758d", size = 970859, upload-time = "2026-09-25T09:19:47.785Z" },
-]
 
 [package.optional-dependencies]
 asyncpg = [
     { name = "opentelemetry-instrumentation-asyncpg" },
+]
+httpx = [
+    { name = "opentelemetry-instrumentation-httpx" },
 ]
 
 [[package]]
@@ -1152,7 +1156,8 @@ dependencies = [
     { name = "fastapi" },
     { name = "fastmcp" },
     { name = "httpx2" },
-    { name = "logfire", extra = ["asyncpg"] },
+    { name = "logfire", extra = ["asyncpg", "httpx"] },
+    { name = "logfire-sdk" },
     { name = "obstore" },
     { name = "py-key-value-aio", extra = ["postgresql", "wrappers-encryption"] },
     { name = "pydantic-monty" },
@@ -1160,16 +1165,17 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+chrome = [
+    { name = "fastapi" },
+    { name = "httpx2" },
+    { name = "logfire" },
+    { name = "uvicorn" },
+]
 dev = [
     { name = "asyncpg-stubs" },
     { name = "basedpyright" },
     { name = "pytest" },
     { name = "ruff" },
-]
-render = [
-    { name = "fastapi" },
-    { name = "httpx2" },
-    { name = "uvicorn" },
 ]
 
 [package.metadata]
@@ -1178,7 +1184,8 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.142.2" },
     { name = "fastmcp", specifier = ">=4.0.10" },
     { name = "httpx2", specifier = ">=2.13.1" },
-    { name = "logfire", extras = ["asyncpg"], specifier = "==6.0.0b7" },
+    { name = "logfire", extras = ["asyncpg", "httpx"], specifier = "==6.0.0b7" },
+    { name = "logfire-sdk", git = "https://github.com/pydantic/logfire?subdirectory=logfire-sdk&branch=stable-semconv-http-message" },
     { name = "obstore", specifier = ">=0.11.1" },
     { name = "py-key-value-aio", extras = ["postgresql", "wrappers-encryption"], specifier = ">=0.4.6" },
     { name = "pydantic-monty", specifier = ">=1.0.0" },
@@ -1186,16 +1193,17 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+chrome = [
+    { name = "fastapi", specifier = ">=0.142.2" },
+    { name = "httpx2", specifier = ">=2.13.1" },
+    { name = "logfire", specifier = "==6.0.0b7" },
+    { name = "uvicorn", specifier = ">=0.54.0" },
+]
 dev = [
     { name = "asyncpg-stubs", specifier = ">=0.31.3" },
     { name = "basedpyright", specifier = ">=1.29" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.12" },
-]
-render = [
-    { name = "fastapi", specifier = ">=0.142.2" },
-    { name = "httpx2", specifier = ">=2.13.1" },
-    { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 
 [[package]]
@@ -1270,6 +1278,22 @@ wheels = [
 ]
 
 [[package]]
+name = "opentelemetry-instrumentation-httpx"
+version = "0.65b0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-util-http" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/61/03/a529140241addd4d0acc73bafbd6f74691651b92fc0ae9b4513cf80f07fa/opentelemetry_instrumentation_httpx-0.65b0.tar.gz", hash = "sha256:4627aa9c6bb99bf4462c8b565b0ef6aeb9ffad95c6c92868be1ef7895de112ee", size = 26309, upload-time = "2026-07-16T15:26:07.973Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9d/0f/c6144096b4914bbf44b43ba21c962e8f333ff045770b50a3e79ed8bd455f/opentelemetry_instrumentation_httpx-0.65b0-py3-none-any.whl", hash = "sha256:400f1b78afa4ee2332b5debe58e1ed1b317913d58812c952576be76660aeadb1", size = 17436, upload-time = "2026-07-16T15:25:15.772Z" },
+]
+
+[[package]]
 name = "opentelemetry-proto"
 version = "1.44.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1306,6 +1330,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8f/73/0cbdebcb4cf545fdd328da14f5137e37d0770c3f26185e478b0d15d94f50/opentelemetry_semantic_conventions-0.65b0.tar.gz", hash = "sha256:f9b2b81e9d5b64f11bc952075e7e9c7fb0aab075c7fd1c46d597f1b919852d60", size = 148774, upload-time = "2026-07-16T15:25:46.902Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a6/0e/49df70d9b81fb5cbae4bbf2a49d865b09bcbcbc4eb53f5851b1027738d78/opentelemetry_semantic_conventions-0.65b0-py3-none-any.whl", hash = "sha256:1cacde7b0ad306f84c5ef08c3dbe1bbaf20165bba6f8bff43b670e555a086bcb", size = 204645, upload-time = "2026-07-16T15:25:30.688Z" },
+]
+
+[[package]]
+name = "opentelemetry-util-http"
+version = "0.65b0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/32/a9/d7525a59fdd240e69b5af4a6338e78fafa1b4203394122cbd6701fb5f84a/opentelemetry_util_http-0.65b0.tar.gz", hash = "sha256:84f82d826978bba416ab453460ff6a7391cdc3534c93a786595e4068680016b7", size = 11243, upload-time = "2026-07-16T15:26:27.898Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/3f/ab8d29df207ce5f470a07fa96ebb48af4e95b7fab7e7635311b9a32f2fab/opentelemetry_util_http-0.65b0-py3-none-any.whl", hash = "sha256:7553b606f963097cb190536dc30556cce85090692e471a422fff30ca29b04348", size = 8245, upload-time = "2026-07-16T15:25:46.482Z" },
 ]
 
 [[package]]

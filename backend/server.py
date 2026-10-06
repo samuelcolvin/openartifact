@@ -9,7 +9,7 @@ Routes:
     PUT /artifacts/{id}/{path}  an upload to the artifact directory, with a token from the `upload_url` tool
     /artifacts/{id}.md          the markdown source behind a frontmatter summary of the artifact
     /artifacts/{id}.zip         every source file of the artifact as a zip
-    /artifacts/{id}.pdf         the page printed to PDF by the render service (`render/`)
+    /artifacts/{id}.pdf         the page printed to PDF by the chrome service (`chrome/`)
     /                           JSON index of the above
 
 Pages are public to anyone holding the artifact's UUID, and so are their sources: `main.md`, `artifact.toml`,
@@ -224,32 +224,32 @@ async def artifact_zip(artifact_id: str) -> Response:
     return Response(data, media_type='application/zip', headers=attachment(f'{found.id}.zip'))
 
 
-def render_client() -> httpx2.AsyncClient:
-    """The HTTP client for the render service; tests swap it for one wired to a stub app."""
+def chrome_client() -> httpx2.AsyncClient:
+    """The HTTP client for the chrome service; tests swap it for one wired to a stub app."""
     return httpx2.AsyncClient(timeout=60)
 
 
 @app.get('/artifacts/{artifact_id}.pdf')
 async def artifact_pdf(artifact_id: str) -> Response:
-    """The page printed to PDF by the render service, which fetches it from this server.
+    """The page printed to PDF by the chrome service, which fetches it from this server.
 
     The page is built first, so a broken artifact is a 422 here rather than a PDF of an error page; and the
-    artifact lock is released before the render service is called, because it fetches `/artifacts/{id}/` from
+    artifact lock is released before the chrome service is called, because it fetches `/artifacts/{id}/` from
     this process, which would wait on the same lock.
     """
     found = await load_artifact(artifact_id)
-    render_url = config.render_url()
-    if render_url is None:
-        raise HTTPException(503, 'PDF export is not configured: OPENARTIFACT_RENDER_URL names the render service')
+    chrome_url = config.chrome_url()
+    if chrome_url is None:
+        raise HTTPException(503, 'PDF export is not configured: OPENARTIFACT_CHROME_URL names the chrome service')
     await built_page(found)
     page_url = f'{config.internal_url()}/artifacts/{found.id}/'
     try:
-        async with render_client() as client:
-            response = await client.post(f'{render_url}/pdf/', json={'url': page_url})
+        async with chrome_client() as client:
+            response = await client.post(f'{chrome_url}/pdf/', json={'url': page_url})
     except httpx2.HTTPError as exc:
-        raise HTTPException(502, f'render service unreachable: {exc}') from exc
+        raise HTTPException(502, f'chrome service unreachable: {exc}') from exc
     if response.status_code != 200:
-        raise HTTPException(502, f'render service failed ({response.status_code}): {response.text}')
+        raise HTTPException(502, f'chrome service failed ({response.status_code}): {response.text}')
     return Response(response.content, media_type='application/pdf', headers=attachment(f'{found.id}.pdf'))
 
 

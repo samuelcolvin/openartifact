@@ -3,8 +3,8 @@
 The page carries its own print stylesheet, including the paper size: each artifact type's sheet sets `@page`
 (16:9 slides for a deck, A4 for a document or page), and Chrome honours it, so no paper flags are passed here.
 It takes a URL rather than a file because the page is not self-contained: it loads `openartifact.js` and its
-images from the application server. Standard library only; `render/server.py` wraps it in an HTTP endpoint and
-`render/Dockerfile` supplies Chromium.
+images from the application server. Standard library only; `chrome/server.py` wraps it in an HTTP endpoint and
+`chrome/Dockerfile` supplies Chromium.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 
-class RenderError(Exception):
+class ChromeError(Exception):
     """Chrome could not be run or failed; the message carries the exact command, so it can be run by hand."""
 
 
@@ -33,13 +33,13 @@ def find_chrome() -> str | None:
 
 
 def container_flags() -> list[str]:
-    """Flags for Chrome inside a container, on when `RENDER_NO_SANDBOX` is set (the render image sets it).
+    """Flags for Chrome inside a container, on when `CHROME_NO_SANDBOX` is set (the chrome image sets it).
 
     Chrome's sandbox needs user namespaces, which Docker's default seccomp profile does not grant, so it has to
     be turned off there; and /dev/shm is 64 MB by default in a container, too small for rendering, so shared
     memory is moved to /tmp.
     """
-    if os.environ.get('RENDER_NO_SANDBOX'):
+    if os.environ.get('CHROME_NO_SANDBOX'):
         return ['--no-sandbox', '--disable-dev-shm-usage']
     return []
 
@@ -47,7 +47,7 @@ def container_flags() -> list[str]:
 def print_to_pdf(url: str, pdf_path: Path) -> Path:
     """Print the page at `url` to PDF with Chrome headless; returns `pdf_path` resolved.
 
-    When Chrome is missing or exits non-zero the `RenderError` carries the exact command, so it can be copied
+    When Chrome is missing or exits non-zero the `ChromeError` carries the exact command, so it can be copied
     and run by hand.
     """
     pdf_path = pdf_path.resolve()
@@ -64,10 +64,10 @@ def print_to_pdf(url: str, pdf_path: Path) -> Path:
     ]
     command = ' '.join(shell_quote(a) for a in (chrome or 'google-chrome', *args))
     if chrome is None:
-        raise RenderError(f'Chrome / Chromium not found on PATH or in /Applications; run this yourself:\n  {command}')
+        raise ChromeError(f'Chrome / Chromium not found on PATH or in /Applications; run this yourself:\n  {command}')
     result = subprocess.run([chrome, *args], check=False, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RenderError(f'Chrome exited with code {result.returncode}:\n  {command}\n{result.stderr.strip()}')
+        raise ChromeError(f'Chrome exited with code {result.returncode}:\n  {command}\n{result.stderr.strip()}')
     return pdf_path
 
 

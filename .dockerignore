@@ -1,8 +1,8 @@
-# Only backend/, render/, skills/, pyproject.toml, uv.lock and the frontend sources go into the images (Dockerfile
-# and render/Dockerfile, both built from the repository root).
+# Only backend/, chrome/, skills/, pyproject.toml, uv.lock and the frontend sources go into the images (Dockerfile
+# and chrome/Dockerfile, both built from the repository root).
 *
 !backend/
-!render/
+!chrome/
 !skills/
 !frontend/package.json
 !frontend/pnpm-lock.yaml

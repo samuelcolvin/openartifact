@@ -11,7 +11,9 @@ dependencies = [
     "fastapi>=0.142.2",
     "fastmcp>=4.0.10",
     "httpx2>=2.13.1",
-    "logfire[asyncpg]==6.0.0b7",
+    "logfire[asyncpg,httpx]==6.0.0b7",
+    # Pinned to a git branch below, see [tool.uv.sources].
+    "logfire-sdk",
     "obstore>=0.11.1",
     "py-key-value-aio[postgresql,wrappers-encryption]>=0.4.6",
     "pydantic-monty>=1.0.0",
@@ -19,10 +21,15 @@ dependencies = [
 ]
 
 # Not a package: backend/ is a handful of modules imported by path (pytest and pyright add it to the path), with
-# backend/main.py the entry point; render/ is the PDF render service, a package imported from the repo root. The
-# dependencies above are for the application server; build.py and render/pdf.py need none.
+# backend/main.py the entry point; chrome/ is the chrome service, a package imported from the repo root. The
+# dependencies above are for the application server; build.py and chrome/pdf.py need none.
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+# The fix for HTTP span messages from FastAPI's built-in telemetry (pydantic/logfire#2513, fixed by #2516): without
+# it every request shows as just "GET" in Logfire. Drop this source once a release includes it.
+logfire-sdk = { git = "https://github.com/pydantic/logfire", branch = "stable-semconv-http-message", subdirectory = "logfire-sdk" }
 
 [dependency-groups]
 dev = [
@@ -31,16 +38,17 @@ dev = [
     "pytest>=8",
     "ruff>=0.12",
 ]
-# What render/Dockerfile installs: the render service alone, without the application server's stack.
-render = [
+# What chrome/Dockerfile installs: the chrome service alone, without the application server's stack.
+chrome = [
     "fastapi>=0.142.2",
     "httpx2>=2.13.1",
+    "logfire==6.0.0b7",
     "uvicorn>=0.54.0",
 ]
 
 [tool.ruff]
 line-length = 120
-include = ["*.py", "backend/**/*.py", "render/**/*.py", "tests/**/*.py", "examples/*.py"]
+include = ["*.py", "backend/**/*.py", "chrome/**/*.py", "tests/**/*.py", "examples/*.py"]
 
 [tool.ruff.lint]
 extend-select = [
@@ -54,7 +62,7 @@ mccabe = { max-complexity = 14 }
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
-known-first-party = ["auth", "build", "config", "db", "mcp_server", "render", "server", "store", "upload", "workspace"]
+known-first-party = ["auth", "build", "config", "db", "chrome", "mcp_server", "server", "store", "upload", "workspace"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -65,7 +73,7 @@ pythonVersion = "3.11"
 typeCheckingMode = "strict"
 reportUnnecessaryTypeIgnoreComment = true
 venv = ".venv"
-include = ["*.py", "backend", "render", "tests", "examples"]
+include = ["*.py", "backend", "chrome", "tests", "examples"]
 extraPaths = ["backend"]
 
 [tool.logfire]
@@ -74,5 +82,5 @@ ignore_no_config = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# backend/ for its modules by name, the root for the `render` package.
+# backend/ for its modules by name, the root for the `chrome` package.
 pythonpath = ["backend", "."]

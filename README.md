@@ -121,7 +121,7 @@ The full authoring guide - page directives, the page component, components and p
 ## The builder API
 
 - `build.build_html(directory, output=None, runtime_url='/openartifact.js')` - build `directory` to `output` (default `directory/dist/index.html`), loading the runtime from `runtime_url`; returns the output path. Input problems, including a referenced image that does not exist, raise `build.BuildError` with the file and line.
-- `render.pdf.print_to_pdf(url, pdf_path)` - print the served page to PDF with Chrome headless at the type's page size; returns the PDF path.
+- `chrome.pdf.print_to_pdf(url, pdf_path)` - print the served page to PDF with Chrome headless at the type's page size; returns the PDF path.
 
 ## Exports
 
@@ -131,12 +131,12 @@ Next to the page at `/artifacts/<id>/`, the server offers:
 - `/artifacts/<id>.zip` - every source file as a zip.
 - `/artifacts/<id>.pdf` - the page printed to PDF.
 
-PDF printing happens in the render service, `render/`, which runs in its own image with Chromium and prints whatever page URL it is given; the app calls it at `OPENARTIFACT_RENDER_URL` and tells it to fetch the page at `OPENARTIFACT_INTERNAL_URL` (the app as seen from the render container). `make docker-up` runs both; on the host, `make render-dev` serves it on :8766 with the local Chrome and `make dev` points at it. Without a render service the `.pdf` URL answers 503.
+PDF printing happens in the chrome service, `chrome/`, which runs in its own image with Chromium and prints whatever page URL it is given; the app calls it at `OPENARTIFACT_CHROME_URL` and tells it to fetch the page at `OPENARTIFACT_INTERNAL_URL` (the app as seen from the chrome container). `make docker-up` runs both; on the host, `make chrome-dev` serves it on :8766 with the local Chrome and `make dev` points at it. Without a chrome service the `.pdf` URL answers 503.
 
 To print by hand, with the server running:
 
 ```bash
-PYTHONPATH=. python3 -c 'from pathlib import Path; from render import pdf; pdf.print_to_pdf("http://127.0.0.1:8765/artifacts/<id>/", Path("deck.pdf"))'
+PYTHONPATH=. python3 -c 'from pathlib import Path; from chrome import pdf; pdf.print_to_pdf("http://127.0.0.1:8765/artifacts/<id>/", Path("deck.pdf"))'
 ```
 
 If Chrome isn't found, or the conversion fails, the error carries the exact command so you can fix the Chrome path or flags and run it yourself. It looks like:
@@ -151,7 +151,7 @@ There are no paper-size flags: each artifact type's stylesheet sets `@page` (16:
 
 ## Developing OpenArtifact itself
 
-The browser runtime is in `frontend/` (pnpm); the builder is `backend/build.py`, the MCP tools `backend/mcp_server.py`, the HTTP server `backend/server.py` and the PDF render service `render/` (uv, configured by the root `pyproject.toml`).
+The browser runtime is in `frontend/` (pnpm); the builder is `backend/build.py`, the MCP tools `backend/mcp_server.py`, the HTTP server `backend/server.py` and the PDF chrome service `chrome/` (uv, configured by the root `pyproject.toml`).
 
 ```bash
 pnpm -C frontend install

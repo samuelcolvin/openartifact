@@ -1,4 +1,4 @@
-"""Tests for `render/`: `pdf.py`'s command assembly and error paths, and the `/pdf/` endpoint. Chrome is stubbed."""
+"""Tests for `chrome/`: `pdf.py`'s command assembly and error paths, and the `/pdf/` endpoint. Chrome is stubbed."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from render import pdf
-from render.server import app
+from chrome import pdf
+from chrome.server import app
 
 URL = 'http://127.0.0.1:8765/artifacts/demo-abc123/'
 # Shell for a fake Chrome that writes a PDF-looking file where `--print-to-pdf=` points.
@@ -29,8 +29,8 @@ def fake_chrome(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str) ->
 
 def test_missing_chrome_reports_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(pdf, 'find_chrome', lambda: None)
-    monkeypatch.delenv('RENDER_NO_SANDBOX', raising=False)
-    with pytest.raises(pdf.RenderError) as exc_info:
+    monkeypatch.delenv('CHROME_NO_SANDBOX', raising=False)
+    with pytest.raises(pdf.ChromeError) as exc_info:
         pdf.print_to_pdf(URL, tmp_path / 'out.pdf')
     message = str(exc_info.value)
     assert message.startswith('Chrome / Chromium not found')
@@ -42,16 +42,16 @@ def test_missing_chrome_reports_command(tmp_path: Path, monkeypatch: pytest.Monk
 
 def test_container_flags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(pdf, 'find_chrome', lambda: None)
-    monkeypatch.setenv('RENDER_NO_SANDBOX', '1')
+    monkeypatch.setenv('CHROME_NO_SANDBOX', '1')
     with pytest.raises(
-        pdf.RenderError, match='--disable-gpu --no-sandbox --disable-dev-shm-usage --no-pdf-header-footer'
+        pdf.ChromeError, match='--disable-gpu --no-sandbox --disable-dev-shm-usage --no-pdf-header-footer'
     ):
         pdf.print_to_pdf(URL, tmp_path / 'out.pdf')
 
 
 def test_chrome_failure_reports_command_and_stderr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     fake_chrome(tmp_path, monkeypatch, 'echo boom >&2\nexit 3')
-    with pytest.raises(pdf.RenderError, match=r'Chrome exited with code 3:\n  .*--headless=new.*\nboom'):
+    with pytest.raises(pdf.ChromeError, match=r'Chrome exited with code 3:\n  .*--headless=new.*\nboom'):
         pdf.print_to_pdf(URL, tmp_path / 'out.pdf')
 
 
