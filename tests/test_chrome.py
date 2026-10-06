@@ -7,12 +7,14 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from chrome import pdf
+from chrome import pdf, server
 from chrome.server import app
 
 URL = 'http://127.0.0.1:8765/artifacts/demo-abc123/'
-# Shell for a fake Chrome that writes a PDF-looking file where `--print-to-pdf=` points.
-WRITES_PDF = r"""for a in "$@"; do case "$a" in --print-to-pdf=*) printf '%%PDF-1.4 fake' > "${a#--print-to-pdf=}";; esac; done"""
+# Shell for a fake Chrome that writes a PDF-looking file where `--print-to-pdf=` points, grumbling as it goes.
+WRITES_PDF = r"""echo 'dbus: no bus' >&2; for a in "$@"; do case "$a" in --print-to-pdf=*) printf '%%PDF-1.4 fake' > "${a#--print-to-pdf=}";; esac; done"""
+# What Chrome does when the page fails to load: says so on stderr and exits 0 without a file.
+LOAD_FAILS = "echo 'Page load failed: net::ERR_SSL_PROTOCOL_ERROR' >&2; exit 0"
 
 
 def fake_chrome(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str) -> Path:
@@ -38,6 +40,7 @@ def test_missing_chrome_reports_command(tmp_path: Path, monkeypatch: pytest.Monk
     assert '--paper-' not in message
     assert '--no-sandbox' not in message
     assert message.endswith(f' --print-to-pdf={tmp_path / "out.pdf"} {URL}')
+    assert exc_info.value.stderr == ''
 
 
 def test_container_flags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -51,15 +54,28 @@ def test_container_flags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 def test_chrome_failure_reports_command_and_stderr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     fake_chrome(tmp_path, monkeypatch, 'echo boom >&2\nexit 3')
-    with pytest.raises(pdf.ChromeError, match=r'Chrome exited with code 3:\n  .*--headless=new.*\nboom'):
+    with pytest.raises(pdf.ChromeError, match=r'Chrome exited with code 3:\n  .*--headless=new.*\nboom') as exc_info:
         pdf.print_to_pdf(URL, tmp_path / 'out.pdf')
+    assert exc_info.value.stderr == 'boom'
 
 
-def test_success_returns_resolved_path_and_creates_parent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    fake_chrome(tmp_path, monkeypatch, 'exit 0')
-    out = pdf.print_to_pdf(URL, tmp_path / 'nested' / 'out.pdf')
-    assert out == (tmp_path / 'nested' / 'out.pdf').resolve()
-    assert out.parent.is_dir()
+def test_chrome_writing_nothing_is_an_error_with_stderr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fake_chrome(tmp_path, monkeypatch, LOAD_FAILS)
+    with pytest.raises(pdf.ChromeError) as exc_info:
+        pdf.print_to_pdf(URL, tmp_path / 'out.pdf')
+    message = str(exc_info.value)
+    assert message.startswith('Chrome exited without writing a PDF:\n  ')
+    assert message.endswith('\nPage load failed: net::ERR_SSL_PROTOCOL_ERROR')
+    assert exc_info.value.stderr == 'Page load failed: net::ERR_SSL_PROTOCOL_ERROR'
+
+
+def test_success_returns_path_and_stderr_and_creates_parent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fake_chrome(tmp_path, monkeypatch, WRITES_PDF)
+    printed = pdf.print_to_pdf(URL, tmp_path / 'nested' / 'out.pdf')
+    assert printed.path == (tmp_path / 'nested' / 'out.pdf').resolve()
+    assert printed.path.read_bytes() == b'%PDF-1.4 fake'
+    # Stderr is kept even when all went well.
+    assert printed.stderr == 'dbus: no bus'
 
 
 def test_shell_quote():
@@ -102,8 +118,17 @@ def test_pdf_endpoint_reports_chrome_failure(client: TestClient, tmp_path: Path,
     assert response.json()['detail'].startswith('Chrome exited with code 3:')
 
 
-def test_pdf_endpoint_when_chrome_writes_nothing(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    fake_chrome(tmp_path, monkeypatch, 'exit 0')
+def test_pdf_endpoint_when_the_page_fails_to_load(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fake_chrome(tmp_path, monkeypatch, LOAD_FAILS)
     response = client.post('/pdf/', json={'url': URL})
     assert response.status_code == 502
-    assert response.json()['detail'] == 'Chrome exited without writing a PDF'
+    detail = response.json()['detail']
+    assert detail.startswith('Chrome exited without writing a PDF:')
+    assert detail.endswith('Page load failed: net::ERR_SSL_PROTOCOL_ERROR')
+
+
+def test_stderr_tail():
+    assert server.stderr_tail('short') == 'short'
+    long = 'x' * (server.STDERR_LIMIT + 10) + 'END'
+    tail = server.stderr_tail(long)
+    assert tail.startswith('...') and tail.endswith('END') and len(tail) == server.STDERR_LIMIT + 3

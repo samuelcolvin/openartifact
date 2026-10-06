@@ -204,6 +204,13 @@ def test_artifact_markdown_has_a_frontmatter_summary(client: TestClient):
     assert response.text.splitlines()[1:4] == [f'id: "{artifact.id}"', 'title: "Starter"', 'type: "deck"']
 
 
+def last_commit(client: TestClient, artifact: workspace.Artifact) -> str:
+    """Short sha of the last commit that touched the artifact, as the download names use it."""
+    root = workspace.checkout_path(artifact.workspace_id)
+    log = in_app(client, lambda: workspace.git('log', '-1', '--format=%H', '--', f'artifacts/{artifact.id}', cwd=root))
+    return log.strip()[:7]
+
+
 def test_artifact_zip_packs_the_sources(client: TestClient):
     artifact = starter(client)
     # Build first, so there is a dist/ to leave out.
@@ -211,10 +218,29 @@ def test_artifact_zip_packs_the_sources(client: TestClient):
     response = client.get(f'/artifacts/{artifact.id}.zip')
     assert response.status_code == 200
     assert response.headers['content-type'] == 'application/zip'
-    assert response.headers['content-disposition'] == f'attachment; filename="{artifact.id}.zip"'
+    # Named after the artifact.toml title and the commit it came from.
+    sha = last_commit(client, artifact)
+    assert response.headers['content-disposition'] == (
+        f'attachment; filename="OpenArtifact Starter {sha}.zip"; filename*=UTF-8\'\'OpenArtifact%20Starter%20{sha}.zip'
+    )
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
         assert archive.namelist() == [f'{artifact.id}/{path}' for path in starter_sources()]
         assert archive.read(f'{artifact.id}/main.md') == (STARTER / 'main.md').read_bytes()
+
+
+def test_download_names_survive_awkward_titles(client: TestClient):
+    artifact = starter(client)
+    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    (directory / 'artifact.toml').write_text('title = "Zoë \\"Q\\" / 2026 <v1>"\n')
+    sha = last_commit(client, artifact)
+    disposition = client.get(f'/artifacts/{artifact.id}.zip').headers['content-disposition']
+    # Quotes, slashes and brackets become spaces; the ASCII fallback drops the diaeresis, the UTF-8 name keeps it.
+    assert disposition == (
+        f'attachment; filename="Zo Q 2026 v1 {sha}.zip"; filename*=UTF-8\'\'Zo%C3%AB%20Q%202026%20v1%20{sha}.zip'
+    )
+    # No title anywhere usable: the row's title, then the id.
+    (directory / 'artifact.toml').write_text('title = ""\n')
+    assert f'filename="Starter {sha}.zip"' in client.get(f'/artifacts/{artifact.id}.zip').headers['content-disposition']
 
 
 def test_artifact_pdf_needs_the_chrome_service(client: TestClient, monkeypatch: pytest.MonkeyPatch):
@@ -247,7 +273,8 @@ def test_artifact_pdf_is_printed_by_the_chrome_service(client: TestClient, monke
     response = client.get(f'/artifacts/{artifact.id}.pdf')
     assert response.status_code == 200, response.text
     assert response.headers['content-type'] == 'application/pdf'
-    assert response.headers['content-disposition'] == f'attachment; filename="{artifact.id}.pdf"'
+    sha = last_commit(client, artifact)
+    assert response.headers['content-disposition'].startswith(f'attachment; filename="OpenArtifact Starter {sha}.pdf"')
     assert response.content == b'%PDF-1.4 stub'
     # The chrome service was given the internal address, and the page had been built for it to fetch.
     assert asked == [f'http://app:8765/artifacts/{artifact.id}/']

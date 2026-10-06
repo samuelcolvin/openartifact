@@ -11,8 +11,10 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/openartifact
       OPENARTIFACT_DEV_TOKEN: ${OPENARTIFACT_DEV_TOKEN:-dev}
       OPENARTIFACT_BASE_URL: http://127.0.0.1:${OPENARTIFACT_PORT:-8765}
-      # The chrome service fetches pages from the app over the compose network, not at the public address.
-      OPENARTIFACT_INTERNAL_URL: http://app:8765
+      # The chrome service fetches pages from the app over the compose network, not at the public address. Not as
+      # `http://app:8765`: `app` is a Google TLD on Chrome's HSTS preload list, so Chrome forces the bare hostname
+      # `app` to HTTPS and the page never loads. The alias below is a name Chrome has no opinion about.
+      OPENARTIFACT_INTERNAL_URL: http://openartifact.internal:8765
       OPENARTIFACT_CHROME_URL: http://chrome:8766
       LOGFIRE_TOKEN: ${LOGFIRE_TOKEN:-}
     ports:
@@ -22,6 +24,10 @@ services:
       # database above and the bundles it points at. The checkout cache stays private to the container.
       - ./data/store:/data/store
       - data:/data/cache
+    networks:
+      default:
+        aliases:
+          - openartifact.internal
     depends_on:
       postgres:
         condition: service_healthy

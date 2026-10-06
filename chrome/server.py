@@ -6,7 +6,8 @@ given, so it must not be reachable from outside the deployment. Screenshots will
 
 `chrome/main.py` configures Logfire and serves this app; this module never touches Logfire, so tests importing
 it send nothing. The span around the Chrome run uses the OpenTelemetry API, which is a no-op until `main.py`
-installs a provider.
+installs a provider. Chrome's stderr goes on that span whether the run succeeded or not: when a page fails to
+load, Chrome says so there and nowhere else.
 """
 
 from __future__ import annotations
@@ -25,12 +26,20 @@ from chrome import pdf
 
 app = FastAPI(title='openartifact-chrome')
 tracer = trace.get_tracer('openartifact.chrome')
+# Chrome's stderr is a few dozen lines of D-Bus and GPU complaints per run before anything of interest; keep the
+# end of it, where a load failure is reported.
+STDERR_LIMIT = 4000
 
 
 class PdfRequest(BaseModel):
     """What to print: the URL of a served artifact page."""
 
     url: str
+
+
+def stderr_tail(stderr: str) -> str:
+    """The last `STDERR_LIMIT` characters of Chrome's output, marked when cut."""
+    return stderr if len(stderr) <= STDERR_LIMIT else '...' + stderr[-STDERR_LIMIT:]
 
 
 @app.get('/health/')
@@ -49,12 +58,12 @@ async def print_pdf(request: PdfRequest) -> Response:
         with tracer.start_as_current_span('chrome print to pdf', attributes={'url.full': request.url}) as span:
             try:
                 # Chrome is a subprocess that takes a second or more; keep the event loop free meanwhile.
-                await asyncio.to_thread(pdf.print_to_pdf, request.url, path)
+                printed = await asyncio.to_thread(pdf.print_to_pdf, request.url, path)
             except pdf.ChromeError as exc:
+                span.set_attribute('chrome.stderr', stderr_tail(exc.stderr))
                 span.record_exception(exc)
                 raise HTTPException(502, str(exc)) from exc
-            if not path.is_file():
-                raise HTTPException(502, 'Chrome exited without writing a PDF')
-            data = path.read_bytes()
+            span.set_attribute('chrome.stderr', stderr_tail(printed.stderr))
+            data = printed.path.read_bytes()
             span.set_attribute('pdf.size', len(data))
     return Response(data, media_type='application/pdf')

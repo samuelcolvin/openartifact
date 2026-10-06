@@ -121,7 +121,7 @@ The full authoring guide - page directives, the page component, components and p
 ## The builder API
 
 - `build.build_html(directory, output=None, runtime_url='/openartifact.js')` - build `directory` to `output` (default `directory/dist/index.html`), loading the runtime from `runtime_url`; returns the output path. Input problems, including a referenced image that does not exist, raise `build.BuildError` with the file and line.
-- `chrome.pdf.print_to_pdf(url, pdf_path)` - print the served page to PDF with Chrome headless at the type's page size; returns the PDF path.
+- `chrome.pdf.print_to_pdf(url, pdf_path)` - print the served page to PDF with Chrome headless at the type's page size; returns the PDF path and Chrome's stderr. A page that fails to load is a `ChromeError` with that stderr, since Chrome itself exits 0 and says why only there.
 
 ## Exports
 
@@ -130,6 +130,8 @@ Next to the page at `/artifacts/<id>/`, the server offers:
 - `/artifacts/<id>.md` - the markdown source behind a frontmatter summary (title, type, theme, URL, dates, the list of source files); what an agent should read instead of parsing the page.
 - `/artifacts/<id>.zip` - every source file as a zip.
 - `/artifacts/<id>.pdf` - the page printed to PDF.
+
+The zip and the PDF download as `<title> <commit>.zip` / `.pdf`, the title from `artifact.toml` and the short sha of the artifact's last change.
 
 PDF printing happens in the chrome service, `chrome/`, which runs in its own image with Chromium and prints whatever page URL it is given; the app calls it at `OPENARTIFACT_CHROME_URL` and tells it to fetch the page at `OPENARTIFACT_INTERNAL_URL` (the app as seen from the chrome container). `make docker-up` runs both; on the host, `make chrome-dev` serves it on :8766 with the local Chrome and `make dev` points at it. Without a chrome service the `.pdf` URL answers 503.
 

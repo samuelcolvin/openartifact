@@ -29,11 +29,13 @@ import hashlib
 import io
 import json
 import mimetypes
+import re
 import tomllib
 import uuid
 import zipfile
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx2
 from fastapi import FastAPI, HTTPException, Request
@@ -210,9 +212,40 @@ def zip_directory(directory: Path, prefix: str) -> bytes:
     return buffer.getvalue()
 
 
-def attachment(name: str) -> dict[str, str]:
-    """Headers that make a browser download the response as `name`."""
-    return {'Content-Disposition': f'attachment; filename="{name}"'}
+def config_title(directory: Path, fallback: str) -> str:
+    """`title` from `artifact.toml` where it parses, else `fallback` (the row's title)."""
+    toml_path = directory / 'artifact.toml'
+    if toml_path.is_file():
+        try:
+            title = tomllib.loads(toml_path.read_text(encoding='utf-8')).get('title')
+        except tomllib.TOMLDecodeError:
+            return fallback
+        if isinstance(title, str) and title.strip():
+            return title
+    return fallback
+
+
+async def export_filename(found: workspace.Artifact, directory: Path, extension: str) -> str:
+    """`{title} {commit}.{extension}` for a download: the title and the short sha of the artifact's last change.
+
+    Call it under `open_artifact`, so the checkout is at the head and the commit is the one the content came from.
+    """
+    title = config_title(directory, found.title)
+    root = workspace.checkout_path(found.workspace_id)
+    sha = (
+        await workspace.git('log', '-1', '--format=%H', '--', f'{workspace.ARTIFACTS_DIR}/{found.id}', cwd=root)
+    ).strip()
+    stem = f'{title} {sha[:7]}'
+    # Characters some file systems refuse, plus controls and the quote that would end the header value.
+    stem = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', ' ', stem)
+    stem = ' '.join(stem.split()) or str(found.id)
+    return f'{stem}.{extension}'
+
+
+def attachment(filename: str) -> dict[str, str]:
+    """Headers that make a browser save the response as `filename`: RFC 6266, an ASCII fallback plus the UTF-8 name."""
+    fallback = filename.encode('ascii', 'ignore').decode() or 'download'
+    return {'Content-Disposition': f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{quote(filename)}'}
 
 
 @app.get('/artifacts/{artifact_id}.zip')
@@ -221,7 +254,8 @@ async def artifact_zip(artifact_id: str) -> Response:
     found = await load_artifact(artifact_id)
     async with workspace.open_artifact(found) as directory:
         data = await asyncio.to_thread(zip_directory, directory, str(found.id))
-    return Response(data, media_type='application/zip', headers=attachment(f'{found.id}.zip'))
+        filename = await export_filename(found, directory, 'zip')
+    return Response(data, media_type='application/zip', headers=attachment(filename))
 
 
 def chrome_client() -> httpx2.AsyncClient:
@@ -241,7 +275,9 @@ async def artifact_pdf(artifact_id: str) -> Response:
     chrome_url = config.chrome_url()
     if chrome_url is None:
         raise HTTPException(503, 'PDF export is not configured: OPENARTIFACT_CHROME_URL names the chrome service')
-    await built_page(found)
+    async with workspace.open_artifact(found) as directory:
+        await build_if_missing(directory)
+        filename = await export_filename(found, directory, 'pdf')
     page_url = f'{config.internal_url()}/artifacts/{found.id}/'
     try:
         async with chrome_client() as client:
@@ -250,7 +286,7 @@ async def artifact_pdf(artifact_id: str) -> Response:
         raise HTTPException(502, f'chrome service unreachable: {exc}') from exc
     if response.status_code != 200:
         raise HTTPException(502, f'chrome service failed ({response.status_code}): {response.text}')
-    return Response(response.content, media_type='application/pdf', headers=attachment(f'{found.id}.pdf'))
+    return Response(response.content, media_type='application/pdf', headers=attachment(filename))
 
 
 @app.get('/artifacts/{artifact_id}')
@@ -259,15 +295,21 @@ def artifact_redirect(artifact_id: str) -> RedirectResponse:
     return RedirectResponse(f'/artifacts/{artifact_id}/')
 
 
+async def build_if_missing(directory: Path) -> Path:
+    """`dist/index.html`, built now if this process has not built the current version yet; a failure is a 422."""
+    page = directory / 'dist' / 'index.html'
+    if not page.is_file():
+        try:
+            await asyncio.to_thread(build.build_html, directory)
+        except build.BuildError as exc:
+            raise HTTPException(422, f'build failed: {exc}') from exc
+    return page
+
+
 async def built_page(found: workspace.Artifact) -> str:
-    """The artifact's page HTML, built now if this process has not built the current version yet; 422 if it fails."""
+    """The artifact's page HTML, built if needed."""
     async with workspace.open_artifact(found) as directory:
-        page = directory / 'dist' / 'index.html'
-        if not page.is_file():
-            try:
-                await asyncio.to_thread(build.build_html, directory)
-            except build.BuildError as exc:
-                raise HTTPException(422, f'build failed: {exc}') from exc
+        page = await build_if_missing(directory)
         # Read under the lock: a sync for a newer head could delete dist/ between here and the response otherwise.
         return page.read_text(encoding='utf-8')
 
