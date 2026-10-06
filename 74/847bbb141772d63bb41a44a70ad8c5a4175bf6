@@ -1,0 +1,46 @@
+backend/server.py
+  s_d9c84d24ba8b7a::t_58d498fc458c9b 257-258
+  s_d9c84d24ba8b7a::t_8566d44219f0e7 298-308,310,312
+  s_d9c84d24ba8b7a::t_7721acc32770a8 235-237
+  s_d9c84d24ba8b7a::t_c8a686799bc33c 278-280,289
+  s_d9c84d24ba8b7a::t_5ae3ba0e2eb3f6 32,38
+  s_d9c84d24ba8b7a::t_373b3a8e29a4d8 215-234,238-248
+chrome/server.py
+  s_d9c84d24ba8b7a::t_7e90a90ced5d14 9-10,29-31,40-44,61,63,66-67
+docker-compose.yml
+  s_d9c84d24ba8b7a::t_e723c08450387c 27-30
+  s_d9c84d24ba8b7a::t_36bb0ee04e6665 14-17
+README.md
+  s_d9c84d24ba8b7a::t_1ac77393ecff28 134-135
+  s_d9c84d24ba8b7a::t_684ed97b0da0bf 124
+CLAUDE.md
+  s_d9c84d24ba8b7a::t_bbb06adb815902 125
+  s_d9c84d24ba8b7a::t_e634acdef99ca4 124
+  s_d9c84d24ba8b7a::t_99f0d1368d8068 152
+  s_d9c84d24ba8b7a::t_599d244cbb6c78 153
+tests/test_chrome.py
+  s_d9c84d24ba8b7a::t_6f552b1fbd1310 10,14-17,43,57,59,62-78,121-122,125-134
+chrome/pdf.py
+  s_d9c84d24ba8b7a::t_eabb4ad7c354f1 8-10,20,25-37,63-64,66-67,85,87-90
+tests/test_server.py
+  s_d9c84d24ba8b7a::t_27b6e23494ad3d 276-277
+  s_d9c84d24ba8b7a::t_697042493f778d 234,237,239
+  s_d9c84d24ba8b7a::t_0b9f94ab5199b5 207-213,221-225
+  s_d9c84d24ba8b7a::t_f2f06206091ec6 231-233,235-236,238,240-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "74847bbb141772d63bb41a44a70ad8c5a4175bf6",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
