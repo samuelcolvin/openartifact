@@ -1,0 +1,21 @@
+frontend/src/toolbar.ts
+  s_d9c84d24ba8b7a::t_3527e016308d4e 13,292-300
+CLAUDE.md
+  s_d9c84d24ba8b7a::t_3527e016308d4e 109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5e86ea3ca3ef3f70cb49ae1ae9052db8574878dd",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
