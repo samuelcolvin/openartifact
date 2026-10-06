@@ -36,8 +36,6 @@ from pathlib import Path
 from typing import Any, Literal, get_args
 from urllib.parse import quote
 
-import upload
-from config import ROOT, base_url
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.providers.skills import SkillProvider
@@ -53,7 +51,9 @@ from pydantic_monty import (
 
 import auth
 import build
+import upload
 import workspace
+from config import ROOT, base_url
 
 # Where the sandbox sees the artifact directory. Relative paths in agent code resolve against it too, because
 # monty's working directory defaults to the first mount's virtual path.

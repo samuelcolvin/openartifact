@@ -2,7 +2,7 @@
 #
 # Two build stages feed the final one: node builds frontend/dist/openartifact.js, uv installs the locked Python
 # dependencies into a virtualenv. The final image is python:3.14-slim plus git (workspaces are git repositories).
-# Chrome is deliberately not here; PDF export will get its own image or a sidecar later.
+# Chrome is deliberately not here: PDF export is the render image (render/Dockerfile), which the app calls over HTTP.
 #
 #   docker build -t openartifact .
 #   docker compose up app          # with the Postgres from docker-compose.yml

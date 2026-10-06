@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+
 import upload
 
 ARTIFACT = uuid.UUID('12345678-1234-5678-1234-567812345678')

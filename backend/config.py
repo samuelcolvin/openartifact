@@ -19,6 +19,20 @@ def cache_dir() -> Path:
     return Path(os.environ.get('OPENARTIFACT_CACHE_DIR') or ROOT / 'data' / 'cache').resolve()
 
 
+def render_url() -> str | None:
+    """The PDF render service (`render/`), from `OPENARTIFACT_RENDER_URL`; `None` means PDF export is not set up."""
+    url = os.environ.get('OPENARTIFACT_RENDER_URL')
+    return url.rstrip('/') if url else None
+
+
+def internal_url() -> str:
+    """This server as the render service reaches it, from `OPENARTIFACT_INTERNAL_URL`; the public URL by default.
+
+    In compose the render container reaches the app at `http://app:8765`, not at the address a browser uses.
+    """
+    return (os.environ.get('OPENARTIFACT_INTERNAL_URL') or base_url()).rstrip('/')
+
+
 def secret_key() -> bytes:
     """The server's secret, for signing upload URLs: `OPENARTIFACT_SECRET_KEY`, else the development token.
 

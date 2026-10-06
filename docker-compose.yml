@@ -1,8 +1,9 @@
 # Local services for development and tests. `make pg-start` starts the database;
 # the server and tests reach it at DATABASE_URL=postgresql://postgres:postgres@localhost:5432/openartifact.
-# `make docker-up` builds the application image (Dockerfile) and runs it against that database on
-# http://127.0.0.1:8765 (OPENARTIFACT_PORT overrides the host port) with the dev token; its checkout cache lives
-# in the `data` volume and its object store in ./data/store, shared with `make dev`.
+# `make docker-up` builds the application image (Dockerfile) and the render image (render/Dockerfile) and runs
+# them against that database: the app on http://127.0.0.1:8765 (OPENARTIFACT_PORT overrides the host port) with
+# the dev token, its checkout cache in the `data` volume and its object store in ./data/store, shared with
+# `make dev`; the render service on the private network, also bound to 127.0.0.1:8766 so `make dev` can use it.
 services:
   app:
     build: .
@@ -10,6 +11,9 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/openartifact
       OPENARTIFACT_DEV_TOKEN: ${OPENARTIFACT_DEV_TOKEN:-dev}
       OPENARTIFACT_BASE_URL: http://127.0.0.1:${OPENARTIFACT_PORT:-8765}
+      # The render service fetches pages from the app over the compose network, not at the public address.
+      OPENARTIFACT_INTERNAL_URL: http://app:8765
+      OPENARTIFACT_RENDER_URL: http://render:8766
       LOGFIRE_TOKEN: ${LOGFIRE_TOKEN:-}
     ports:
       - '${OPENARTIFACT_PORT:-8765}:8765'
@@ -21,6 +25,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      render:
+        condition: service_healthy
+
+  render:
+    build:
+      context: .
+      dockerfile: render/Dockerfile
+    ports:
+      # For `make dev` on the host; the render service prints any URL it is given, so never bind it publicly.
+      - '127.0.0.1:${OPENARTIFACT_RENDER_PORT:-8766}:8766'
+    extra_hosts:
+      # So a page served by `make dev` on the host is reachable from inside the container as host.docker.internal.
+      - 'host.docker.internal:host-gateway'
 
   postgres:
     image: postgres:18

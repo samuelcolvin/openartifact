@@ -1151,6 +1151,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "fastapi" },
     { name = "fastmcp" },
+    { name = "httpx2" },
     { name = "logfire", extra = ["asyncpg"] },
     { name = "obstore" },
     { name = "py-key-value-aio", extra = ["postgresql", "wrappers-encryption"] },
@@ -1165,12 +1166,18 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+render = [
+    { name = "fastapi" },
+    { name = "httpx2" },
+    { name = "uvicorn" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "asyncpg", specifier = ">=0.31.0" },
     { name = "fastapi", specifier = ">=0.142.2" },
     { name = "fastmcp", specifier = ">=4.0.10" },
+    { name = "httpx2", specifier = ">=2.13.1" },
     { name = "logfire", extras = ["asyncpg"], specifier = "==6.0.0b7" },
     { name = "obstore", specifier = ">=0.11.1" },
     { name = "py-key-value-aio", extras = ["postgresql", "wrappers-encryption"], specifier = ">=0.4.6" },
@@ -1184,6 +1191,11 @@ dev = [
     { name = "basedpyright", specifier = ">=1.29" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.12" },
+]
+render = [
+    { name = "fastapi", specifier = ">=0.142.2" },
+    { name = "httpx2", specifier = ">=2.13.1" },
+    { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 
 [[package]]

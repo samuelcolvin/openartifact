@@ -26,10 +26,10 @@ from pathlib import Path
 
 import asyncpg
 import logfire
-from config import cache_dir
 
 import db
 import store
+from config import cache_dir
 
 ARTIFACTS_DIR = 'artifacts'
 GITIGNORE = 'artifacts/*/dist/\n'

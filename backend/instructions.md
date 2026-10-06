@@ -18,6 +18,10 @@ Tools
   its sha256, to compare with `shasum -a 256`. Far cheaper than retyping file contents into run_code.
 - list_artifacts(): the artifacts you already have.
 
+Beside each page at /artifacts/<id>/ the server serves /artifacts/<id>.md (the markdown source behind a
+frontmatter summary; read this rather than the page), /artifacts/<id>.zip (every source file) and
+/artifacts/<id>.pdf (the page printed to PDF).
+
 The format
 
 - An artifact is made of pages: main.md split on lines containing only `---`, with a blank line before each.

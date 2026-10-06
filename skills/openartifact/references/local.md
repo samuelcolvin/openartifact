@@ -11,7 +11,7 @@ git clone https://github.com/samuelcolvin/openartifact
 cd openartifact && pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/openartifact.js
 ```
 
-The builder is the module `backend/build.py` in that checkout, with PDF printing in `backend/pdf.py`. Both need Python 3.11+ and nothing else. Import them with `PYTHONPATH=CHECKOUT/backend`, where `CHECKOUT` stands for the path to that checkout. The server (`make pg-start`, then `make dev`) hosts the MCP endpoint and serves the built pages at `/artifacts/<id>/`.
+The builder is the module `backend/build.py` in that checkout, with PDF printing in `render/pdf.py`. Both need Python 3.11+ and nothing else. Below, `CHECKOUT` stands for the path to that checkout. The server (`make pg-start`, then `make dev`) hosts the MCP endpoint and serves the built pages at `/artifacts/<id>/`, with `/artifacts/<id>.md`, `.zip` and `.pdf` beside them; the `.pdf` one needs the render service (`make render-dev`, or the container from `make docker-up`).
 
 ## Building by hand
 
@@ -19,14 +19,14 @@ The builder is the module `backend/build.py` in that checkout, with PDF printing
 # build to ./dist/index.html
 PYTHONPATH=CHECKOUT/backend python3 -c 'from pathlib import Path; import build; build.build_html(Path("."))'
 # then a PDF via Chrome headless, from the page the server is serving
-PYTHONPATH=CHECKOUT/backend python3 -c 'from pathlib import Path; import pdf; pdf.print_to_pdf("http://127.0.0.1:8765/artifacts/<id>/", Path("deck.pdf"))'
+PYTHONPATH=CHECKOUT python3 -c 'from pathlib import Path; from render import pdf; pdf.print_to_pdf("http://127.0.0.1:8765/artifacts/<id>/", Path("deck.pdf"))'
 ```
 
 The page is not self-contained: it loads `openartifact.js` from the server and its images relatively, so view and print it through the server rather than from `file://`. `build_html(directory, output=None, runtime_url='/openartifact.js')` takes an optional output path; `print_to_pdf(url, pdf_path)` prints a served page. Input problems raise `build.BuildError` naming the file and line.
 
 ## PDF
 
-If Chrome / Chromium can't be found, or it exits with an error, the `BuildError` message carries the exact command: copy it and run it yourself with the right binary path. On Linux `pdf.find_chrome` auto-detects `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser`.
+If Chrome / Chromium can't be found, or it exits with an error, the `RenderError` message carries the exact command: copy it and run it yourself with the right binary path. On Linux `pdf.find_chrome` auto-detects `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser`.
 
 The paper size comes from each type's stylesheet (`@page`): 16:9 for a deck, A4 for the others. If you override `--slide-width` / `--slide-height` in `styles.css`, add a matching `@page { size: ... }` there too.
 

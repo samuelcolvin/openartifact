@@ -9,7 +9,6 @@ from collections.abc import AsyncGenerator, Iterator
 from pathlib import Path
 
 import pytest
-import upload
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
@@ -17,6 +16,7 @@ import auth
 import build
 import db
 import mcp_server
+import upload
 import workspace
 
 ROOT = Path(__file__).resolve().parent.parent

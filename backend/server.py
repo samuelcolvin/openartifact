@@ -7,6 +7,9 @@ Routes:
     /artifacts/{id}/            an artifact's page, built on demand from its workspace checkout
     /artifacts/{id}/{path}      an image or font from the artifact directory, referenced relatively by the page
     PUT /artifacts/{id}/{path}  an upload to the artifact directory, with a token from the `upload_url` tool
+    /artifacts/{id}.md          the markdown source behind a frontmatter summary of the artifact
+    /artifacts/{id}.zip         every source file of the artifact as a zip
+    /artifacts/{id}.pdf         the page printed to PDF by the render service (`render/`)
     /                           JSON index of the above
 
 Pages are public to anyone holding the artifact's UUID, and so are their sources: `main.md`, `artifact.toml`,
@@ -23,20 +26,25 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import io
+import json
 import mimetypes
+import tomllib
 import uuid
+import zipfile
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
-import config
-import upload
+import httpx2
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
 import build
+import config
 import db
 import mcp_server
 import store
+import upload
 import workspace
 
 # openartifact.js is not packaged; it is read from the frontend build output in this checkout.
@@ -127,16 +135,132 @@ def runtime_js() -> FileResponse:
     return FileResponse(RUNTIME_JS_PATH, media_type='text/javascript')
 
 
+def source_files(directory: Path) -> list[Path]:
+    """Every file under an artifact directory except build output (`dist/`) and `.git*` entries, relative, sorted."""
+    files: list[Path] = []
+    for path in sorted(directory.rglob('*')):
+        relative = path.relative_to(directory)
+        if not path.is_file() or relative.parts[0] == 'dist' or any(p.startswith('.git') for p in relative.parts):
+            continue
+        files.append(relative)
+    return files
+
+
+def frontmatter(fields: dict[str, str | list[str]]) -> str:
+    """A YAML frontmatter block: scalars written as JSON strings, which YAML reads as-is, lists as block sequences."""
+    lines = ['---']
+    for key, value in fields.items():
+        if isinstance(value, list):
+            lines.append(f'{key}:')
+            lines.extend(f'  - {json.dumps(item, ensure_ascii=False)}' for item in value)
+        else:
+            lines.append(f'{key}: {json.dumps(value, ensure_ascii=False)}')
+    lines.append('---')
+    return '\n'.join(lines) + '\n'
+
+
+def artifact_summary(found: workspace.Artifact, directory: Path) -> tuple[dict[str, str | list[str]], str]:
+    """The `.md` frontmatter fields and the markdown source.
+
+    `artifact.toml` is the source of truth where it parses; the row supplies the title and type otherwise, so a
+    broken config still gets a summary rather than an error.
+    """
+    raw: dict[str, object] = {}
+    toml_path = directory / 'artifact.toml'
+    if toml_path.is_file():
+        try:
+            raw = tomllib.loads(toml_path.read_text(encoding='utf-8'))
+        except tomllib.TOMLDecodeError:
+            pass
+
+    def text(key: str, default: str) -> str:
+        value = raw.get(key)
+        return value if isinstance(value, str) else default
+
+    markdown_path = directory / text('markdown', 'main.md')
+    markdown = markdown_path.read_text(encoding='utf-8') if markdown_path.is_file() else ''
+    fields: dict[str, str | list[str]] = {
+        'id': str(found.id),
+        'title': text('title', found.title),
+        'type': text('type', found.type),
+        'theme': text('theme', 'light'),
+        'url': mcp_server.artifact_url(found.id),
+        'created_at': found.created_at.isoformat(),
+        'updated_at': found.updated_at.isoformat(),
+        'files': [path.as_posix() for path in source_files(directory)],
+    }
+    return fields, markdown
+
+
+@app.get('/artifacts/{artifact_id}.md')
+async def artifact_markdown(artifact_id: str) -> Response:
+    """The markdown source behind a frontmatter summary: what an agent should read instead of parsing the page."""
+    found = await load_artifact(artifact_id)
+    async with workspace.open_artifact(found) as directory:
+        fields, markdown = await asyncio.to_thread(artifact_summary, found, directory)
+    return Response(frontmatter(fields) + markdown, media_type='text/markdown; charset=utf-8')
+
+
+def zip_directory(directory: Path, prefix: str) -> bytes:
+    """A zip of the artifact's source files under `prefix/`, built in memory."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+        for relative in source_files(directory):
+            archive.write(directory / relative, f'{prefix}/{relative.as_posix()}')
+    return buffer.getvalue()
+
+
+def attachment(name: str) -> dict[str, str]:
+    """Headers that make a browser download the response as `name`."""
+    return {'Content-Disposition': f'attachment; filename="{name}"'}
+
+
+@app.get('/artifacts/{artifact_id}.zip')
+async def artifact_zip(artifact_id: str) -> Response:
+    """Every source file of the artifact (not `dist/`) as a zip, inside a folder named by the artifact id."""
+    found = await load_artifact(artifact_id)
+    async with workspace.open_artifact(found) as directory:
+        data = await asyncio.to_thread(zip_directory, directory, str(found.id))
+    return Response(data, media_type='application/zip', headers=attachment(f'{found.id}.zip'))
+
+
+def render_client() -> httpx2.AsyncClient:
+    """The HTTP client for the render service; tests swap it for one wired to a stub app."""
+    return httpx2.AsyncClient(timeout=60)
+
+
+@app.get('/artifacts/{artifact_id}.pdf')
+async def artifact_pdf(artifact_id: str) -> Response:
+    """The page printed to PDF by the render service, which fetches it from this server.
+
+    The page is built first, so a broken artifact is a 422 here rather than a PDF of an error page; and the
+    artifact lock is released before the render service is called, because it fetches `/artifacts/{id}/` from
+    this process, which would wait on the same lock.
+    """
+    found = await load_artifact(artifact_id)
+    render_url = config.render_url()
+    if render_url is None:
+        raise HTTPException(503, 'PDF export is not configured: OPENARTIFACT_RENDER_URL names the render service')
+    await built_page(found)
+    page_url = f'{config.internal_url()}/artifacts/{found.id}/'
+    try:
+        async with render_client() as client:
+            response = await client.post(f'{render_url}/pdf/', json={'url': page_url})
+    except httpx2.HTTPError as exc:
+        raise HTTPException(502, f'render service unreachable: {exc}') from exc
+    if response.status_code != 200:
+        raise HTTPException(502, f'render service failed ({response.status_code}): {response.text}')
+    return Response(response.content, media_type='application/pdf', headers=attachment(f'{found.id}.pdf'))
+
+
 @app.get('/artifacts/{artifact_id}')
 def artifact_redirect(artifact_id: str) -> RedirectResponse:
     """Send `/artifacts/x` to `/artifacts/x/` so the page's relative image references resolve under it."""
     return RedirectResponse(f'/artifacts/{artifact_id}/')
 
 
-@app.get('/artifacts/{artifact_id}/')
-async def artifact_index(artifact_id: str) -> HTMLResponse:
-    """The artifact's page, built now if this process has not built the current version yet."""
-    found = await load_artifact(artifact_id)
+async def built_page(found: workspace.Artifact) -> str:
+    """The artifact's page HTML, built now if this process has not built the current version yet; 422 if it fails."""
     async with workspace.open_artifact(found) as directory:
         page = directory / 'dist' / 'index.html'
         if not page.is_file():
@@ -145,8 +269,13 @@ async def artifact_index(artifact_id: str) -> HTMLResponse:
             except build.BuildError as exc:
                 raise HTTPException(422, f'build failed: {exc}') from exc
         # Read under the lock: a sync for a newer head could delete dist/ between here and the response otherwise.
-        html = page.read_text(encoding='utf-8')
-    return HTMLResponse(html)
+        return page.read_text(encoding='utf-8')
+
+
+@app.get('/artifacts/{artifact_id}/')
+async def artifact_index(artifact_id: str) -> HTMLResponse:
+    """The artifact's page."""
+    return HTMLResponse(await built_page(await load_artifact(artifact_id)))
 
 
 @app.get('/artifacts/{artifact_id}/{path:path}')

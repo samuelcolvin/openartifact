@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import shutil
 import threading
 import time
 import uuid
+import zipfile
 from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import TypeVar
@@ -14,9 +16,10 @@ from typing import TypeVar
 import httpx2
 import logfire
 import pytest
-import upload
 import uvicorn
 from conftest import DEV_TOKEN
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
 from fastapi.testclient import TestClient
 from fastmcp import Client
 from logfire.testing import CaptureLogfire
@@ -24,6 +27,7 @@ from logfire.testing import CaptureLogfire
 import auth
 import db
 import server
+import upload
 import workspace
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -163,6 +167,115 @@ def test_artifact_media_cannot_escape_via_symlink(client: TestClient, tmp_path: 
 def test_artifact_redirects_to_trailing_slash(client: TestClient):
     response = client.get(f'/artifacts/{uuid.uuid4()}', follow_redirects=False)
     assert response.status_code == 307
+
+
+def starter_sources() -> list[str]:
+    """The starter deck's source files, relative, as the server lists them."""
+    return sorted(
+        p.relative_to(STARTER).as_posix() for p in STARTER.rglob('*') if p.is_file() and 'dist' not in p.parts
+    )
+
+
+def test_artifact_markdown_has_a_frontmatter_summary(client: TestClient):
+    artifact = starter(client)
+    response = client.get(f'/artifacts/{artifact.id}.md')
+    assert response.status_code == 200
+    assert response.headers['content-type'] == 'text/markdown; charset=utf-8'
+    empty, front, body = response.text.split('---\n', 2)
+    assert empty == ''
+    lines = front.splitlines()
+    # Title and theme come from artifact.toml, which outranks the row's title ("Starter").
+    assert lines[:4] == [
+        f'id: "{artifact.id}"',
+        'title: "OpenArtifact Starter"',
+        'type: "deck"',
+        'theme: "markdown-dark"',
+    ]
+    assert f'url: "http://127.0.0.1:8765/artifacts/{artifact.id}/"' in lines
+    assert any(line.startswith('created_at: "') for line in lines)
+    files = [line.removeprefix('  - ').strip('"') for line in lines[lines.index('files:') + 1 :]]
+    assert files == starter_sources()
+    assert body == (STARTER / 'main.md').read_text(encoding='utf-8')
+    # The summary does not need the artifact to build: a broken artifact.toml falls back to the row.
+    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    (directory / 'artifact.toml').write_text('this is not toml')
+    response = client.get(f'/artifacts/{artifact.id}.md')
+    assert response.status_code == 200
+    assert response.text.splitlines()[1:4] == [f'id: "{artifact.id}"', 'title: "Starter"', 'type: "deck"']
+
+
+def test_artifact_zip_packs_the_sources(client: TestClient):
+    artifact = starter(client)
+    # Build first, so there is a dist/ to leave out.
+    assert client.get(f'/artifacts/{artifact.id}/').status_code == 200
+    response = client.get(f'/artifacts/{artifact.id}.zip')
+    assert response.status_code == 200
+    assert response.headers['content-type'] == 'application/zip'
+    assert response.headers['content-disposition'] == f'attachment; filename="{artifact.id}.zip"'
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert archive.namelist() == [f'{artifact.id}/{path}' for path in starter_sources()]
+        assert archive.read(f'{artifact.id}/main.md') == (STARTER / 'main.md').read_bytes()
+
+
+def test_artifact_pdf_needs_the_render_service(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    artifact = starter(client)
+    monkeypatch.delenv('OPENARTIFACT_RENDER_URL', raising=False)
+    response = client.get(f'/artifacts/{artifact.id}.pdf')
+    assert response.status_code == 503
+    assert 'OPENARTIFACT_RENDER_URL' in response.json()['detail']
+
+
+def stub_render(monkeypatch: pytest.MonkeyPatch, status: int, body: bytes) -> list[str]:
+    """Point the server at an in-process stand-in for the render service; returns the URLs it was asked to print."""
+    asked: list[str] = []
+    stub = FastAPI()
+
+    @stub.post('/pdf/')
+    async def render_pdf(request: Request) -> Response:
+        asked.append((await request.json())['url'])
+        return Response(body, status_code=status, media_type='application/pdf' if status == 200 else 'text/plain')
+
+    monkeypatch.setenv('OPENARTIFACT_RENDER_URL', 'http://render:8766/')
+    monkeypatch.setenv('OPENARTIFACT_INTERNAL_URL', 'http://app:8765')
+    monkeypatch.setattr(server, 'render_client', lambda: httpx2.AsyncClient(transport=httpx2.ASGITransport(app=stub)))
+    return asked
+
+
+def test_artifact_pdf_is_printed_by_the_render_service(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    artifact = starter(client)
+    asked = stub_render(monkeypatch, 200, b'%PDF-1.4 stub')
+    response = client.get(f'/artifacts/{artifact.id}.pdf')
+    assert response.status_code == 200, response.text
+    assert response.headers['content-type'] == 'application/pdf'
+    assert response.headers['content-disposition'] == f'attachment; filename="{artifact.id}.pdf"'
+    assert response.content == b'%PDF-1.4 stub'
+    # The render service was given the internal address, and the page had been built for it to fetch.
+    assert asked == [f'http://app:8765/artifacts/{artifact.id}/']
+    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    assert (directory / 'dist' / 'index.html').is_file()
+
+
+def test_artifact_pdf_reports_render_failures(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    artifact = starter(client)
+    stub_render(monkeypatch, 502, b'Chrome exited with code 3')
+    response = client.get(f'/artifacts/{artifact.id}.pdf')
+    assert response.status_code == 502
+    assert response.json()['detail'] == 'render service failed (502): Chrome exited with code 3'
+    # A page that does not build is reported before anything is sent to the render service.
+    asked = stub_render(monkeypatch, 200, b'%PDF-1.4 stub')
+    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    shutil.rmtree(directory / 'dist', ignore_errors=True)
+    (directory / 'main.md').write_text('# a\n---\n# b\n')
+    response = client.get(f'/artifacts/{artifact.id}.pdf')
+    assert response.status_code == 422
+    assert asked == []
+
+
+def test_exports_of_unknown_artifacts_are_404(client: TestClient):
+    missing = uuid.uuid4()
+    for suffix in ('.md', '.zip', '.pdf'):
+        assert client.get(f'/artifacts/{missing}{suffix}').status_code == 404, suffix
+        assert client.get(f'/artifacts/not-a-uuid{suffix}').status_code == 404, suffix
 
 
 FAR_FUTURE = 4_000_000_000

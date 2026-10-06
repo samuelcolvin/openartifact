@@ -19,7 +19,6 @@ from collections.abc import Generator
 from dataclasses import dataclass
 
 import logfire
-from config import base_url
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.auth.providers.google import GoogleProvider
@@ -27,6 +26,7 @@ from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from fastmcp.server.dependencies import get_access_token
 
 import db
+from config import base_url
 
 logger = logging.getLogger(__name__)
 
