@@ -116,7 +116,7 @@ The four built-in themes split on two axes: light vs dark backgrounds, and wheth
 }
 ```
 
-The full authoring guide - page directives, the page component, components and parameters, images, code blocks, the CSS variable contract and class hooks - lives at [`skills/openartifact/SKILL.md`](skills/openartifact/SKILL.md). It can be installed into Claude Code, Codex, Cursor, etc. via [skills.sh](https://skills.sh) (`bunx skills add samuelcolvin/openartifact`).
+The full authoring guide - page directives, the page component, components and parameters, images, code blocks - lives at [`skills/openartifact/SKILL.md`](skills/openartifact/SKILL.md), with the CSS variable contract and class hooks, build steps and local builds in [`skills/openartifact/references/`](skills/openartifact/references/). It can be installed into Claude Code, Codex, Cursor, etc. via [skills.sh](https://skills.sh) (`bunx skills add samuelcolvin/openartifact`).
 
 ## The builder API
 

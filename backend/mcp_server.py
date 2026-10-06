@@ -16,8 +16,9 @@ Tools:
   large sources reach the artifact without passing through a tool call. `server.py` accepts the uploads.
 - `list_artifacts` lists the caller's artifacts.
 
-The authoring guide `skills/openartifact/SKILL.md` is served as an agent skill through FastMCP's `SkillProvider`:
-the resource `skill://openartifact/SKILL.md`, a `_manifest` listing the skill's files and a template for the rest.
+The authoring guide `skills/openartifact/SKILL.md`, with its `references/`, is served as an agent skill through
+FastMCP's `SkillProvider`: the resource `skill://openartifact/SKILL.md`, a `_manifest` listing the skill's files
+and a template serving the rest (`skill://openartifact/references/styles.md`).
 
 The tools are coroutines: the sandbox is `AsyncMonty`, whose worker I/O stays off the event loop, and the
 builder's file work runs in a thread. `server.py` opens the pools in its lifespan and serves the output.

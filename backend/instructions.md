@@ -35,6 +35,7 @@ The format
 - `page_component = "Page.html"` in artifact.toml names a component rendered around every page, with
   `{{ CONTENT }}` where the body goes. Headers, footers and counters live there.
 
-The full authoring guide (page classes, components and parameters, build steps, images, the CSS variable
-contract, mapping a brand palette) is the resource {SKILL_URI}. Read it before writing anything beyond plain
-markdown.
+The authoring guide (page classes, the page component, components and parameters, images, code blocks) is the
+resource {SKILL_URI}. Read it before writing anything beyond plain markdown. It points to reference files under
+skill://openartifact/references/ for styles.css (the CSS variable contract, column layouts, class hooks, brand
+palettes), deck build steps, and building or printing by hand; read those when the task needs them.

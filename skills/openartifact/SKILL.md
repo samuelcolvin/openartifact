@@ -1,22 +1,31 @@
 ---
 name: openartifact
-description: Create a deck, document or page with OpenArtifact. Use when the user mentions "openartifact", "deck", "slides" or asks to build a slide deck, a printable document or a web page from markdown, to convert a brand palette into an OpenArtifact stylesheet, or to turn an OpenArtifact artifact into a PDF. Covers project layout, artifact.toml config (type, theme, page_component, [context]), main.md authoring with --- page breaks and <!-- class: ...; title: ... --> directives, HTML components with parameters and {{ CONTENT }}, the PAGE_NUMBER / PAGE_COUNT / PAGE_TITLE built-ins, images, code blocks, the styles.css token contract, and the Chrome headless PDF command.
+description: Create a deck, document or page with OpenArtifact. Use when the user mentions "openartifact", "deck", "slides" or asks to build a slide deck, a printable document or a web page from markdown, to convert a brand palette into an OpenArtifact stylesheet, or to turn an OpenArtifact artifact into a PDF. Covers project layout, artifact.toml config (type, theme, page_component, [context]), main.md authoring with --- page breaks and <!-- class: ...; title: ... --> directives, HTML components with parameters and {{ CONTENT }}, the PAGE_NUMBER / PAGE_COUNT / PAGE_TITLE built-ins, images and code blocks, with reference files for the styles.css token contract, deck build steps, and building or printing to PDF by hand.
 ---
 
 # OpenArtifact
 
-OpenArtifact builds one HTML page from one markdown file plus a CSS theme, an optional folder of HTML components and any images they reference. An artifact is made of pages, split on `---` lines; its `type` decides whether they show as slides (`deck`), as printable sheets (`document`) or as one continuous web page (`page`). The page renders itself in the browser and converts to PDF via Chrome headless. Building needs Python (via `uv`) and nothing else.
+OpenArtifact builds one HTML page from one markdown file plus a CSS theme, an optional folder of HTML components and any images they reference. An artifact is made of pages, split on `---` lines; its `type` decides whether they show as slides (`deck`), as printable sheets (`document`) or as one continuous web page (`page`). The page renders itself in the browser and converts to PDF via Chrome headless.
 
-## Installation
+This file is what every artifact needs. Read a reference file when the task calls for it:
 
-OpenArtifact is not packaged. Clone the repo and build the browser runtime once (this is the only step that needs Node):
+- `references/styles.md` - writing `styles.css`: the CSS variable contract, column layouts for deck pages, class hooks, fonts, code colours and how to map a brand palette.
+- `references/steps.md` - deck build steps, revealing a page's content step by step.
+- `references/local.md` - installing the repo and building or printing to PDF by hand, without the MCP server.
+
+Over MCP they are the resources `skill://openartifact/references/<name>.md`.
+
+## Using the MCP server
+
+The tools: `new_artifact(title, content, type, theme, build=True)` creates an artifact, a directory of source files identified by the UUID it returns, and builds it; `run_code(artifact, code, inputs)` runs Python in a sandbox with the artifact directory as its working directory, for writing and editing files; `upload_url(artifact, files)` returns signed URLs to `PUT` local files to; `build(artifact)` validates the files and refreshes the page; `list_artifacts()` lists yours. Every call that changes files is a commit. Build errors name the file and line.
+
+Files you already have (images, fonts, components, a long `main.md`) go in with `upload_url`, never by retyping them into `run_code`. Pass `[(path, size), ...]`, the path each file will have inside the artifact and its exact size in bytes, and `PUT` each file to the URL returned for it:
 
 ```bash
-git clone https://github.com/samuelcolvin/openartifact
-cd openartifact && pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/openartifact.js
+curl -T assets/logo.png "https://.../artifacts/<id>/assets/logo.png?token=..."
 ```
 
-The builder is the module `backend/build.py` in that checkout, with PDF printing in `backend/pdf.py`. Both need Python 3.11+ and nothing else. The usual way to use them is through the MCP server (`make pg-start`, then `make dev`; tools `new_artifact`, `run_code`, `build`, `upload_url`, `list_artifacts`; artifacts are identified by the UUID `new_artifact` returns); by hand, import them with `PYTHONPATH=CHECKOUT/backend`. Below, `CHECKOUT` stands for the path to that checkout.
+The response is JSON with the file's `sha256`; compare it with `shasum -a 256 assets/logo.png`. Each upload is one commit. URLs last an hour and take up to 10 MB per file; the size must match exactly. If `main.md` already refers to files you have still to add, create the artifact with `build=False`, upload them, then call `build`.
 
 ## Project layout
 
@@ -30,14 +39,7 @@ my-deck/
 └── assets/             # images referenced from the markdown, components or styles
 ```
 
-```bash
-# build to ./dist/index.html
-PYTHONPATH=CHECKOUT/backend python3 -c 'from pathlib import Path; import build; build.build_html(Path("."))'
-# then a PDF via Chrome headless, from the page the server is serving
-PYTHONPATH=CHECKOUT/backend python3 -c 'from pathlib import Path; import pdf; pdf.print_to_pdf("http://127.0.0.1:8765/artifacts/<id>/", Path("deck.pdf"))'
-```
-
-The page is not self-contained: it loads `openartifact.js` from the server and its images relatively, so view and print it through the server rather than from `file://`. `build_html(directory, output=None, runtime_url='/openartifact.js')` takes an optional output path; `print_to_pdf(url, pdf_path)` prints a served page. Input problems raise `build.BuildError` naming the file and line.
+The built page is served at `/artifacts/<id>/`. It is not self-contained: it loads `openartifact.js` from the server and its images relatively, so view and print it through the server rather than from `file://`.
 
 ## Artifact types
 
@@ -217,37 +219,9 @@ Body text, rendered as **markdown** because of the blank lines.
 - Substitution is plain text replacement: no expressions, loops or conditionals. Generate repeated markup with code in `run_code` and write the tags out.
 - The build checks everything and names the file and line: a parameter the tag passes but the component does not declare (listing the declared ones), a required parameter that is missing, an undeclared `{{ name }}` in the component, a declared parameter that is never used, children on a component without `{{ CONTENT }}`, an uppercase name that is neither built-in nor in `[context]`, and the missing blank lines above.
 
-### Build steps
+### Columns and build steps
 
-A deck page can reveal its content in steps, like Keynote builds. Put `data-step="N"` on any element, in the markdown or inside a component, and it stays hidden until the slide reaches step N. Add `data-step-end="M"` to hide it again after step M. The slide's step count is the highest step mentioned plus one; a slide with no `data-step` attributes has a single step.
-
-The next/previous keys, the wheel and any `data-nav` control in the page component step through a page's builds before moving to the next page, and a slide entered backwards opens on its last step. Shift+Right and Shift+Left jump a whole slide, skipping the builds, and land on the target's first step.
-
-```html
-<ul>
-  <li>Always visible</li>
-  <li data-step="1">Appears on the first press</li>
-  <li data-step="2">Appears on the second press</li>
-</ul>
-```
-
-Mutually exclusive frames (a diagram that changes rather than grows) are ranges. Stack them with `position: absolute` or a one-cell grid so they occupy the same space:
-
-```html
-<div style="position: relative; height: 20rem;">
-  <img data-step="0" data-step-end="0" src="assets/before.svg" style="position: absolute; inset: 0;">
-  <img data-step="1" data-step-end="1" src="assets/during.svg" style="position: absolute; inset: 0;">
-  <img data-step="2" src="assets/after.svg" style="position: absolute; inset: 0;">
-</div>
-```
-
-Hidden elements keep their layout (`visibility: hidden`, so build-up lists don't reflow) and fade in when revealed. The runtime only writes `data-step-state` (`pending` | `active` | `done`) on stepped elements and `data-step` on the slide; the look is plain CSS you can override from `styles.css`, for example to dim finished elements instead of hiding them:
-
-```css
-[data-step-state='done'] { visibility: visible; opacity: 0.35; }
-```
-
-PDF output shows every page at its final step.
+Markdown has no columns. For deck pages, the base stylesheet ships opt-in wrapper classes for HTML you write in `main.md` (`.row` / `.col`, `.cols-2` / `.cols-3`, `.shrink`, `.small-code`, `.center`); `references/styles.md` shows how to use them. Revealing a page's content step by step, with `data-step` attributes, is `references/steps.md`.
 
 ### Images
 
@@ -259,15 +233,7 @@ Reference images by path relative to the deck directory, from markdown, from a c
 <img src="assets/logo.svg" alt="Logo" style="width: 96px">
 ```
 
-Image paths are relative to the deck directory and stay that way in the page: the server serves the page at `/artifacts/<id>/` and the deck's `.png` / `.jpg` / `.gif` / `.svg` / `.webp` files under it, so the browser fetches them from there. The build checks each referenced file exists and fails if one is missing or points outside the deck. Absolute URLs (`https://...`) are left alone.
-
-Through the MCP server, get images (or any local file: fonts, components, a long `main.md`) into the artifact with `upload_url`: pass `[(path, size), ...]`, the path each file will have inside the artifact and its exact size in bytes, and `PUT` each file to the URL returned for it (create the artifact with `build=False` first if `main.md` already refers to them, then `build` once they are uploaded):
-
-```bash
-curl -T assets/logo.png "https://.../artifacts/<id>/assets/logo.png?token=..."
-```
-
-The response is JSON with the file's `sha256`; compare it with `shasum -a 256 assets/logo.png`. Each upload is one commit. URLs last an hour and take up to 10 MB per file; the size must match exactly.
+Image paths are relative to the deck directory and stay that way in the page: the server serves the page at `/artifacts/<id>/` and the deck's `.png` / `.jpg` / `.gif` / `.svg` / `.webp` files under it, so the browser fetches them from there. The build checks each referenced file exists and fails if one is missing or points outside the deck. Absolute URLs (`https://...`) are left alone. Image files themselves go into the artifact with `upload_url` (see "Using the MCP server").
 
 ### Code blocks
 
@@ -283,136 +249,8 @@ export function greet(name: string): string {
 
 Bundled grammars: `typescript` (`ts`, `tsx`), `javascript` (`js`, `jsx`), `python` (`py`), `bash` (`sh`, `zsh`), `json`, `toml` / `ini`, `css`, `xml` / `html` / `svg`, `sql`, `rust` (`rs`), `go`, `yaml` (`yml`), `markdown` (`md`), `diff`. Other languages render as plain, unhighlighted code.
 
-Token colours derive from the deck's accent variables (`--accent`, `--accent-secondary`, `--accent-tertiary`, `--accent-aqua`, `--color-muted`) and are deepened automatically on light slides, so a brand palette in `styles.css` restyles code too. To tune them directly, override `--code-keyword`, `--code-string`, `--code-number`, `--code-title`, `--code-attr`, `--code-comment` or `--code-meta` on `.slide`.
+Token colours derive from the artifact's accent variables, so a brand palette in `styles.css` restyles code too; `references/styles.md` lists the `--code-*` variables for tuning them directly.
 
-## Authoring `styles.css`
+## `styles.css`
 
-The base stylesheet handles all layout, typography, page dimensions, transitions, and the PDF `@page` setup. `styles.css` only needs to override CSS variables on `:root` to set brand tokens.
-
-### Variable contract
-
-Backgrounds:
-
-- `--bg-deck` (default `#0d0d0d`) - background outside the slide, presenter mode only.
-- `--bg-slide` (default `#1a1a1a`) - default slide background.
-- `--bg-light` (default `#ffffff`) - page bg for `light` / `markdown-light` themes and pages with the `light` class.
-- `--surface` (default `#2a2a2a`) - inline code background, table headers.
-
-Text:
-
-- `--color-text` (default white @ 85%) - body text on dark slides.
-- `--color-heading` (default `#ffffff`) - h1, h2, h4, strong on dark slides.
-- `--color-muted` (default `#8f888e`) - heading prefixes, subdued UI; `--topbar-muted` and `--topbar-divider` derive from it for a page component's header.
-- `--color-text-light` (default `#2a2230`) - body text on light slides.
-- `--color-heading-light` (default `#1a1018`) - headings on light slides.
-
-Accents:
-
-- `--accent` (default `#4a9eff`) - primary accent: bullets, h3, links, blockquote bar.
-- `--accent-secondary` (default `#ff6b6b`) - em, link hover.
-- `--accent-tertiary` (default `#b388ff`) - hr gradient stop.
-- `--accent-aqua` (default `#4ad7c5`) - inline code text.
-
-Fonts:
-
-- `--font-body` (default system sans stack) - body and headings, unless `--font-heading` overrides.
-- `--font-heading` (default inherits body) - headings.
-- `--font-mono` (default system mono) - inline code, code blocks, h3.
-- `--font-terminal` (default inherits body) - body inside `.page-body`.
-
-### Layout helpers
-
-Markdown has no columns, so `deck.css` ships a few opt-in classes for the wrapper HTML you write in `main.md` (decks only). Leave a blank line between the wrapper tags and the markdown inside them, or the markdown is not rendered.
-
-- `.row` - a flex row of `.col` children, vertically centred, filling the remaining slide height. Add `.row-top` to align children to the top.
-- `.col` - an equal-width column inside `.row`. Override with inline `style="flex: 0 0 40%"` for an uneven split.
-- `.cols-2` / `.cols-3` - a two or three column grid. Columns are `minmax(0, 1fr)`, so a wide code block shrinks instead of pushing the other column off the slide.
-- `.shrink` - scales its content from the top centre. Set the factor with `style="--shrink: 0.85"` (default 0.9). Use it when a diagram or table is slightly too tall for the slide.
-- `.small-code` - smaller font in code blocks inside it.
-- `.center` - centred text.
-
-```markdown
-<div class="row">
-<div class="col">
-
-- Bullets on the left
-
-</div>
-<div class="col small-code">
-
-```py
-print("code on the right")
-```
-
-</div>
-</div>
-```
-
-### CSS class hooks
-
-For finer control beyond the variable contract, target these classes from `styles.css`. Most artifacts won't need them - prefer overriding variables first.
-
-Structure:
-
-- `.artifact` - the artifact root, also `.artifact-deck` / `.artifact-document` / `.artifact-page` by type. In a deck it is the `.deck-presenter`, which owns the viewport background and the fit-to-window scaling; its child `.deck` is the page stream.
-- `.page` - one page (`<section>`): a 16:9 slide in a deck, a sheet in a document, a block of the column in a page artifact. The page component renders inside it.
-- `.page-body` - the rendered markdown, padded by `--slide-padding` in a deck. `.page-body.prose` in the two prose types.
-- `.page--active` - the page a deck is currently showing.
-
-Page classes from the `class` directive: `.cover`, `.statement`, `.light`, `.tight`, `.wide`, `.large`, always as `.page.cover` and so on, plus any of your own.
-
-Theme classes (applied to both `<html>` and the artifact root based on `theme` in `artifact.toml`):
-
-- `.theme-light` / `.theme-dark` / `.theme-markdown-light` / `.theme-markdown-dark`
-
-Markdown inside `.page-body` renders as plain HTML (`h1`-`h4`, `p`, `ul`, `ol`, `pre`, `code`, `table`, `blockquote`, `a`, `img`, `hr`) - target those tags directly with `.page <tag>` selectors rather than expecting OpenArtifact to add wrapper classes. Header, footer and navigation markup is whatever your page component contains, with whatever classes you give it.
-
-### Mapping a brand palette
-
-1. Pick the **most distinctive** brand color, assign to `--accent`. Pick a warm counterpoint as `--accent-secondary`.
-2. Pick a slightly off-white for `--color-heading` (pure white reads sterile under projector light).
-3. Pick a tinted dark for `--bg-slide` (pure black is harsh).
-4. For light slides, pick a tinted light bg (cream, eggshell, lavender - not pure white) plus a near-black text color → `--bg-light` / `--color-heading-light` / `--color-text-light`.
-5. For custom fonts, self-host woff / woff2 files in `assets/` and declare them with `@font-face` in `styles.css` using relative `url(assets/...)`, then point `--font-body` / `--font-mono` at the family. The server serves font files from the deck directory just like images. Use [Google Webfonts Helper](https://gwfh.mranftl.com/fonts) to download woff2 files.
-
-```css
-@font-face {
-  font-family: 'YourFont';
-  src: url('./assets/YourFont-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-display: swap;
-}
-
-:root {
-  --bg-slide: #...;       /* tinted dark */
-  --bg-light: #...;       /* tinted light */
-  --surface: #...;
-
-  --color-heading: #...;  /* off-white */
-  --color-text: rgba(...);
-  --color-heading-light: #...;
-  --color-text-light: #...;
-
-  --accent: #...;            /* signature brand color */
-  --accent-secondary: #...;  /* warm counterpoint */
-
-  --font-body: 'YourFont', system-ui, sans-serif;
-  --font-mono: 'YourFontMono', ui-monospace, monospace;
-}
-```
-
-## Building & PDF
-
-Build the HTML with `build.build_html`, serve it, then print it with `pdf.print_to_pdf` (both commands are in "Project layout" above).
-
-If Chrome / Chromium can't be found, or it exits with an error, the `BuildError` message carries the exact command: copy it and run it yourself with the right binary path. On Linux `pdf.find_chrome` auto-detects `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser`.
-
-The paper size comes from each type's stylesheet (`@page`): 16:9 for a deck, A4 for the others. If you override `--slide-width` / `--slide-height` in `styles.css`, add a matching `@page { size: ... }` there too.
-
-To spot-check the PDF (requires `pdftoppm` from poppler):
-
-```bash
-mkdir -p ./tmp && pdftoppm -r 100 ./dist/deck.pdf ./tmp/page -png
-```
-
-One PNG per printed page lands in `./tmp/`, gitignore that path.
+The base stylesheet handles all layout, typography, page dimensions, transitions and the print `@page` setup. `styles.css` only overrides CSS variables on `:root` to set brand colours and fonts, and adds rules on the class hooks when the variables are not enough. The variable contract, the layout helpers, the class hooks and the steps for mapping a brand palette are in `references/styles.md`; read it before writing any CSS.

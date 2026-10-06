@@ -291,7 +291,15 @@ async def test_skill_is_served(me: auth.Principal):
         templates = [t.uri_template for t in await client.list_resource_templates()]
         assert 'skill://openartifact/{path*}' in templates
         [manifest] = await client.read_resource('skill://openartifact/_manifest')
-        assert '"skill": "openartifact"' in getattr(manifest, 'text', '')
+        manifest_text = getattr(manifest, 'text', '')
+        assert '"skill": "openartifact"' in manifest_text
+        # The reference files SKILL.md points at are listed and served verbatim.
+        for name in ('styles', 'steps', 'local'):
+            assert f'references/{name}.md' in skill_file.read_text(encoding='utf-8')
+            assert f'references/{name}.md' in manifest_text
+            [reference] = await client.read_resource(f'skill://openartifact/references/{name}.md')
+            expected = (skill_file.parent / 'references' / f'{name}.md').read_text(encoding='utf-8')
+            assert getattr(reference, 'text', None) == expected
     assert mcp_server.mcp.instructions is not None and mcp_server.SKILL_URI in mcp_server.mcp.instructions
 
 
