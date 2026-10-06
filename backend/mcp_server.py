@@ -149,19 +149,30 @@ def format_output(streams: CollectStreams, result: object) -> str:
     return ''.join(parts)
 
 
+# The tool docstrings below are Google style because of how FastMCP reads them: the text before `Args:` is the tool
+# description an agent sees, and each `Args:` entry becomes that parameter's description in the input schema.
+# Nothing after `Args:` is shown, so what a tool returns is said in the lead text rather than in a `Returns:`.
+
+
 async def new_artifact(
     title: str, content: str, type: ArtifactType = 'deck', theme: Theme = 'light', build: bool = True
 ) -> str:
     """Create an artifact from markdown and, by default, build it.
 
-    `content` is markdown; a line containing only `---`, with a blank line before it, starts a new page. `type`
-    is how the pages are laid out: `deck` shows one 16:9 page at a time (so every page is a slide), `document`
-    stacks fixed-width sheets that print one per A4 page, `page` is a continuous web page (usually one page).
-    `content` becomes `main.md`; `title`, `type` and `theme` are written to `artifact.toml`. With `build` true the
-    artifact is built straight away, so a problem in `content` is returned as an error naming the line; the files
-    are kept, so fix them with `run_code` and call `build`. Pass `build=False` when `content` refers to components
-    or images you have still to add with `upload_url` or `run_code`, then call `build` once they are in place.
-    Returns the artifact identifier (a UUID) to pass to the other tools, and the URL of the page.
+    Returns the artifact identifier (a UUID) to pass to the other tools, and the URL of its page. A build problem
+    is returned as an error naming the file and line; the files are kept, so fix them with `run_code` and call
+    `build`.
+
+    Args:
+        title: The artifact's title, written to `artifact.toml`.
+        content: The markdown for `main.md`. A line containing only `---`, with a blank line before it, starts a
+            new page.
+        type: How the pages are laid out: `deck` shows one 16:9 page at a time (every page is a slide),
+            `document` stacks fixed-width sheets that print one per A4 page, `page` is a continuous web page
+            (usually a single page).
+        theme: The colour theme, written to `artifact.toml`; `styles.css` can override its variables later.
+        build: Build straight away. Pass false when `content` refers to components or images you have still to
+            add with `upload_url` or `run_code`, then call `build` once they are in place.
     """
     principal = await auth.current_principal()
     artifact_id = uuid.uuid4()
@@ -182,13 +193,18 @@ async def new_artifact(
 
 
 async def run_code(artifact: str, code: str, inputs: dict[str, Any] | None = None) -> str:
-    """Run Python code in a sandbox to edit the files of an artifact created with `new_artifact`.
+    """Run Python in a sandbox to read and edit the files of an artifact.
 
-    The artifact directory is the working directory and is mounted read-write at `/artifact`; use `pathlib.Path`
-    or `open()` to read and write files there. Nothing outside it is reachable and there is no network. `inputs`
-    are bound as global variables before the code runs, which is the easiest way to pass large text without
-    escaping it inside `code`. Returns everything printed plus the value of the final expression; a Python
-    exception is returned as an error with its traceback. Files written before the exception are kept.
+    The artifact directory is the working directory and is also mounted at `/artifact`; use `pathlib.Path` or
+    `open()` to read and write files there. Nothing outside it is reachable and there is no network. Returns
+    everything printed plus the value of the final expression. A Python exception is returned as an error with its
+    traceback; files written before it are kept.
+
+    Args:
+        artifact: The identifier returned by `new_artifact` or `list_artifacts`.
+        code: The Python source to run.
+        inputs: Values bound as global variables before the code runs. The easiest way to pass large text: put
+            it here rather than escaping it inside `code`.
     """
     found = await resolve(artifact)
     streams = CollectStreams()
@@ -219,13 +235,15 @@ async def run_code(artifact: str, code: str, inputs: dict[str, Any] | None = Non
 
 
 async def build_artifact(artifact: str) -> str:
-    """Validate an artifact's files and build it to `dist/index.html`.
+    """Validate an artifact's files and build its page.
 
     Validation covers `artifact.toml`, the page structure of `main.md`, every component and its parameters, and
-    every image.
-    Problems are returned as an error naming the file and line, so fix them with `run_code` and build again. On
-    success returns the URL where the page can be viewed; inside `run_code` the output is also visible under
+    every image. Problems are returned as an error naming the file and line, so fix them with `run_code` and build
+    again. On success returns the URL of the page; inside `run_code` the output is also visible under
     `/artifact/dist/`.
+
+    Args:
+        artifact: The identifier returned by `new_artifact` or `list_artifacts`.
     """
     found = await resolve(artifact)
     async with workspace.open_artifact(found) as directory:
@@ -241,12 +259,16 @@ async def build_artifact(artifact: str) -> str:
 async def upload_url(artifact: str, files: list[tuple[str, int]]) -> list[str]:
     """Get URLs to upload local files into an artifact, one per file, so their bytes never pass through a tool call.
 
-    `files` is a list of `(path, size)` pairs: the path the file will have inside the artifact, relative, such as
-    `assets/logo.png` or `components/Card.html`, and its exact size in bytes. The result has one URL per pair in the
-    same order. `PUT` the file's bytes to it, for example `curl -T assets/logo.png "<url>"` (quote the URL: it has
-    a query string). The body must be exactly the declared size. Each upload is committed on its own and answered
-    with JSON holding the file's `sha256`, so compare it with `shasum -a 256` locally. URLs expire after an hour and
-    allow up to 10 MB per file. A file already at the path is overwritten; `dist/` and `.git` entries are refused.
+    Returns one URL per entry of `files`, in the same order. `PUT` each file's bytes to its URL, for example
+    `curl -T assets/logo.png "<url>"` (quote the URL: it has a query string). The body must be exactly the declared
+    size. Each upload is committed on its own and answered with JSON holding the file's `sha256`, so compare it with
+    `shasum -a 256` locally. URLs expire after an hour and allow up to 10 MB per file. A file already at the path is
+    overwritten; `dist/` and `.git` entries are refused.
+
+    Args:
+        artifact: The identifier returned by `new_artifact` or `list_artifacts`.
+        files: `(path, size)` pairs: the path the file will have inside the artifact, relative, such as
+            `assets/logo.png` or `components/Card.html`, and its exact size in bytes.
     """
     found = await resolve(artifact)
     if not files:

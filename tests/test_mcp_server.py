@@ -297,8 +297,17 @@ async def test_skill_is_served(me: auth.Principal):
 
 async def test_tools_over_mcp(me: auth.Principal, pool: None):
     async with Client(mcp_server.mcp) as client:
-        tools = {tool.name for tool in await client.list_tools()}
-        assert tools == {'new_artifact', 'run_code', 'build', 'upload_url', 'list_artifacts'}
+        tools = {tool.name: tool for tool in await client.list_tools()}
+        assert set(tools) == {'new_artifact', 'run_code', 'build', 'upload_url', 'list_artifacts'}
+        # The Google-style docstrings are split: the lead is the description, `Args:` entries describe parameters.
+        description = tools['new_artifact'].description or ''
+        assert description.startswith('Create an artifact from markdown and, by default, build it.')
+        assert 'Args:' not in description
+        properties = tools['new_artifact'].input_schema['properties']
+        assert properties['build']['description'].startswith('Build straight away.')
+        assert properties['type']['enum'] == list(mcp_server.TYPES)
+        files = tools['upload_url'].input_schema['properties']['files']
+        assert files['description'].startswith('`(path, size)` pairs')
 
         created = await client.call_tool('new_artifact', {'title': 'Demo', 'content': '# Demo\n'})
         name = artifact_id(created.data)
