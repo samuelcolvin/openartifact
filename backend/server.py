@@ -12,14 +12,9 @@ Pages are public to anyone holding the artifact's UUID, and so are their sources
 `styles.css` and `components/*` are served as text next to the page (they are in the page anyway), so an agent can
 read the markdown directly. Only `dist/` is withheld.
 
-Run with `uv run backend/server.py` (`HOST` and `PORT` override the bind address). Configuration is by
-environment: `DATABASE_URL`, `OPENARTIFACT_STORE_URL`, `OPENARTIFACT_CACHE_DIR` (one per process, never shared),
-`OPENARTIFACT_BASE_URL`, and for auth `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `OPENARTIFACT_SECRET_KEY` or
-`OPENARTIFACT_DEV_TOKEN`. The image needs `git`.
-
-Observability is Logfire. FastAPI, FastMCP, asyncpg and pydantic-monty all emit OpenTelemetry; `logfire.configure()`
-installs the global providers they look up, and asyncpg and monty are handed theirs explicitly. Data is sent when
-`LOGFIRE_TOKEN` is set and printed to the console either way.
+Run by `main.py`. Configuration is by environment: `DATABASE_URL`, `OPENARTIFACT_STORE_URL`,
+`OPENARTIFACT_CACHE_DIR` (one per process, never shared), `OPENARTIFACT_BASE_URL`, and for auth `GOOGLE_CLIENT_ID` /
+`GOOGLE_CLIENT_SECRET` / `OPENARTIFACT_SECRET_KEY` or `OPENARTIFACT_DEV_TOKEN`. The image needs `git`.
 """
 
 from __future__ import annotations
@@ -27,15 +22,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import mimetypes
-import os
-import sys
 import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import config
-import logfire
-import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
@@ -62,11 +53,6 @@ SOURCE_MEDIA_TYPES = {
 }
 
 
-# Configure Logfire and hook up the libraries that need telling.
-logfire.configure(service_name='openartifact', send_to_logfire='if-token-present')
-logfire.instrument_asyncpg()
-logfire.instrument_monty()
-
 # `path='/'` inside the mount makes the endpoint `/mcp/`.
 mcp_app = mcp_server.mcp.http_app(path='/')
 
@@ -82,7 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 
 # `auto_configure=False` stops FastAPI adding its own OTLP exporters from `OTEL_*` variables: Logfire owns export here,
-# and both would double-send. `/health/` is the container health check, every 10s; tracing it would only add noise.
+# and both would double-send. `/health/` is the container health check; tracing it would only add noise.
 app = FastAPI(
     title='openartifact',
     lifespan=lifespan,
@@ -169,8 +155,3 @@ async def artifact_media(artifact_id: str, path: str) -> Response:
         data = file.read_bytes()
     media_type = SOURCE_MEDIA_TYPES.get(file.suffix.lower()) or mimetypes.guess_type(file.name)[0]
     return Response(data, media_type=media_type or 'application/octet-stream')
-
-
-if __name__ == '__main__':
-    uvicorn.run(app, host=os.environ.get('HOST', '127.0.0.1'), port=int(os.environ.get('PORT', '8765')))
-    sys.exit(0)

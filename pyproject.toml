@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 # Not a package: backend/ is a handful of modules imported by path (pytest and pyright add it to the path), with
-# backend/server.py the only entry point. The dependencies above are for the server only; build.py and pdf.py need none.
+# backend/main.py the only entry point. The dependencies above are for the server only; build.py and pdf.py need none.
 [tool.uv]
 package = false
 

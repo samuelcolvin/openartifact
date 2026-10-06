@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TypeVar
 
 import httpx2
+import logfire
 import pytest
 import uvicorn
 from conftest import DEV_TOKEN
@@ -227,6 +228,8 @@ async def test_mcp_over_http(live_server: str):
 @pytest.mark.anyio
 async def test_native_telemetry_reaches_logfire(live_server: str, capfire: CaptureLogfire):
     """FastAPI, FastMCP, asyncpg and monty spans all land in Logfire with no `instrument_*` beyond the two hooks."""
+    logfire.instrument_asyncpg()
+    logfire.instrument_monty()
     async with httpx2.AsyncClient() as http:
         assert (await http.get(f'{live_server}/')).status_code == 200
     async with Client(f'{live_server}/mcp/', auth=DEV_TOKEN) as client:

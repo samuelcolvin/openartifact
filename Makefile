@@ -50,7 +50,7 @@ pg-stop: ## Stop the database
 
 .PHONY: dev
 dev: ## Start the server on the host at http://127.0.0.1:8765 with reload, MCP at /mcp/ with the dev token
-	uv run uvicorn --app-dir backend server:app --reload --port 8765
+	uv run uvicorn --app-dir backend main:app --reload --port 8765
 
 .PHONY: docker-up
 docker-up: ## Build the image and start the server and database via docker compose

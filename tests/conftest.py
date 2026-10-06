@@ -26,8 +26,6 @@ import workspace
 # module imports it. Tests that need a second user register more tokens on the same verifier.
 DEV_TOKEN = 'test-dev-token'
 os.environ['OPENARTIFACT_DEV_TOKEN'] = DEV_TOKEN  # not setdefault: the Makefile exports a dev token of its own
-# The server configures Logfire at import; keep its console output out of pytest's captured stdout.
-os.environ.setdefault('LOGFIRE_CONSOLE', 'false')
 
 TABLES = ('users', 'credentials', 'workspaces', 'artifacts')
 

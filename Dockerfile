@@ -52,6 +52,6 @@ ENV PATH=/app/.venv/bin:$PATH \
     OPENARTIFACT_STORE_URL=file:///data/store
 VOLUME /data
 EXPOSE 8765
-HEALTHCHECK --interval=10s --timeout=3s --start-period=15s \
-    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"PORT\"]}/health/')" || exit 1
-CMD ["python", "backend/server.py"]
+HEALTHCHECK --interval=30s --timeout=3s --start-period=15s \
+    CMD python -c "import os, httpx2; httpx2.get(f'http://127.0.0.1:{os.environ['PORT']}/health/').raise_for_status()" || exit 1
+CMD ["python", "backend/main.py"]
