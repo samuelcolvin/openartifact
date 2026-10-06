@@ -1,0 +1,77 @@
+CLAUDE.md
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 15,24,28,122,124,132,153,163
+  s_d9c84d24ba8b7a::t_a3be6e82474dc7 125
+  s_d9c84d24ba8b7a::t_39440f6d340df1 152,154
+  s_d9c84d24ba8b7a::t_258a1cc3a374a6 155
+backend/config.py
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 22,24,29,31
+  s_d9c84d24ba8b7a::t_98c320563d6546 23
+chrome/__init__.py
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 1
+.dockerignore
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 1-2,5
+tests/test_chrome.py
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 1-109
+docker-compose.yml
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 3,6,14,16,28,31,34,38-39
+  s_d9c84d24ba8b7a::t_02a57cdf1050ca 35-36
+chrome/Dockerfile
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 2-14,16-39
+  s_d9c84d24ba8b7a::t_98c320563d6546 1,15
+chrome/server.py
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 1-6,10-20,22-26,28-48,60
+  s_d9c84d24ba8b7a::t_7842d8b990279c 7-9,21,27,49-59
+pyproject.toml
+  s_d9c84d24ba8b7a::t_ea68b0ae7dc586 29-33
+  s_d9c84d24ba8b7a::t_64cf46b29ad3cb 15-16
+  s_d9c84d24ba8b7a::t_cfcc3b1f9267d2 45
+  s_d9c84d24ba8b7a::t_c8adb8ccdfb20b 14
+  s_d9c84d24ba8b7a::t_98c320563d6546 85
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 24-25,41-42,51,65,76
+Makefile
+  s_d9c84d24ba8b7a::t_98c320563d6546 6,61
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 9-10,60,62,65
+README.md
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 124,134,139,154
+skills/openartifact/references/local.md
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 14,22,29
+tests/test_server.py
+  s_d9c84d24ba8b7a::t_a62e370b95b85c 277-279
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 222,225,228-229,234,238,240,246,252,260,263-265
+  s_d9c84d24ba8b7a::t_115d7bbed2e71d 310-311
+  s_d9c84d24ba8b7a::t_5f6ea4b6a4b6af 292-293
+  s_d9c84d24ba8b7a::t_4a32d51bf37366 301-303,308-309,312
+  s_d9c84d24ba8b7a::t_98c320563d6546 220,244,258
+  s_d9c84d24ba8b7a::t_1cd75c2295f0cb 280-291,294-300,304-305,313-314
+  s_d9c84d24ba8b7a::t_484a92ab4130f2 274-276
+  s_d9c84d24ba8b7a::t_787a0b6ae525d7 306-307
+backend/main.py
+  s_d9c84d24ba8b7a::t_5c0cb877cbdfa9 19-21
+  s_d9c84d24ba8b7a::t_c9dae65c8d1572 15,18
+Dockerfile
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 5
+  s_d9c84d24ba8b7a::t_4b96a29b6def2b 26-30
+backend/server.py
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 12,227-228,234,237,241-243,247-248,250,252
+chrome/main.py
+  s_d9c84d24ba8b7a::t_6f71431b33b7b0 1-14,19-21
+  s_d9c84d24ba8b7a::t_3c889d74e21613 15-18
+chrome/pdf.py
+  s_d9c84d24ba8b7a::t_5b506507ca8da2 6-7,20,36,42,50,67,70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f13d7bde0c75cad2ea0b543231e5cec8a91b9152",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
