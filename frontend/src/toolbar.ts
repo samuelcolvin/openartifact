@@ -8,10 +8,10 @@
  * toggle, a Download menu for the `.pdf`, `.md` and `.zip` exports served beside the page, and the
  * brand. Fork and Edit will join the right-hand group later.
  *
- * Presenter-style auto-hide: the bar shows while the pointer moves, stays while the pointer is near
- * the top of the window or over the bar, while focus is inside it or the menu is open, and slides
- * away two seconds after the pointer stops. It is pinned where there is no hover (touch) and hidden
- * in print by toolbar.css. Building the DOM is synchronous like the rest of the runtime; the timers
+ * Auto-hide: the bar shows while the pointer is near the top of the window or over the bar, while
+ * focus is inside it or the menu is open, and slides away a second after the pointer leaves that
+ * area; a pointer over the bulk of the page never shows it. It is pinned where there is no hover
+ * (touch) and hidden in print by toolbar.css. Building the DOM is synchronous like the rest of the runtime; the timers
  * only toggle visibility afterwards.
  */
 
@@ -27,10 +27,10 @@ export interface ToolbarOptions {
   deck: DeckController | null
 }
 
-/** Pointer this close to the top edge (px) keeps the bar open. */
+/** Pointer this close to the top edge (px) shows the bar. */
 const NEAR_TOP = 96
-/** How long after the pointer stops the bar hides (ms). */
-const IDLE_HIDE = 2000
+/** How long the bar lingers after the pointer leaves that area (ms). */
+const LINGER = 1000
 /** How long the bar is shown at load, so visitors learn it is there (ms). */
 const INTRO_SHOW = 2500
 
@@ -247,44 +247,53 @@ function buildDownloadMenu(group: HTMLElement, base: string): Menu {
   return { isOpen }
 }
 
-/** Show the bar while the pointer moves or sits near the top, hide it when the pointer rests elsewhere. */
+/** Show the bar while the pointer is near the top, and for a moment after it leaves; never over the page itself. */
 function installAutoHide(host: HTMLElement, menuOpen: () => boolean): void {
   let nearTop = false
-  let moving = false
+  let lingering = false
   // Automated captures (a future screenshot endpoint) should never see the intro. Print is covered by CSS.
   const automated = navigator.webdriver || /HeadlessChrome/.test(navigator.userAgent)
   let intro = !automated
-  let idleTimer: ReturnType<typeof setTimeout> | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
 
   const update = () => {
-    const visible = nearTop || moving || intro || menuOpen()
+    const visible = nearTop || lingering || intro || menuOpen()
     if (visible !== host.hasAttribute('data-visible')) host.toggleAttribute('data-visible', visible)
   }
-  const restIn = (ms: number, then: () => void) => {
-    clearTimeout(idleTimer)
-    idleTimer = setTimeout(then, ms)
+  const after = (ms: number, then: () => void) => {
+    clearTimeout(timer)
+    timer = setTimeout(then, ms)
+  }
+  const leave = () => {
+    if (!nearTop) return
+    nearTop = false
+    lingering = true
+    after(LINGER, () => {
+      lingering = false
+      update()
+    })
   }
 
   window.addEventListener('mousemove', (e) => {
-    nearTop = e.clientY < NEAR_TOP
-    moving = true
     intro = false
+    if (e.clientY < NEAR_TOP) {
+      nearTop = true
+      lingering = false
+      clearTimeout(timer)
+    } else {
+      leave()
+    }
     update()
-    restIn(IDLE_HIDE, () => {
-      moving = false
-      update()
-    })
   })
   document.addEventListener('mouseleave', () => {
-    nearTop = false
-    moving = false
+    leave()
     update()
   })
 
-  // The bar is hidden by default; the intro shows it after the first paint and lets the idle timer take over.
+  // The bar is hidden by default; the intro shows it after the first paint, then the pointer rules take over.
   if (intro) {
     update()
-    restIn(INTRO_SHOW, () => {
+    after(INTRO_SHOW, () => {
       intro = false
       update()
     })

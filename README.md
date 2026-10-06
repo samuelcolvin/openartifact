@@ -133,7 +133,7 @@ Next to the page at `/artifacts/<id>/`, the server offers:
 
 The zip and the PDF download as `<title> <commit>.zip` / `.pdf`, the title from `artifact.toml` and the short sha of the artifact's last change.
 
-The page itself carries a viewer toolbar, added by `openartifact.js` and hidden in print: the artifact's title, a Download menu with the three exports, the OpenArtifact brand, and for a deck previous / next, the page counter and a full-screen toggle. It slides away when the pointer rests and comes back when the pointer moves or nears the top of the window.
+The page itself carries a viewer toolbar, added by `openartifact.js` and hidden in print: the artifact's title, a Download menu with the three exports, the OpenArtifact brand, and for a deck previous / next, the page counter and a full-screen toggle. It shows when the pointer nears the top of the window and slides away a second after it leaves.
 
 PDF printing happens in the chrome service, `chrome/`, which runs in its own image with Chromium and prints whatever page URL it is given; the app calls it at `OPENARTIFACT_CHROME_URL` and tells it to fetch the page at `OPENARTIFACT_INTERNAL_URL` (the app as seen from the chrome container). `make docker-up` runs both; on the host, `make chrome-dev` serves it on :8766 with the local Chrome and `make dev` points at it. Without a chrome service the `.pdf` URL answers 503.
 
