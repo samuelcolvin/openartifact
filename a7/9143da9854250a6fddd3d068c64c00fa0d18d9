@@ -1,0 +1,43 @@
+backend/main.py
+  s_efd443b6382933::t_980b73283faf36 2,5-11,13,18-19
+  s_efd443b6382933::t_23c5a60e7ede22 1,3-4,12,14-17,20
+tests/test_server.py
+  s_efd443b6382933::t_49f81101ddf334 14,231-232
+pyproject.toml
+  s_efd443b6382933::t_3f3a3a01d504aa 21
+CLAUDE.md
+  s_efd443b6382933::t_06a4781cd551a3 17,59,152
+backend/server.py
+  s_efd443b6382933::t_49f81101ddf334 15
+  s_efd443b6382933::t_ad79ede4ea8400 16-17
+  s_d9c84d24ba8b7a::t_5407a69f0a6624 71
+Dockerfile
+  s_efd443b6382933::t_3f3a3a01d504aa 57
+  s_d9c84d24ba8b7a::t_93b4b36a01028a 56
+Makefile
+  s_efd443b6382933::t_876285b78679a4 53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a79143da9854250a6fddd3d068c64c00fa0d18d9",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    },
+    "s_efd443b6382933": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bac7e941-fb65-4771-a2f6-406dbf66f95b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
