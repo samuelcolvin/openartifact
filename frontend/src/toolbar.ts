@@ -10,7 +10,7 @@
  *
  * Auto-hide: the bar shows while the pointer is near the top of the window or over the bar, while
  * focus is inside it or the menu is open, and slides away a second after the pointer leaves that
- * area; a pointer over the bulk of the page never shows it. It is pinned where there is no hover
+ * area, or at once on a click below it; a pointer over the bulk of the page never shows it. It is pinned where there is no hover
  * (touch) and hidden in print by toolbar.css. Building the DOM is synchronous like the rest of the runtime; the timers
  * only toggle visibility afterwards.
  */
@@ -288,6 +288,16 @@ function installAutoHide(host: HTMLElement, menuOpen: () => boolean): void {
   document.addEventListener('mouseleave', () => {
     leave()
     update()
+  })
+  // A click on the page below the bar means the reader is working there: hide at once, no linger, no intro.
+  document.addEventListener('pointerdown', (e) => {
+    if (e.clientY >= NEAR_TOP) {
+      clearTimeout(timer)
+      nearTop = false
+      lingering = false
+      intro = false
+      update()
+    }
   })
 
   // The bar is hidden by default; the intro shows it after the first paint, then the pointer rules take over.
