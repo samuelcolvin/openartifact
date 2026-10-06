@@ -1,0 +1,40 @@
+backend/mcp_server.py
+  s_d9c84d24ba8b7a::t_e04e9cdb8ce72e 253
+tests/test_build.py
+  s_d9c84d24ba8b7a::t_82a26ad2a70dc0 498
+  s_d9c84d24ba8b7a::t_2400b0aa1fd7f1 444,454,483,493-497,499-501
+README.md
+  s_d9c84d24ba8b7a::t_2400b0aa1fd7f1 130
+frontend/src/styles/toolbar.css
+  s_d9c84d24ba8b7a::t_2400b0aa1fd7f1 238-243
+frontend/src/toolbar.ts
+  s_d9c84d24ba8b7a::t_fbada118bd9e79 191
+  s_d9c84d24ba8b7a::t_2400b0aa1fd7f1 47-48,52,190,192,196-200
+CLAUDE.md
+  s_d9c84d24ba8b7a::t_2400b0aa1fd7f1 109,122,176-177
+backend/server.py
+  s_d9c84d24ba8b7a::t_e04e9cdb8ce72e 330-334,340
+backend/build.py
+  s_d9c84d24ba8b7a::t_e04e9cdb8ce72e 711,725-729,737-738,787-794,797-799,807-810,818,827-832,836-837,841-844
+  s_d9c84d24ba8b7a::t_82a26ad2a70dc0 730-736
+tests/test_server.py
+  s_d9c84d24ba8b7a::t_2400b0aa1fd7f1 140-142
+  s_d9c84d24ba8b7a::t_82a26ad2a70dc0 143
+  s_d9c84d24ba8b7a::t_e04e9cdb8ce72e 138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b1c7dd95279f7edd35a827ff6ed1622eaf9c7487",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
