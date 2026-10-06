@@ -327,12 +327,17 @@ def artifact_redirect(artifact_id: str) -> RedirectResponse:
     return RedirectResponse(f'/artifacts/{artifact_id}/')
 
 
+def markdown_export_href(directory: Path) -> str:
+    """The `.md` export relative to the page: the artifact directory is `artifacts/<id>/`, the page `/artifacts/<id>/`."""
+    return f'../{directory.name}.md'
+
+
 async def build_if_missing(directory: Path) -> Path:
     """`dist/index.html`, built now if this process has not built the current version yet; a failure is a 422."""
     page = directory / 'dist' / 'index.html'
     if not page.is_file():
         try:
-            await asyncio.to_thread(build.build_html, directory)
+            await asyncio.to_thread(build.build_html, directory, markdown_url=markdown_export_href(directory))
         except build.BuildError as exc:
             raise HTTPException(422, f'build failed: {exc}') from exc
     return page

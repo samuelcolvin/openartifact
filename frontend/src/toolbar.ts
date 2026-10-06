@@ -44,10 +44,12 @@ const ICONS = {
   chevron: '<svg viewBox="0 0 12 12"><path d="m3 4.5 3 3 3-3"/></svg>',
 }
 
-const EXPORTS: Array<{ ext: string; label: string; hint?: string }> = [
+/** The menu's entries; `view` opens in a new tab instead of downloading, below a separator. */
+const EXPORTS: Array<{ ext: string; label: string; hint?: string; view?: boolean }> = [
   { ext: '.pdf', label: 'PDF', hint: 'printed on request, takes a moment' },
   { ext: '.md', label: 'Markdown', hint: 'the source, behind a summary' },
   { ext: '.zip', label: 'Source (zip)', hint: 'every file of the artifact' },
+  { ext: '.md', label: 'View markdown', hint: 'open the source in a new tab', view: true },
 ]
 
 /**
@@ -185,12 +187,17 @@ function buildDownloadMenu(group: HTMLElement, base: string): Menu {
     'Download',
   )
   button.insertAdjacentHTML('beforeend', ICONS.chevron)
-  const items = EXPORTS.map(({ ext, label, hint }) => {
-    const link = el('a', { role: 'menuitem', href: base + ext, download: '' }, label)
+  const items = EXPORTS.map(({ ext, label, hint, view }) => {
+    const attrs: Record<string, string> = view ? { target: '_blank', rel: 'noopener' } : { download: '' }
+    const link = el('a', { role: 'menuitem', href: base + ext, ...attrs }, label)
     if (hint) link.append(el('small', {}, hint))
     return link
   })
-  const menu = el('div', { class: 'menu', role: 'menu', hidden: '' }, ...items)
+  const menu = el('div', { class: 'menu', role: 'menu', hidden: '' })
+  for (const [i, item] of items.entries()) {
+    if (EXPORTS[i].view && !EXPORTS[i - 1]?.view) menu.append(el('div', { class: 'separator', role: 'separator' }))
+    menu.append(item)
+  }
   const wrap = el('div', { class: 'menu-wrap' }, button, menu)
   group.append(wrap)
 

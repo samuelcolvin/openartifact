@@ -250,7 +250,7 @@ async def build_artifact(artifact: str) -> str:
     async with workspace.open_artifact(found) as directory:
         try:
             # Plain file reads and writes, kept off the event loop.
-            html_path = await asyncio.to_thread(build.build_html, directory)
+            html_path = await asyncio.to_thread(build.build_html, directory, markdown_url=f'../{found.id}.md')
         except build.BuildError as exc:
             raise ToolError(f'error: {exc}') from exc
         size = html_path.stat().st_size

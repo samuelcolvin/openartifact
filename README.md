@@ -127,7 +127,7 @@ The full authoring guide - page directives, the page component, components and p
 
 Next to the page at `/artifacts/<id>/`, the server offers:
 
-- `/artifacts/<id>.md` - the markdown source behind a frontmatter summary (title, type, theme, URL, dates, the list of source files); what an agent should read instead of parsing the page.
+- `/artifacts/<id>.md` - the markdown source behind a frontmatter summary (title, type, theme, URL, dates, the list of source files); what an agent should read instead of parsing the page. The page's `<head>` links it as `rel="alternate"` with a comment saying so.
 - `/artifacts/<id>.zip` - every source file as a zip.
 - `/artifacts/<id>.pdf` - the page printed to PDF.
 

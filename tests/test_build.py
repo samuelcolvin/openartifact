@@ -441,7 +441,7 @@ def test_render_page_writes_readable_blocks():
     # The markdown reads as markdown in the page source: only the breaker sequences are touched.
     assert '# Hi\n\n&lt;/script>&lt;!--&lt;script>' in page
     assert '<style id="artifact-styles">\n:root { --accent: red }\n</style>' in page
-    assert '<link rel="alternate" type="text/markdown" href="main.md">' in page
+    assert '<link rel="alternate" type="text/markdown" href="main.md" title="Markdown source">' in page
     assert '<title>T &amp; T</title>' in page
     assert '<script src="/openartifact.js"></script>' in page
     assert '<link rel="icon"' not in page
@@ -451,7 +451,7 @@ def test_render_page_writes_readable_blocks():
 def test_render_page_links_favicon_and_runtime_relatively():
     page = build.render_page('T', 'assets/fav.svg', {}, 'https://cdn.example/openartifact.js?v="1"', 'docs/x.md')
     assert '<link rel="icon" href="assets/fav.svg">' in page
-    assert '<link rel="alternate" type="text/markdown" href="docs/x.md">' in page
+    assert '<link rel="alternate" type="text/markdown" href="docs/x.md" title="Markdown source">' in page
     assert '<script src="https://cdn.example/openartifact.js?v=&quot;1&quot;"></script>' in page
 
 
@@ -480,7 +480,7 @@ def test_build_starter_example(tmp_path: Path):
         component = build.decode_block(block_of(page, f'data-component="{name}"'))
         assert component == (starter / 'components' / name).read_text()
     assert (starter / 'styles.css').read_text() in page
-    assert '<link rel="alternate" type="text/markdown" href="main.md">' in page
+    assert '<link rel="alternate" type="text/markdown" href="main.md" title="Markdown source">' in page
     assert 'data:' not in page
 
 
@@ -488,6 +488,17 @@ def test_build_uses_given_runtime_url(tmp_path: Path):
     write(tmp_path / 'main.md', '# hi\n')
     page = build.build_html(tmp_path, runtime_url='/static/openartifact.js').read_text()
     assert '<script src="/static/openartifact.js"></script>' in page
+
+
+def test_build_html_markdown_url(tmp_path: Path):
+    """The server passes the `.md` export: the head links it and tells agents to read it, not the HTML."""
+    (tmp_path / 'main.md').write_text('# a\n')
+    page = build.build_html(tmp_path, markdown_url='../abc.md').read_text()
+    assert '<link rel="alternate" type="text/markdown" href="../abc.md" title="Markdown source">' in page
+    assert 'do not parse this HTML' in page and '\n      ../abc.md\n' in page
+    # A bare build keeps the plain link and no note.
+    plain = build.build_html(tmp_path).read_text()
+    assert 'href="main.md"' in plain and 'do not parse this HTML' not in plain
 
 
 def test_load_config_favicon(tmp_path: Path):

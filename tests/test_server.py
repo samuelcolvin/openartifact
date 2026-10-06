@@ -135,9 +135,12 @@ def test_artifact_sources_are_served_as_text(client: TestClient):
         assert response.status_code == 200, path
         assert response.headers['content-type'] == media_type, path
         assert response.content == (STARTER / path).read_bytes(), path
-    # The page advertises the markdown source.
+    # The page advertises the markdown export, with a note telling agents to read it rather than the HTML.
     page = client.get(f'/artifacts/{artifact.id}/')
-    assert '<link rel="alternate" type="text/markdown" href="main.md">' in page.text
+    assert (
+        f'<link rel="alternate" type="text/markdown" href="../{artifact.id}.md" title="Markdown source">' in page.text
+    )
+    assert 'do not parse this HTML' in page.text and f'\n      ../{artifact.id}.md\n' in page.text
     assert 'id="artifact-markdown"' in page.text
     # The build output is not a source file: the page is served at the directory URL only.
     for path in ('dist/index.html', 'assets/../dist/index.html'):

@@ -708,7 +708,7 @@ TEMPLATE = """\
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>{favicon}
-<link rel="alternate" type="text/markdown" href="{markdown_href}">
+{markdown_link}
 <style id="artifact-styles">
 {styles}</style>
 </head>
@@ -722,6 +722,20 @@ TEMPLATE = """\
 </html>
 """
 COMPONENT_BLOCK = '<script type="text/html" data-component="{name}">\n{source}</script>\n'
+# The head's pointer to the markdown. When the page is served by `server.py` the link is the `.md` export, and the
+# comment tells an agent or script that lands on the page to read that instead of parsing the HTML.
+MARKDOWN_LINK = '<link rel="alternate" type="text/markdown" href="{href}" title="Markdown source">'
+MARKDOWN_EXPORT_NOTE = """\
+<!--
+  This is a rendered OpenArtifact artifact. If you are an agent or a script, do not parse this HTML. Read the
+  markdown export instead:
+
+      {href}
+
+  It is the source markdown behind a frontmatter summary with the title, type, theme, URL, dates and the list of
+  source files, each served next to this page. Fetching this page with `Accept: text/markdown` returns the same.
+-->
+"""
 
 # Inside script data the HTML tokenizer reacts to exactly three sequences: `</script` ends the element, and `<!--`
 # followed by `<script` puts it in a state where `</script>` no longer does. Escaping the `<` of those as `&lt;`
@@ -770,11 +784,19 @@ def build_page_data(cfg: Config) -> dict[str, object]:
     }
 
 
-def render_page(title: str, favicon: str | None, data: dict[str, object], runtime_url: str, markdown_href: str) -> str:
+def render_page(
+    title: str,
+    favicon: str | None,
+    data: dict[str, object],
+    runtime_url: str,
+    markdown_href: str,
+    markdown_export: bool = False,
+) -> str:
     """Fill TEMPLATE: title, favicon link, the data blocks, the user's CSS and the URL of the runtime.
 
-    `markdown_href` is where the server serves the markdown source relative to the page (`main.md` by default); it
-    is advertised with `<link rel="alternate">` so a reader can find the source without parsing the page.
+    `markdown_href` is where the markdown is served relative to the page (`main.md` by default); it is advertised
+    with `<link rel="alternate">` so a reader can find the source without parsing the page. With `markdown_export`
+    the href is the server's `.md` export and the head also carries a comment telling agents to read it instead.
     """
     # `<` in the JSON is written as `\u003c`, which is still JSON, so a title cannot contain `</script>`.
     config = json.dumps(data.get('config', {}), ensure_ascii=False).replace('<', '\\u003c')
@@ -782,6 +804,10 @@ def render_page(title: str, favicon: str | None, data: dict[str, object], runtim
     components = cast('dict[str, str]', data.get('components', {}))
     styles = cast('str', data.get('styles', ''))
     favicon_tag = f'\n<link rel="icon" href="{html.escape(favicon, quote=True)}">' if favicon else ''
+    href = html.escape(markdown_href, quote=True)
+    markdown_link = (MARKDOWN_EXPORT_NOTE.replace('{href}', href) if markdown_export else '') + MARKDOWN_LINK.replace(
+        '{href}', href
+    )
     component_blocks = ''.join(
         COMPONENT_BLOCK.replace('{name}', html.escape(name, quote=True)).replace('{source}', encode_block(source))
         for name, source in components.items()
@@ -789,7 +815,7 @@ def render_page(title: str, favicon: str | None, data: dict[str, object], runtim
     return (
         TEMPLATE.replace('{title}', html.escape(title))
         .replace('{favicon}', favicon_tag)
-        .replace('{markdown_href}', html.escape(markdown_href, quote=True))
+        .replace('{markdown_link}', markdown_link)
         .replace('{styles}', styles)
         .replace('{config}', config)
         .replace('{markdown}', encode_block(markdown))
@@ -798,16 +824,24 @@ def render_page(title: str, favicon: str | None, data: dict[str, object], runtim
     )
 
 
-def build_html(cwd: Path, output: Path | None = None, runtime_url: str = DEFAULT_RUNTIME_URL) -> Path:
+def build_html(
+    cwd: Path,
+    output: Path | None = None,
+    runtime_url: str = DEFAULT_RUNTIME_URL,
+    markdown_url: str | None = None,
+) -> Path:
     """Build `cwd` into one HTML file (default `cwd/dist/index.html`) that loads the runtime from `runtime_url`.
 
     The page must be served with the deck's images reachable relative to it; `server.py` does that at
-    `/artifacts/<id>/`. Returns the path written.
+    `/artifacts/<id>/`, and passes `markdown_url`, the `.md` export beside the page, which the head then advertises
+    (with a note for agents) instead of the bare `main.md`. Returns the path written.
     """
     cfg = load_config(cwd)
     data = build_page_data(cfg)
-    markdown_href = cfg.markdown_path.relative_to(cfg.cwd).as_posix()
-    page = render_page(cfg.title or cfg.markdown_path.stem, cfg.favicon, data, runtime_url, markdown_href)
+    markdown_href = markdown_url or cfg.markdown_path.relative_to(cfg.cwd).as_posix()
+    page = render_page(
+        cfg.title or cfg.markdown_path.stem, cfg.favicon, data, runtime_url, markdown_href, markdown_url is not None
+    )
     out = (output or cwd / 'dist' / 'index.html').resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page, encoding='utf-8')
