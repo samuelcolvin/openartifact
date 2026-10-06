@@ -27,6 +27,8 @@ export interface ToolbarOptions {
   deck: DeckController | null
 }
 
+/** Where the brand in the bar leads. */
+const REPO_URL = 'https://github.com/samuelcolvin/openartifact'
 /** Pointer this close to the top edge (px) shows the bar. */
 const NEAR_TOP = 96
 /** How long the bar lingers after the pointer leaves that area (ms). */
@@ -107,7 +109,7 @@ export function initToolbar(options: ToolbarOptions): HTMLElement {
   const end = el('div', { class: 'group end' })
   const base = exportBase(window.location.pathname)
   const menu = base === null ? null : buildDownloadMenu(end, base)
-  end.append(el('a', { class: 'brand', href: '/' }, 'OpenArtifact'))
+  end.append(el('a', { class: 'brand', href: REPO_URL, target: '_blank', rel: 'noopener noreferrer' }, 'OpenArtifact'))
 
   shadow.append(el('div', { class: 'bar', role: 'toolbar', 'aria-label': 'OpenArtifact viewer' }, start, center, end))
 
