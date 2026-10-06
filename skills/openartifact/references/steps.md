@@ -4,7 +4,7 @@ Part of the OpenArtifact skill; `SKILL.md` covers the format. Build steps apply 
 
 A deck page can reveal its content in steps, like Keynote builds. Put `data-step="N"` on any element, in the markdown or inside a component, and it stays hidden until the slide reaches step N. Add `data-step-end="M"` to hide it again after step M. The slide's step count is the highest step mentioned plus one; a slide with no `data-step` attributes has a single step.
 
-The next/previous keys, the wheel and any `data-nav` control in the page component step through a page's builds before moving to the next page, and a slide entered backwards opens on its last step. Shift+Right and Shift+Left jump a whole slide, skipping the builds, and land on the target's first step.
+The next/previous keys, the wheel, the viewer toolbar's buttons and any `data-nav` control in the page component step through a page's builds before moving to the next page, and a slide entered backwards opens on its last step. Shift+Right and Shift+Left jump a whole slide, skipping the builds, and land on the target's first step.
 
 ```html
 <ul>

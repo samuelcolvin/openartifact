@@ -36,6 +36,9 @@
   --slide-height: 157.2mm;
   --slide-padding: 36px 46px;
   --title-font-size: 0.9rem;
+
+  /* The viewer toolbar (toolbar.ts); document.css and page.css leave room for it where it is always shown. */
+  --oa-toolbar-height: 40px;
 }
 
 /* ========================================

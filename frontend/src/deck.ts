@@ -9,6 +9,8 @@
  *  - the page stream is scaled to fit the viewport via `--page-scale`
  *  - `document.title` follows the active page's `PAGE_TITLE`
  *  - `#N` links work as they do anywhere, so a page component can link to a page
+ *  - `initDeck` returns a `DeckController`, which the viewer toolbar (toolbar.ts) uses for its
+ *    previous / next buttons and counter; every navigation notifies its listeners
  *
  * Everything here runs synchronously at load, before first paint, so headless Chrome's
  * print-to-PDF sees the counters and every page.
@@ -16,6 +18,29 @@
 
 import { initSteps } from './steps.ts'
 import type { ArtifactConfig } from './types.ts'
+
+/** Where the deck is, emitted on every navigation. `atStart` / `atEnd` account for the page's build steps. */
+export interface DeckPosition {
+  /** 0-based index of the active page. */
+  index: number
+  total: number
+  /** First page, first step. */
+  atStart: boolean
+  /** Last page, last step. */
+  atEnd: boolean
+}
+
+/** What `initDeck` returns: the handle the viewer toolbar (toolbar.ts) drives and observes the deck through. */
+export interface DeckController {
+  readonly total: number
+  position(): DeckPosition
+  /** One step forwards or back, spilling into the neighbouring page: what the arrow keys do. */
+  go(direction: -1 | 1): void
+  /** One whole page, ignoring build steps: what shift + arrow does. */
+  jump(direction: -1 | 1): void
+  /** Register a listener called with the new position after every navigation. */
+  onChange(listener: (position: DeckPosition) => void): void
+}
 
 /** Transition style between pages: 'fade' for crossfade, 'slide' for directional slide. */
 const TRANSITION: 'fade' | 'slide' = 'fade'
@@ -29,11 +54,12 @@ function indexFromHash(total: number): number | null {
   return Math.min(n - 1, total - 1)
 }
 
-export function initDeck(presenter: HTMLElement, config: ArtifactConfig): void {
+export function initDeck(presenter: HTMLElement, config: ArtifactConfig): DeckController | null {
   const pages = Array.from(presenter.querySelectorAll<HTMLElement>('.page'))
   const total = pages.length
-  if (total === 0) return
+  if (total === 0) return null
   const steps = pages.map(initSteps)
+  const listeners: Array<(position: DeckPosition) => void> = []
 
   let current = indexFromHash(total) ?? 0
   // Navigation direction and the previously active page, used for directional transitions.
@@ -45,7 +71,22 @@ export function initDeck(presenter: HTMLElement, config: ArtifactConfig): void {
     page.dataset.pageIndex = String(i)
   })
 
-  /** Mark the active page, apply transition classes and update the document title. */
+  const position = (): DeckPosition => {
+    const s = steps[current]
+    return {
+      index: current,
+      total,
+      atStart: current === 0 && s.current === 0,
+      atEnd: current === total - 1 && s.current === s.count - 1,
+    }
+  }
+
+  const notify = () => {
+    const p = position()
+    for (const listener of listeners) listener(p)
+  }
+
+  /** Mark the active page, apply transition classes, update the document title and tell the listeners. */
   const apply = () => {
     pages.forEach((page, i) => {
       page.classList.remove(...STATE_CLASSES)
@@ -63,6 +104,7 @@ export function initDeck(presenter: HTMLElement, config: ArtifactConfig): void {
     })
     // Clear prev so it does not re-trigger an animation on the next apply.
     prev = null
+    notify()
   }
 
   /**
@@ -84,7 +126,9 @@ export function initDeck(presenter: HTMLElement, config: ArtifactConfig): void {
     const s = steps[current]
     const nextStep = s.current + direction
     if (nextStep >= 0 && nextStep < s.count) {
+      // A step change does not pass through apply(), but it moves atStart / atEnd.
       s.set(nextStep)
+      notify()
       return
     }
     const next = Math.max(0, Math.min(total - 1, current + direction))
@@ -172,4 +216,14 @@ export function initDeck(presenter: HTMLElement, config: ArtifactConfig): void {
   window.addEventListener('resize', updateScale)
   apply()
   updateScale()
+
+  return {
+    total,
+    position,
+    go,
+    jump,
+    onChange: (listener) => {
+      listeners.push(listener)
+    },
+  }
 }

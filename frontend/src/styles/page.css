@@ -30,6 +30,13 @@ body {
   }
 }
 
+/* Without hover the viewer toolbar is pinned open, so start the text below it. */
+@media (hover: none) {
+  .artifact-page {
+    padding-top: var(--oa-toolbar-height);
+  }
+}
+
 @page {
   size: A4;
   margin: 18mm;

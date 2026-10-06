@@ -1,0 +1,260 @@
+/*
+ * The viewer toolbar (toolbar.ts). This sheet lives inside the toolbar's shadow root, so nothing
+ * here reaches the artifact and the artifact's styles.css cannot restyle the bar; only custom
+ * properties cross the boundary (`--accent` for the focus ring, `--oa-toolbar-height`).
+ *
+ * The bar is product chrome, not artifact content: it uses the system font and its own two colour
+ * schemes (`data-scheme` on the host: dark on a deck's backdrop or a dark theme, light otherwise)
+ * so it looks the same on every artifact. Hidden unless `data-visible` is set, the pointer is
+ * over it or focus is inside it; always shown where there is no hover; never printed.
+ */
+
+:host {
+  --oa-bg: rgba(16, 19, 23, 0.72);
+  --oa-fg: rgba(255, 255, 255, 0.88);
+  --oa-muted: rgba(255, 255, 255, 0.5);
+  --oa-border: rgba(255, 255, 255, 0.09);
+  --oa-hover: rgba(255, 255, 255, 0.1);
+  --oa-menu-bg: rgba(28, 32, 38, 0.96);
+  --oa-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  height: var(--oa-toolbar-height, 40px);
+  font:
+    500 13px / 1 system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  color: var(--oa-fg);
+  background: var(--oa-bg);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  border-bottom: 1px solid var(--oa-border);
+  /* Hidden: slid up out of view and inert, so the invisible strip never blocks clicks on the page. */
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease;
+}
+
+:host([data-scheme='light']) {
+  --oa-bg: rgba(255, 255, 255, 0.72);
+  --oa-fg: #1a1018;
+  --oa-muted: rgba(26, 16, 24, 0.5);
+  --oa-border: rgba(0, 0, 0, 0.08);
+  --oa-hover: rgba(0, 0, 0, 0.06);
+  --oa-menu-bg: rgba(255, 255, 255, 0.96);
+  --oa-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+:host([data-visible]),
+:host(:hover),
+:host(:focus-within) {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  :host {
+    transform: none;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host {
+    transition: none;
+  }
+}
+
+/* The chrome service prints this very page: the bar must never reach the PDF. */
+@media print {
+  :host {
+    display: none;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+button,
+a {
+  all: unset;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent, #4a9eff);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  gap: 8px;
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.end {
+  justify-self: end;
+  gap: 12px;
+}
+
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--oa-muted);
+  font-weight: 500;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--oa-fg);
+}
+
+.icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon:hover:not(:disabled),
+.menu-button:hover,
+.menu-button[aria-expanded='true'] {
+  background: var(--oa-hover);
+}
+
+.icon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.counter {
+  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--oa-muted);
+  white-space: nowrap;
+}
+
+.counter b {
+  font-weight: 600;
+  color: var(--oa-fg);
+}
+
+.menu-wrap {
+  position: relative;
+}
+
+.menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  color: var(--oa-fg);
+}
+
+.menu-button svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.7;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 240px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  background: var(--oa-menu-bg);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--oa-border);
+  border-radius: 10px;
+  box-shadow: var(--oa-shadow);
+}
+
+.menu[hidden] {
+  display: none;
+}
+
+.menu a {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--oa-fg);
+  line-height: 1.2;
+}
+
+.menu a:hover,
+.menu a:focus-visible {
+  background: var(--oa-hover);
+  outline: none;
+}
+
+.menu small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--oa-muted);
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--oa-fg);
+  white-space: nowrap;
+  transition: opacity 0.15s ease;
+}
+
+.brand:hover {
+  opacity: 0.7;
+}
+
+@media (max-width: 640px) {
+  .title {
+    display: none;
+  }
+}

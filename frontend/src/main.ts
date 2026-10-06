@@ -5,9 +5,12 @@
  * Everything below runs synchronously while the script executes at the end of <body>:
  * no DOMContentLoaded handler, no requestAnimationFrame, no dynamic imports. That keeps the
  * DOM complete before `load`, which is when headless Chrome prints to PDF.
+ *
+ * The artifact goes into `#root`; the viewer toolbar (toolbar.ts) is a separate shadow host appended
+ * to <body> after it, so it is never part of the page `build.py` writes and never printed.
  */
 
-import { initDeck } from './deck.ts'
+import { type DeckController, initDeck } from './deck.ts'
 import hljsCss from './hljs.css'
 import { buildPage } from './page.ts'
 import { splitPages } from './split.ts'
@@ -16,6 +19,7 @@ import documentCss from './styles/document.css'
 import pageCss from './styles/page.css'
 import proseCss from './styles/prose.css'
 import sharedCss from './styles/shared.css'
+import { initToolbar } from './toolbar.ts'
 import type { ArtifactConfig, ArtifactData, ArtifactType } from './types.ts'
 
 /** Stylesheets per type, injected after shared.css and before hljs.css and the user's styles.css. */
@@ -92,7 +96,18 @@ function main(): void {
   }
   const pages = raw.map((page, i) => buildPage(page, i, raw.length, data, config))
 
-  if (config.type !== 'deck') {
+  let deck: DeckController | null = null
+  if (config.type === 'deck') {
+    // A deck: one page at a time, inside the presenter that scales it to the viewport.
+    const presenter = document.createElement('div')
+    presenter.className = `artifact artifact-deck deck-presenter theme-${config.theme}`
+    const stream = document.createElement('div')
+    stream.className = 'deck'
+    stream.append(...pages)
+    presenter.append(stream)
+    root.replaceChildren(presenter)
+    deck = initDeck(presenter, config)
+  } else {
     // A document or page artifact: the pages stack; the type's stylesheet lays them out.
     const wrapper = document.createElement('div')
     wrapper.className = `artifact artifact-${config.type} theme-${config.theme}`
@@ -100,19 +115,9 @@ function main(): void {
     root.replaceChildren(wrapper)
     const title = config.title || pages[0].dataset.pageTitle
     if (title) document.title = title
-    return
   }
 
-  // A deck: one page at a time, inside the presenter that scales it to the viewport.
-  const presenter = document.createElement('div')
-  presenter.className = `artifact artifact-deck deck-presenter theme-${config.theme}`
-  const deck = document.createElement('div')
-  deck.className = 'deck'
-  deck.append(...pages)
-  presenter.append(deck)
-  root.replaceChildren(presenter)
-
-  initDeck(presenter, config)
+  initToolbar({ title: config.title, type: config.type, theme: config.theme, deck })
 }
 
 main()

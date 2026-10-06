@@ -34,6 +34,13 @@ body {
     0 8px 24px rgba(0, 0, 0, 0.06);
 }
 
+/* Without hover the viewer toolbar is pinned open, so start the sheets below it. */
+@media (hover: none) {
+  .artifact-document {
+    padding-top: calc(2.5rem + var(--oa-toolbar-height));
+  }
+}
+
 @page {
   size: A4;
   margin: 20mm;

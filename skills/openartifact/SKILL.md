@@ -174,7 +174,7 @@ A page may start with a directive comment, before any content:
 ```
 
 - `{{ CONTENT }}` must appear exactly once. The body it inserts is `<div class="page-body">` (plus `prose` for documents and pages), which carries the page padding; a header or footer outside it sits flush with the page edge.
-- In a deck, an element with `data-nav="prev" | "next" | "first" | "last"` navigates when clicked, and `<a href="#3">` jumps to page 3. These controls are hidden when printing.
+- In a deck, an element with `data-nav="prev" | "next" | "first" | "last"` navigates when clicked, and `<a href="#3">` jumps to page 3. These controls are hidden when printing. They are optional: the viewer adds its own toolbar to every page (previous / next, the page counter, full screen and the downloads), so a page component's header is for branding and the counter in the page's own style, not a requirement.
 - For a document the component wraps each sheet, so a footer lands at the bottom of each printed page's content; for a `page` artifact it wraps the whole column.
 - The component may declare parameters, but since nothing passes attributes they all need defaults. It may use other components.
 - `examples/starter/components/Page.html` is a complete header with traffic lights, the title and a counter.
