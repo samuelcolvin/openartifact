@@ -1,0 +1,22 @@
+backend/server.py
+  s_d9c84d24ba8b7a::t_485678dcea3f60 127-132
+  s_d9c84d24ba8b7a::t_9b56966f6a19e4 85-90
+tests/test_server.py
+  s_d9c84d24ba8b7a::t_2d58186d7368e8 59-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "74d06e4560dd72a22a59519e3153ef9933fe5bea",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
