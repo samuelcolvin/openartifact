@@ -9,6 +9,7 @@ from collections.abc import AsyncGenerator, Iterator
 from pathlib import Path
 
 import pytest
+import upload
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
@@ -97,6 +98,20 @@ async def test_new_artifact_page_takes_plain_markdown(me: auth.Principal):
     assert (files_of(me, artifact) / 'dist' / 'index.html').is_file()
 
 
+async def test_new_artifact_without_build(me: auth.Principal):
+    # Content that needs a component not yet written: with `build=False` creating it is not an error.
+    content = '<component src="Card.html"></component>\n'
+    out = await mcp_server.new_artifact('Later', content, build=False)
+    artifact = artifact_id(out)
+    assert out == f'artifact: {artifact}\npage (after `build`): http://127.0.0.1:8765/artifacts/{artifact}/\n'
+    directory = files_of(me, artifact)
+    assert (directory / 'main.md').read_text() == content
+    assert not (directory / 'dist').exists()
+    assert await head_sha(me.workspace_id) is not None
+    with pytest.raises(ToolError, match='components directory not found'):
+        await mcp_server.build_artifact(artifact)
+
+
 async def test_new_artifact_rejects_old_slide_markers(me: auth.Principal):
     with pytest.raises(ToolError, match=r'main\.md:1: <slide \.\.\./> is no longer supported'):
         await mcp_server.new_artifact('Doc', '<slide/>\n# Doc\n', type='document')
@@ -180,6 +195,37 @@ async def test_run_code_without_pool(me: auth.Principal, demo: str):
         await mcp_server.run_code(demo, 'pass')
 
 
+# --- upload_url ----------------------------------------------------------------
+
+
+async def test_upload_url_signs_one_url_per_file(me: auth.Principal, demo: str):
+    urls = await mcp_server.upload_url(demo, [('assets/logo.png', 1234), ('components/A b.html', 0)])
+    assert len(urls) == 2
+    base = f'http://127.0.0.1:8765/artifacts/{demo}/'
+    for url, (path, size) in zip(urls, [('assets/logo.png', 1234), ('components/A%20b.html', 0)], strict=True):
+        prefix = f'{base}{path}?token='
+        assert url.startswith(prefix), url
+        upload.verify_token(url.removeprefix(prefix), uuid.UUID(demo), path.replace('%20', ' '), size)
+    # Minting writes nothing: no new commit.
+    log = (await workspace.git('log', '--format=%s', cwd=workspace.checkout_path(me.workspace_id))).splitlines()
+    assert log == [f'new_artifact: {demo}']
+
+
+async def test_upload_url_rejects_bad_requests(me: auth.Principal, demo: str):
+    with pytest.raises(ToolError, match='files is empty'):
+        await mcp_server.upload_url(demo, [])
+    with pytest.raises(ToolError, match=r"'\.\./x\.png': empty, \. and \.\. segments"):
+        await mcp_server.upload_url(demo, [('../x.png', 1)])
+    with pytest.raises(ToolError, match=r"'dist/index\.html': dist/ is build output"):
+        await mcp_server.upload_url(demo, [('dist/index.html', 1)])
+    with pytest.raises(ToolError, match='over the 10,485,760 byte limit'):
+        await mcp_server.upload_url(demo, [('big.png', upload.MAX_UPLOAD_SIZE + 1)])
+    with pytest.raises(ToolError, match="'main.md' is listed twice"):
+        await mcp_server.upload_url(demo, [('main.md', 1), ('main.md', 2)])
+    with pytest.raises(ToolError, match='does not exist'):
+        await mcp_server.upload_url(str(uuid.uuid4()), [('main.md', 1)])
+
+
 # --- build and list ----------------------------------------------------------
 
 
@@ -252,10 +298,16 @@ async def test_skill_is_served(me: auth.Principal):
 async def test_tools_over_mcp(me: auth.Principal, pool: None):
     async with Client(mcp_server.mcp) as client:
         tools = {tool.name for tool in await client.list_tools()}
-        assert tools == {'new_artifact', 'run_code', 'build', 'list_artifacts'}
+        assert tools == {'new_artifact', 'run_code', 'build', 'upload_url', 'list_artifacts'}
 
         created = await client.call_tool('new_artifact', {'title': 'Demo', 'content': '# Demo\n'})
         name = artifact_id(created.data)
+
+        # The (path, size) pairs arrive as JSON arrays and come back as a list of URLs.
+        minted = await client.call_tool('upload_url', {'artifact': name, 'files': [['assets/a.png', 3]]})
+        urls: list[str] = minted.data
+        assert len(urls) == 1
+        assert urls[0].startswith(f'http://127.0.0.1:8765/artifacts/{name}/assets/a.png?token=')
 
         result = await client.call_tool(
             'run_code',

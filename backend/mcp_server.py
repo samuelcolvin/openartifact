@@ -12,6 +12,8 @@ Tools:
 - `run_code` runs agent-written Python in a pydantic-monty sandbox with the artifact directory mounted
   read-write at `/artifact`. Nothing else on the host is visible to the sandbox.
 - `build` validates the files and writes `dist/index.html`, which `server.py` serves.
+- `upload_url` mints signed URLs (see `upload.py`) that the agent `PUT`s local files to, so images, fonts and
+  large sources reach the artifact without passing through a tool call. `server.py` accepts the uploads.
 - `list_artifacts` lists the caller's artifacts.
 
 The authoring guide `skills/openartifact/SKILL.md` is served as an agent skill through FastMCP's `SkillProvider`:
@@ -26,11 +28,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import time
 import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Literal, get_args
+from typing import Any, Literal, get_args
+from urllib.parse import quote
 
+import upload
 from config import ROOT, base_url
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -144,16 +149,19 @@ def format_output(streams: CollectStreams, result: object) -> str:
     return ''.join(parts)
 
 
-async def new_artifact(title: str, content: str, type: ArtifactType = 'deck', theme: Theme = 'light') -> str:
-    """Create an artifact from markdown and build it.
+async def new_artifact(
+    title: str, content: str, type: ArtifactType = 'deck', theme: Theme = 'light', build: bool = True
+) -> str:
+    """Create an artifact from markdown and, by default, build it.
 
     `content` is markdown; a line containing only `---`, with a blank line before it, starts a new page. `type`
     is how the pages are laid out: `deck` shows one 16:9 page at a time (so every page is a slide), `document`
     stacks fixed-width sheets that print one per A4 page, `page` is a continuous web page (usually one page).
-    `content` becomes `main.md`; `title`, `type` and `theme` are written to `artifact.toml`. The artifact is built
-    straight away, so a problem in `content` is returned as an error naming the line; the files are kept, so fix
-    them with `run_code` and call `build`. On success returns the artifact identifier (a UUID) to pass to the other
-    tools, and the URL of the page.
+    `content` becomes `main.md`; `title`, `type` and `theme` are written to `artifact.toml`. With `build` true the
+    artifact is built straight away, so a problem in `content` is returned as an error naming the line; the files
+    are kept, so fix them with `run_code` and call `build`. Pass `build=False` when `content` refers to components
+    or images you have still to add with `upload_url` or `run_code`, then call `build` once they are in place.
+    Returns the artifact identifier (a UUID) to pass to the other tools, and the URL of the page.
     """
     principal = await auth.current_principal()
     artifact_id = uuid.uuid4()
@@ -166,12 +174,14 @@ async def new_artifact(title: str, content: str, type: ArtifactType = 'deck', th
         await workspace.insert_artifact(
             tx.conn, artifact_id=artifact_id, workspace_id=principal.workspace_id, title=title, type=type
         )
+    if not build:
+        return f'artifact: {artifact_id}\npage (after `build`): {artifact_url(artifact_id)}\n'
     # Built after the edit has committed, so an artifact whose first build fails still exists to be fixed.
     built = await build_artifact(str(artifact_id))
     return f'artifact: {artifact_id}\n{built}'
 
 
-async def run_code(artifact: str, code: str, inputs: dict[str, str | int] | None = None) -> str:
+async def run_code(artifact: str, code: str, inputs: dict[str, Any] | None = None) -> str:
     """Run Python code in a sandbox to edit the files of an artifact created with `new_artifact`.
 
     The artifact directory is the working directory and is mounted read-write at `/artifact`; use `pathlib.Path`
@@ -228,6 +238,36 @@ async def build_artifact(artifact: str) -> str:
     return f'wrote dist/index.html ({size:,} bytes)\npage: {artifact_url(found.id)}\n'
 
 
+async def upload_url(artifact: str, files: list[tuple[str, int]]) -> list[str]:
+    """Get URLs to upload local files into an artifact, one per file, so their bytes never pass through a tool call.
+
+    `files` is a list of `(path, size)` pairs: the path the file will have inside the artifact, relative, such as
+    `assets/logo.png` or `components/Card.html`, and its exact size in bytes. The result has one URL per pair in the
+    same order. `PUT` the file's bytes to it, for example `curl -T assets/logo.png "<url>"` (quote the URL: it has
+    a query string). The body must be exactly the declared size. Each upload is committed on its own and answered
+    with JSON holding the file's `sha256`, so compare it with `shasum -a 256` locally. URLs expire after an hour and
+    allow up to 10 MB per file. A file already at the path is overwritten; `dist/` and `.git` entries are refused.
+    """
+    found = await resolve(artifact)
+    if not files:
+        raise ToolError('files is empty: pass at least one (path, size) pair')
+    expires = int(time.time()) + upload.TOKEN_TTL
+    urls: list[str] = []
+    seen: set[str] = set()
+    for path, size in files:
+        try:
+            upload.validate_path(path)
+            upload.validate_size(path, size)
+        except upload.UploadError as exc:
+            raise ToolError(str(exc)) from exc
+        if path in seen:
+            raise ToolError(f'{path!r} is listed twice')
+        seen.add(path)
+        token = upload.make_token(found.id, path, size, expires)
+        urls.append(f'{artifact_url(found.id, quote(path))}?token={token}')
+    return urls
+
+
 async def list_artifacts() -> str:
     """List the caller's artifacts, oldest first: one line per artifact with its id, type, title and page URL."""
     principal = await auth.current_principal()
@@ -240,5 +280,6 @@ async def list_artifacts() -> str:
 mcp.tool(new_artifact)
 mcp.tool(run_code)
 mcp.tool(build_artifact, name='build')
+mcp.tool(upload_url)
 mcp.tool(list_artifacts)
 mcp.add_provider(SkillProvider(SKILL_DIR))

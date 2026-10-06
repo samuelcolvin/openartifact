@@ -4,13 +4,18 @@ edit with the tools below. Every change is committed to the artifact's history.
 
 Tools
 
-- new_artifact(title, content, type, theme): writes `content` to main.md, builds the artifact and returns its
-  identifier (a UUID) and page URL. A build error is returned with the file and line; the files are kept, so
-  fix them with run_code and call build.
+- new_artifact(title, content, type, theme, build=True): writes `content` to main.md, builds the artifact and
+  returns its identifier (a UUID) and page URL. A build error is returned with the file and line; the files are
+  kept, so fix them with run_code and call build. Pass build=False when `content` uses components or images you
+  still have to add, and call build once they are in place.
 - run_code(artifact, code, inputs): runs Python in a sandbox whose working directory is the artifact directory,
   also mounted at {VIRTUAL_PATH}. Use pathlib or open() to read and write files there. Pass large text through
   `inputs`, which are bound as global variables, rather than escaping it inside `code`.
 - build(artifact): validates the files and refreshes the page; errors name the file and line.
+- upload_url(artifact, files): for files you already have locally (images, fonts, components, a long main.md),
+  pass `[(path, size), ...]` with each file's path inside the artifact and exact size in bytes, and get one URL
+  per file back. Then `curl -T local/file "<url>"` (quote the URL). Each upload is committed and answered with
+  its sha256, to compare with `shasum -a 256`. Far cheaper than retyping file contents into run_code.
 - list_artifacts(): the artifacts you already have.
 
 The format

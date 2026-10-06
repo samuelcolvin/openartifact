@@ -17,3 +17,15 @@ def base_url() -> str:
 def cache_dir() -> Path:
     """Where workspace checkouts live, from `OPENARTIFACT_CACHE_DIR`; one directory per process, never shared."""
     return Path(os.environ.get('OPENARTIFACT_CACHE_DIR') or ROOT / 'data' / 'cache').resolve()
+
+
+def secret_key() -> bytes:
+    """The server's secret, for signing upload URLs: `OPENARTIFACT_SECRET_KEY`, else the development token.
+
+    With Google login the key is required anyway (see `auth.py`); in development the dev token is the one secret
+    there is, so it doubles as the key rather than demanding a second variable.
+    """
+    key = os.environ.get('OPENARTIFACT_SECRET_KEY') or os.environ.get('OPENARTIFACT_DEV_TOKEN')
+    if not key:
+        raise RuntimeError('OPENARTIFACT_SECRET_KEY or OPENARTIFACT_DEV_TOKEN is required to sign upload URLs')
+    return key.encode()

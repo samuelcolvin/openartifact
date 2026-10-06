@@ -16,7 +16,7 @@ git clone https://github.com/samuelcolvin/openartifact
 cd openartifact && pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/openartifact.js
 ```
 
-The builder is the module `backend/build.py` in that checkout, with PDF printing in `backend/pdf.py`. Both need Python 3.11+ and nothing else. The usual way to use them is through the MCP server (`make pg-start`, then `make dev`; tools `new_artifact`, `run_code`, `build`, `list_artifacts`; artifacts are identified by the UUID `new_artifact` returns); by hand, import them with `PYTHONPATH=CHECKOUT/backend`. Below, `CHECKOUT` stands for the path to that checkout.
+The builder is the module `backend/build.py` in that checkout, with PDF printing in `backend/pdf.py`. Both need Python 3.11+ and nothing else. The usual way to use them is through the MCP server (`make pg-start`, then `make dev`; tools `new_artifact`, `run_code`, `build`, `upload_url`, `list_artifacts`; artifacts are identified by the UUID `new_artifact` returns); by hand, import them with `PYTHONPATH=CHECKOUT/backend`. Below, `CHECKOUT` stands for the path to that checkout.
 
 ## Project layout
 
@@ -260,6 +260,14 @@ Reference images by path relative to the deck directory, from markdown, from a c
 ```
 
 Image paths are relative to the deck directory and stay that way in the page: the server serves the page at `/artifacts/<id>/` and the deck's `.png` / `.jpg` / `.gif` / `.svg` / `.webp` files under it, so the browser fetches them from there. The build checks each referenced file exists and fails if one is missing or points outside the deck. Absolute URLs (`https://...`) are left alone.
+
+Through the MCP server, get images (or any local file: fonts, components, a long `main.md`) into the artifact with `upload_url`: pass `[(path, size), ...]`, the path each file will have inside the artifact and its exact size in bytes, and `PUT` each file to the URL returned for it (create the artifact with `build=False` first if `main.md` already refers to them, then `build` once they are uploaded):
+
+```bash
+curl -T assets/logo.png "https://.../artifacts/<id>/assets/logo.png?token=..."
+```
+
+The response is JSON with the file's `sha256`; compare it with `shasum -a 256 assets/logo.png`. Each upload is one commit. URLs last an hour and take up to 10 MB per file; the size must match exactly.
 
 ### Code blocks
 

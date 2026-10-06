@@ -6,6 +6,7 @@ Routes:
     /openartifact.js            the browser runtime, `frontend/dist/openartifact.js`, which every built page links
     /artifacts/{id}/            an artifact's page, built on demand from its workspace checkout
     /artifacts/{id}/{path}      an image or font from the artifact directory, referenced relatively by the page
+    PUT /artifacts/{id}/{path}  an upload to the artifact directory, with a token from the `upload_url` tool
     /                           JSON index of the above
 
 Pages are public to anyone holding the artifact's UUID, and so are their sources: `main.md`, `artifact.toml`,
@@ -21,13 +22,15 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import mimetypes
 import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import config
-from fastapi import FastAPI, HTTPException
+import upload
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
 import build
@@ -155,3 +158,58 @@ async def artifact_media(artifact_id: str, path: str) -> Response:
         data = file.read_bytes()
     media_type = SOURCE_MEDIA_TYPES.get(file.suffix.lower()) or mimetypes.guess_type(file.name)[0]
     return Response(data, media_type=media_type or 'application/octet-stream')
+
+
+async def read_body(request: Request, size: int) -> bytes:
+    """The request body, which must be exactly `size` bytes: a longer one is a 413, a shorter one a 400."""
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > size:
+            raise HTTPException(413, f'the body is longer than the declared {size} bytes')
+        chunks.append(chunk)
+    if total != size:
+        raise HTTPException(400, f'the body is {total} bytes but Content-Length says {size}')
+    return b''.join(chunks)
+
+
+@app.put('/artifacts/{artifact_id}/{path:path}')
+async def artifact_upload(artifact_id: str, path: str, request: Request, token: str = '') -> dict[str, object]:
+    """Write a file into the artifact directory and commit it, for a URL minted by the `upload_url` tool.
+
+    The token signs the artifact, the path, the size and an expiry (`upload.py`), so nothing about the mint is
+    stored: `Content-Length` must be the signed size and the body exactly that long. The body is read before the
+    workspace is locked, so a slow upload does not hold up other edits. The answer carries the file's SHA-256 for
+    the uploader to compare with the local file.
+    """
+    found = await load_artifact(artifact_id)
+    length = request.headers.get('content-length')
+    if length is None:
+        raise HTTPException(411, 'Content-Length is required: send the file as a plain body, not chunked')
+    try:
+        size = int(length)
+    except ValueError:
+        raise HTTPException(400, f'invalid Content-Length {length!r}') from None
+    try:
+        upload.validate_path(path)
+        upload.verify_token(token, found.id, path, size)
+    except upload.UploadError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    body = await read_body(request, size)
+    try:
+        async with workspace.edit(found.workspace_id, f'upload: {path}') as tx:
+            directory = tx.artifact_dir(found.id)
+            file = directory / path
+            # The path was validated, but a symlink the agent wrote earlier could still point outside the artifact.
+            if directory.resolve() not in file.resolve().parents:
+                raise HTTPException(403, f'{path!r} resolves outside the artifact')
+            try:
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_bytes(body)
+            except (IsADirectoryError, NotADirectoryError, FileExistsError) as exc:
+                raise HTTPException(409, f'{path!r} cannot be written: a directory is in the way') from exc
+            await workspace.touch_artifact(tx.conn, found.id)
+    except workspace.WorkspaceBusy as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {'path': path, 'size': size, 'sha256': hashlib.sha256(body).hexdigest()}

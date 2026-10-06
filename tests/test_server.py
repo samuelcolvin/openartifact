@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import threading
 import time
@@ -13,6 +14,7 @@ from typing import TypeVar
 import httpx2
 import logfire
 import pytest
+import upload
 import uvicorn
 from conftest import DEV_TOKEN
 from fastapi.testclient import TestClient
@@ -163,6 +165,99 @@ def test_artifact_redirects_to_trailing_slash(client: TestClient):
     assert response.status_code == 307
 
 
+FAR_FUTURE = 4_000_000_000
+
+
+def upload_to(artifact: workspace.Artifact, path: str, size: int, expires: int = FAR_FUTURE) -> str:
+    """The URL the `upload_url` tool would mint, built directly so these tests need no MCP call."""
+    return f'/artifacts/{artifact.id}/{path}?token={upload.make_token(artifact.id, path, size, expires)}'
+
+
+def test_upload_writes_and_commits(client: TestClient):
+    artifact = starter(client)
+    body = b'\x89PNG not really'
+    response = client.put(upload_to(artifact, 'assets/new/pic.png', len(body)), content=body)
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        'path': 'assets/new/pic.png',
+        'size': len(body),
+        'sha256': hashlib.sha256(body).hexdigest(),
+    }
+    # The file is in the checkout, committed on its own, and served back.
+    checkout = workspace.checkout_path(artifact.workspace_id)
+    assert (checkout / 'artifacts' / str(artifact.id) / 'assets' / 'new' / 'pic.png').read_bytes() == body
+    log = in_app(client, lambda: workspace.git('log', '--format=%s', cwd=checkout)).splitlines()
+    assert log[0] == 'upload: assets/new/pic.png'
+    assert client.get(f'/artifacts/{artifact.id}/assets/new/pic.png').content == body
+    # Overwriting an existing file works the same way.
+    again = client.put(upload_to(artifact, 'main.md', 6), content=b'# new\n')
+    assert again.status_code == 200
+    assert client.get(f'/artifacts/{artifact.id}/main.md').text == '# new\n'
+
+
+def test_upload_rejects_bad_tokens(client: TestClient):
+    artifact = starter(client)
+    # Wrong size, wrong path, wrong artifact, expired, garbage, missing.
+    url = upload_to(artifact, 'assets/x.png', 3)
+    assert client.put(url, content=b'four').status_code == 403
+    token = url.partition('?token=')[2]
+    assert client.put(f'/artifacts/{artifact.id}/assets/y.png?token={token}', content=b'abc').status_code == 403
+    other = starter(client)
+    assert client.put(f'/artifacts/{other.id}/assets/x.png?token={token}', content=b'abc').status_code == 403
+    expired = client.put(upload_to(artifact, 'assets/x.png', 3, expires=1_000), content=b'abc')
+    assert expired.status_code == 403 and 'expired' in expired.json()['detail']
+    assert client.put(f'/artifacts/{artifact.id}/assets/x.png?token=junk', content=b'abc').status_code == 403
+    assert client.put(f'/artifacts/{artifact.id}/assets/x.png', content=b'abc').status_code == 403
+    # Nothing was written or committed.
+    checkout = workspace.checkout_path(artifact.workspace_id)
+    assert not (checkout / 'artifacts' / str(artifact.id) / 'assets' / 'x.png').exists()
+    assert not (checkout / 'artifacts' / str(artifact.id) / 'assets' / 'y.png').exists()
+    log = in_app(client, lambda: workspace.git('log', '--format=%s', cwd=checkout)).splitlines()
+    assert not any(line.startswith('upload:') for line in log)
+
+
+def test_upload_path_is_checked_even_with_a_valid_token(client: TestClient):
+    """A token for a bad path cannot be minted by the tool; the route refuses one anyway."""
+    artifact = starter(client)
+    for path in ('dist/index.html', 'assets/.gitignore'):
+        response = client.put(upload_to(artifact, path, 3), content=b'abc')
+        assert response.status_code == 403, path
+    # A directory in the way is a conflict, not a crash.
+    response = client.put(upload_to(artifact, 'components', 3), content=b'abc')
+    assert response.status_code == 409
+    response = client.put(upload_to(artifact, 'main.md/x.txt', 3), content=b'abc')
+    assert response.status_code == 409
+
+
+def test_upload_cannot_follow_a_symlink_out(client: TestClient, tmp_path: Path):
+    artifact = starter(client)
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    (directory / 'assets' / 'link').symlink_to(outside)
+    response = client.put(upload_to(artifact, 'assets/link/x.png', 3), content=b'abc')
+    assert response.status_code == 403
+    assert not (outside / 'x.png').exists()
+
+
+def test_upload_needs_a_content_length(client: TestClient):
+    artifact = starter(client)
+
+    def chunks() -> Iterator[bytes]:
+        yield b'abc'
+
+    # A generator body is sent chunked, without Content-Length.
+    response = client.put(upload_to(artifact, 'assets/x.png', 3), content=chunks())
+    assert response.status_code == 411
+
+
+def test_upload_to_unknown_artifact_is_404(client: TestClient):
+    missing = uuid.uuid4()
+    token = upload.make_token(missing, 'main.md', 3, FAR_FUTURE)
+    assert client.put(f'/artifacts/{missing}/main.md?token={token}', content=b'abc').status_code == 404
+    assert client.put('/artifacts/not-a-uuid/main.md?token=x', content=b'abc').status_code == 404
+
+
 def test_mcp_requires_a_token(client: TestClient):
     response = client.post(
         '/mcp/',
@@ -206,7 +301,7 @@ def live_server(server_env: None) -> Iterator[str]:
 async def test_mcp_over_http(live_server: str):
     async with Client(f'{live_server}/mcp/', auth=DEV_TOKEN) as client:
         tools = {tool.name for tool in await client.list_tools()}
-        assert tools == {'new_artifact', 'run_code', 'build', 'list_artifacts'}
+        assert tools == {'new_artifact', 'run_code', 'build', 'upload_url', 'list_artifacts'}
         created = await client.call_tool('new_artifact', {'title': 'Demo', 'content': '# Demo\n'})
         name = created.data.partition('\n')[0].removeprefix('artifact: ')
         result = await client.call_tool(
@@ -218,11 +313,20 @@ async def test_mcp_over_http(live_server: str):
         assert built.data.endswith(f'page: http://127.0.0.1:8765/artifacts/{name}/\n')
         listed = await client.call_tool('list_artifacts', {})
         assert listed.data.startswith(f'{name}  deck  Demo  ')
-    # The page the tool pointed at is served by the same process.
+        logo = (STARTER / 'assets' / 'logo.svg').read_bytes()
+        minted = await client.call_tool('upload_url', {'artifact': name, 'files': [['assets/logo.svg', len(logo)]]})
+        [upload_url] = minted.data
     async with httpx2.AsyncClient() as http:
+        # The page the tool pointed at is served by the same process.
         page = await http.get(f'{live_server}/artifacts/{name}/')
         assert page.status_code == 200
         assert 'id="artifact-markdown"' in page.text
+        # The minted URL carries the configured base URL; this server is on a free port.
+        uploaded = await http.put(upload_url.replace('http://127.0.0.1:8765', live_server), content=logo)
+        assert uploaded.status_code == 200, uploaded.text
+        assert uploaded.json()['sha256'] == hashlib.sha256(logo).hexdigest()
+        served = await http.get(f'{live_server}/artifacts/{name}/assets/logo.svg')
+        assert served.content == logo
 
 
 @pytest.mark.anyio
