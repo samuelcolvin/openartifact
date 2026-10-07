@@ -23,6 +23,16 @@ export type ArtifactType = 'deck' | 'document' | 'page'
 export type Theme = 'light' | 'dark' | 'markdown-light' | 'markdown-dark'
 export type Visibility = 'private' | 'org' | 'public'
 
+/** The five permission combinations a user picks from: where the artifact lives and who may see and edit it. */
+export type AccessChoice = 'private' | 'org' | 'org-editable' | 'public' | 'public-editable'
+
+/** The choice an artifact's row amounts to. */
+export function accessOf(a: { visibility: Visibility; org_editable: boolean }): AccessChoice {
+  if (a.visibility === 'private') return 'private'
+  if (a.visibility === 'org') return a.org_editable ? 'org-editable' : 'org'
+  return a.org_editable ? 'public-editable' : 'public'
+}
+
 export interface Artifact {
   id: string
   title: string

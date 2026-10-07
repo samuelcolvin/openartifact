@@ -1,5 +1,6 @@
 /** Small building blocks shared by the pages: buttons, badges, form fields, a native dialog, an avatar. */
 
+import { ChevronDown } from 'lucide-react'
 import type { ButtonHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react'
 import { useEffect, useRef } from 'react'
 import type { Visibility } from '../api.ts'
@@ -79,8 +80,62 @@ export function Field({ id, label, children }: { id: string; label: string; chil
 
 export const INPUT = 'h-9 rounded-md border border-line bg-bg px-2.5 text-sm text-fg outline-none focus:border-accent'
 
-export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={INPUT} {...props} />
+/** A select drawn with our own chevron, so the arrow sits inside the padding rather than against the edge. */
+export function Select({ className, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <span className="relative inline-grid">
+      <select className={`${className ?? INPUT} appearance-none pr-8`} {...props} />
+      <ChevronDown
+        size={14}
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-muted"
+      />
+    </span>
+  )
+}
+
+/** One option of a `RadioList`. */
+export interface ListOption<T extends string> {
+  value: T
+  label: string
+  hint?: string
+}
+
+/** A vertical radio group, one row per option with its label and an optional hint. */
+export function RadioList<T extends string>({
+  name,
+  value,
+  onChange,
+  options,
+}: {
+  name: string
+  value: T
+  onChange: (value: T) => void
+  options: ListOption<T>[]
+}) {
+  return (
+    <div className="grid gap-1">
+      {options.map((option) => (
+        <label
+          key={option.value}
+          className="flex cursor-pointer items-baseline gap-2.5 rounded-md px-1.5 py-1 text-sm hover:bg-raised/60"
+        >
+          <input
+            type="radio"
+            className="accent-accent"
+            name={name}
+            value={option.value}
+            checked={value === option.value}
+            onChange={() => onChange(option.value)}
+          />
+          <span>
+            {option.label}
+            {option.hint ? <span className="ml-1.5 text-xs text-muted">{option.hint}</span> : null}
+          </span>
+        </label>
+      ))}
+    </div>
+  )
 }
 
 /** One option of a `RadioCards` group: the value, its name, an optional one-line hint and an icon or swatch. */
@@ -140,31 +195,6 @@ export function RadioCards<T extends string>({
         ))}
       </div>
     </fieldset>
-  )
-}
-
-export function Checkbox({
-  label,
-  checked,
-  onChange,
-  disabled,
-}: {
-  label: string
-  checked: boolean
-  onChange: (value: boolean) => void
-  disabled?: boolean
-}) {
-  return (
-    <label className={`flex items-center gap-2 text-sm ${disabled ? 'opacity-40' : ''}`}>
-      <input
-        type="checkbox"
-        className="accent-accent"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      {label}
-    </label>
   )
 }
 

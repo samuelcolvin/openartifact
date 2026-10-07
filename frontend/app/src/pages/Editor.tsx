@@ -2,20 +2,12 @@
 
 import { ArrowLeft, ExternalLink, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { type Artifact, api, findArtifact, type Me } from '../api.ts'
+import { type AccessChoice, type Artifact, accessOf, api, findArtifact, type Me } from '../api.ts'
 import { Chat } from '../chat/Chat.tsx'
 import { Header } from '../components/Header.tsx'
-import { Badge, Button, LinkButton, Spinner } from '../components/ui.tsx'
+import { Badge, Button, LinkButton, Select, Spinner } from '../components/ui.tsx'
 import { Preview } from '../Preview.tsx'
 import { navigate } from '../router.ts'
-
-type AccessChoice = 'private' | 'org' | 'org-editable' | 'public' | 'public-editable'
-
-function accessOf(a: Artifact): AccessChoice {
-  if (a.visibility === 'public') return a.org_editable ? 'public-editable' : 'public'
-  if (a.visibility === 'org') return a.org_editable ? 'org-editable' : 'org'
-  return 'private'
-}
 
 function AccessSelect({
   artifact,
@@ -55,7 +47,7 @@ function AccessSelect({
     }
   }
   return (
-    <select
+    <Select
       value={accessOf(artifact)}
       onChange={(e) => void change(e.target.value as AccessChoice)}
       disabled={busy}
@@ -67,7 +59,7 @@ function AccessSelect({
           {label}
         </option>
       ))}
-    </select>
+    </Select>
   )
 }
 

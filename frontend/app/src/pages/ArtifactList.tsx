@@ -3,6 +3,7 @@
 import { ExternalLink, FileText, Pencil, Plus, Presentation, ScrollText } from 'lucide-react'
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import {
+  type AccessChoice,
   type Artifact,
   type ArtifactType,
   api,
@@ -15,13 +16,13 @@ import { Header } from '../components/Header.tsx'
 import {
   Badge,
   Button,
-  Checkbox,
   Dialog,
   Field,
   INPUT,
   LinkButton,
+  type ListOption,
   RadioCards,
-  Select,
+  RadioList,
   Spinner,
 } from '../components/ui.tsx'
 import { navigate } from '../router.ts'
@@ -99,15 +100,43 @@ function Card({ artifact, domain }: { artifact: Artifact; domain: string | null 
   )
 }
 
+/** The permission choices offered at creation: two without an organisation, the five combinations with one. */
+function accessOptions(domain: string | null): ListOption<AccessChoice>[] {
+  if (domain === null) {
+    return [
+      { value: 'private', label: 'Only me' },
+      { value: 'public', label: 'Anyone with the link', hint: 'read only' },
+    ]
+  }
+  return [
+    { value: 'private', label: 'Only me' },
+    { value: 'org', label: `Everyone at ${domain}`, hint: 'read only' },
+    { value: 'org-editable', label: `Everyone at ${domain}`, hint: 'they can edit it too' },
+    { value: 'public', label: 'Anyone with the link', hint: `read only, listed for ${domain}` },
+    { value: 'public-editable', label: 'Anyone with the link', hint: `read only, ${domain} can edit it` },
+  ]
+}
+
+/** The placement and permissions a choice stands for: an org choice places the artifact in the organisation. */
+function accessFields(
+  choice: AccessChoice,
+  domain: string | null,
+): Pick<NewArtifact, 'placement' | 'public' | 'org_editable'> {
+  const org = domain !== null && choice !== 'private'
+  return {
+    placement: org ? 'org' : 'personal',
+    public: choice.startsWith('public'),
+    org_editable: choice.endsWith('editable'),
+  }
+}
+
 function NewArtifactDialog({ me, open, onClose }: { me: Me; open: boolean; onClose: () => void }) {
-  const hasOrg = me.organization !== null
-  const [form, setForm] = useState<NewArtifact>({
+  const domain = me.organization?.domain ?? null
+  const [access, setAccess] = useState<AccessChoice>(domain === null ? 'private' : 'org')
+  const [form, setForm] = useState<Omit<NewArtifact, 'placement' | 'public' | 'org_editable'>>({
     title: '',
     type: 'deck',
     theme: 'light',
-    placement: hasOrg ? 'org' : 'personal',
-    public: false,
-    org_editable: false,
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -117,7 +146,7 @@ function NewArtifactDialog({ me, open, onClose }: { me: Me; open: boolean; onClo
     setBusy(true)
     setError(null)
     try {
-      const created = await api.create(form)
+      const created = await api.create({ ...form, ...accessFields(access, domain) })
       navigate(`/edit/${created.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -155,35 +184,14 @@ function NewArtifactDialog({ me, open, onClose }: { me: Me; open: boolean; onClo
           onChange={(theme) => setForm({ ...form, theme })}
           options={THEMES}
         />
-        <fieldset className="grid gap-2 rounded-lg border border-line p-3">
+        <fieldset className="grid gap-1 rounded-lg border border-line p-3 pt-2">
           <legend className="px-1 text-xs text-muted">Who can see it</legend>
-          {hasOrg ? (
-            <Select
-              value={form.placement}
-              onChange={(e) =>
-                setForm({ ...form, placement: e.target.value as 'personal' | 'org', org_editable: false })
-              }
-            >
-              <option value="org">Everyone at {me.organization?.domain}</option>
-              <option value="personal">Only me</option>
-            </Select>
-          ) : (
-            <p className="text-sm text-muted">
-              Only you, unless public. Sign in with a Google Workspace account to share with an organisation.
+          <RadioList name="new-access" value={access} onChange={setAccess} options={accessOptions(domain)} />
+          {domain === null ? (
+            <p className="mt-1 px-1.5 text-xs text-muted">
+              Sign in with a Google Workspace account to share with an organisation.
             </p>
-          )}
-          {form.placement === 'org' ? (
-            <Checkbox
-              label="Everyone in the organisation can edit it"
-              checked={form.org_editable}
-              onChange={(v) => setForm({ ...form, org_editable: v })}
-            />
           ) : null}
-          <Checkbox
-            label="Public: anyone with the link can see it"
-            checked={form.public}
-            onChange={(v) => setForm({ ...form, public: v })}
-          />
         </fieldset>
         {error ? <p className="text-sm text-danger">{error}</p> : null}
         <div className="flex justify-end gap-2">
