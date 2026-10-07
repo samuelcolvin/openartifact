@@ -1,7 +1,7 @@
 # The application image: the FastAPI server with the MCP endpoint, openartifact.js and artifact pages.
 #
 # Two build stages feed the final one: node builds frontend/dist/openartifact.js, uv installs the locked Python
-# dependencies into a virtualenv. The final image is python:3.14-slim plus git (workspaces are git repositories).
+# dependencies into a virtualenv. The final image is python:3.14-slim plus git (artifacts are git repositories).
 # Chrome is deliberately not here: PDF export is the chrome image (chrome/Dockerfile), which the app calls over HTTP.
 #
 #   docker build -t openartifact .

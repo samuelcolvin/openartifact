@@ -55,13 +55,14 @@ async def test_schema_and_idempotent_migrate(db_pool: db.Pool):
             'schema_migrations',
         }
         versions = await conn.fetch('SELECT version, name FROM schema_migrations ORDER BY version')
-        assert [(row['version'], row['name']) for row in versions] == [(1, 'initial')]
+        assert [(row['version'], row['name']) for row in versions] == [(1, 'initial'), (2, 'artifact_repositories')]
 
 
 async def test_migrate_applies_new_files_once(db_pool: db.Pool, tmp_path: Path):
     # A private migrations directory, applied against a scratch table so the shared schema is untouched.
     (tmp_path / '0001_initial.sql').write_text('create table scratch (n int);\n')
     async with db_pool.acquire() as conn:
+        applied = await conn.fetch('SELECT version, name FROM schema_migrations ORDER BY version')
         await conn.execute('DELETE FROM schema_migrations')
         try:
             assert await db.migrate(conn, tmp_path) == ['0001_initial.sql']
@@ -72,7 +73,10 @@ async def test_migrate_applies_new_files_once(db_pool: db.Pool, tmp_path: Path):
         finally:
             await conn.execute('DROP TABLE IF EXISTS scratch')
             await conn.execute('DELETE FROM schema_migrations')
-            await conn.execute("INSERT INTO schema_migrations (version, name) VALUES (1, 'initial')")
+            for row in applied:
+                await conn.execute(
+                    'INSERT INTO schema_migrations (version, name) VALUES ($1, $2)', row['version'], row['name']
+                )
 
 
 def test_pool_not_running():

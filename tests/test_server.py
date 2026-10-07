@@ -83,7 +83,7 @@ def test_unknown_artifacts_are_404(client: TestClient):
 
 def test_artifact_page_is_built_on_demand(client: TestClient):
     artifact = starter(client)
-    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    directory = workspace.checkout_path(artifact.id)
     assert not (directory / 'dist').exists()
     page = client.get(f'/artifacts/{artifact.id}/')
     assert page.status_code == 200
@@ -98,11 +98,11 @@ def test_artifact_page_is_built_on_demand(client: TestClient):
 
 def test_artifact_build_failure_is_422(client: TestClient):
     artifact = starter(client)
-    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    directory = workspace.checkout_path(artifact.id)
 
     async def break_it() -> None:
-        async with workspace.edit(artifact.workspace_id, 'break') as tx:
-            (tx.artifact_dir(artifact.id) / 'main.md').write_text('# hi\n\n<component src="Nope.html"></component>\n')
+        async with workspace.edit(artifact.id, 'break') as tx:
+            (tx.path / 'main.md').write_text('# hi\n\n<component src="Nope.html"></component>\n')
 
     in_app(client, break_it)
     response = client.get(f'/artifacts/{artifact.id}/')
@@ -118,7 +118,7 @@ def test_artifact_images_are_served(client: TestClient):
     assert logo.headers['content-type'].startswith('image/svg+xml')
     assert logo.content == (STARTER / 'assets' / 'logo.svg').read_bytes()
     # Fonts declared in styles.css are served too (any file in the directory with an allowed extension).
-    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    directory = workspace.checkout_path(artifact.id)
     (directory / 'assets' / 'body.woff2').write_bytes(b'wOF2')
     assert client.get(f'/artifacts/{artifact.id}/assets/body.woff2').status_code == 200
 
@@ -162,7 +162,7 @@ def test_artifact_media_cannot_escape_via_symlink(client: TestClient, tmp_path: 
     artifact = starter(client)
     outside = tmp_path / 'outside.png'
     outside.write_bytes(b'png')
-    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    directory = workspace.checkout_path(artifact.id)
     (directory / 'assets' / 'link.png').symlink_to(outside)
     assert client.get(f'/artifacts/{artifact.id}/assets/link.png').status_code == 404
 
@@ -200,7 +200,7 @@ def test_artifact_markdown_has_a_frontmatter_summary(client: TestClient):
     assert files == starter_sources()
     assert body == (STARTER / 'main.md').read_text(encoding='utf-8')
     # The summary does not need the artifact to build: a broken artifact.toml falls back to the row.
-    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    directory = workspace.checkout_path(artifact.id)
     (directory / 'artifact.toml').write_text('this is not toml')
     response = client.get(f'/artifacts/{artifact.id}.md')
     assert response.status_code == 200
@@ -209,9 +209,7 @@ def test_artifact_markdown_has_a_frontmatter_summary(client: TestClient):
 
 def last_commit(client: TestClient, artifact: workspace.Artifact) -> str:
     """Short sha of the last commit that touched the artifact, as the download names use it."""
-    root = workspace.checkout_path(artifact.workspace_id)
-    log = in_app(client, lambda: workspace.git('log', '-1', '--format=%H', '--', f'artifacts/{artifact.id}', cwd=root))
-    return log.strip()[:7]
+    return in_app(client, lambda: workspace.artifact_git(artifact.id, 'rev-parse', 'HEAD')).strip()[:7]
 
 
 def test_page_url_serves_markdown_to_clients_that_prefer_text(client: TestClient):
@@ -276,14 +274,14 @@ def test_artifact_zip_is_a_repository_with_the_sources_and_history(client: TestC
     assert in_app(client, lambda: workspace.git('ls-tree', '--name-only', 'HEAD', cwd=repo)).split() == sorted(
         {p.split('/')[0] for p in starter_sources()}
     )
-    # The history is the artifact's own: no workspace prefix, no other artifact, no alternates left behind.
-    assert not (repo / '.git' / 'objects' / 'info' / 'alternates').exists()
+    # A clone with no remote, and dist/ excluded locally as in the checkout.
+    assert in_app(client, lambda: workspace.git('remote', cwd=repo)) == ''
     assert (repo / '.git' / 'info' / 'exclude').read_text() == 'dist/\n'
 
 
 def test_download_names_survive_awkward_titles(client: TestClient):
     artifact = starter(client)
-    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    directory = workspace.checkout_path(artifact.id)
     (directory / 'artifact.toml').write_text('title = "Zoë \\"Q\\" / 2026 <v1>"\n')
     sha = last_commit(client, artifact)
     disposition = client.get(f'/artifacts/{artifact.id}.zip').headers['content-disposition']
@@ -331,7 +329,7 @@ def test_artifact_pdf_is_printed_by_the_chrome_service(client: TestClient, monke
     assert response.content == b'%PDF-1.4 stub'
     # The chrome service was given the internal address, and the page had been built for it to fetch.
     assert asked == [f'http://app:8765/artifacts/{artifact.id}/']
-    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    directory = workspace.checkout_path(artifact.id)
     assert (directory / 'dist' / 'index.html').is_file()
 
 
@@ -343,7 +341,7 @@ def test_artifact_pdf_reports_chrome_failures(client: TestClient, monkeypatch: p
     assert response.json()['detail'] == 'chrome service failed (502): Chrome exited with code 3'
     # A page that does not build is reported before anything is sent to the chrome service.
     asked = stub_chrome(monkeypatch, 200, b'%PDF-1.4 stub')
-    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    directory = workspace.checkout_path(artifact.id)
     shutil.rmtree(directory / 'dist', ignore_errors=True)
     (directory / 'main.md').write_text('# a\n---\n# b\n')
     response = client.get(f'/artifacts/{artifact.id}.pdf')
@@ -418,9 +416,9 @@ def test_upload_writes_and_commits(client: TestClient):
         'sha256': hashlib.sha256(body).hexdigest(),
     }
     # The file is in the checkout, committed on its own, and served back.
-    checkout = workspace.checkout_path(artifact.workspace_id)
-    assert (checkout / 'artifacts' / str(artifact.id) / 'assets' / 'new' / 'pic.png').read_bytes() == body
-    log = in_app(client, lambda: workspace.git('log', '--format=%s', cwd=checkout)).splitlines()
+    checkout = workspace.checkout_path(artifact.id)
+    assert (checkout / 'assets' / 'new' / 'pic.png').read_bytes() == body
+    log = in_app(client, lambda: workspace.artifact_git(artifact.id, 'log', '--format=%s')).splitlines()
     assert log[0] == 'upload: assets/new/pic.png'
     assert client.get(f'/artifacts/{artifact.id}/assets/new/pic.png').content == body
     # Overwriting an existing file works the same way.
@@ -443,10 +441,10 @@ def test_upload_rejects_bad_tokens(client: TestClient):
     assert client.put(f'/artifacts/{artifact.id}/assets/x.png?token=junk', content=b'abc').status_code == 403
     assert client.put(f'/artifacts/{artifact.id}/assets/x.png', content=b'abc').status_code == 403
     # Nothing was written or committed.
-    checkout = workspace.checkout_path(artifact.workspace_id)
-    assert not (checkout / 'artifacts' / str(artifact.id) / 'assets' / 'x.png').exists()
-    assert not (checkout / 'artifacts' / str(artifact.id) / 'assets' / 'y.png').exists()
-    log = in_app(client, lambda: workspace.git('log', '--format=%s', cwd=checkout)).splitlines()
+    checkout = workspace.checkout_path(artifact.id)
+    assert not (checkout / 'assets' / 'x.png').exists()
+    assert not (checkout / 'assets' / 'y.png').exists()
+    log = in_app(client, lambda: workspace.artifact_git(artifact.id, 'log', '--format=%s')).splitlines()
     assert not any(line.startswith('upload:') for line in log)
 
 
@@ -467,7 +465,7 @@ def test_upload_cannot_follow_a_symlink_out(client: TestClient, tmp_path: Path):
     artifact = starter(client)
     outside = tmp_path / 'outside'
     outside.mkdir()
-    directory = workspace.checkout_path(artifact.workspace_id) / 'artifacts' / str(artifact.id)
+    directory = workspace.checkout_path(artifact.id)
     (directory / 'assets' / 'link').symlink_to(outside)
     response = client.put(upload_to(artifact, 'assets/link/x.png', 3), content=b'abc')
     assert response.status_code == 403

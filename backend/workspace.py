@@ -1,15 +1,20 @@
-"""Workspaces: one git repository per owner, cached as a working clone, stored as bundles.
+"""Artifacts: one git repository per artifact, cached as a working tree, stored as bundles.
 
-A workspace repo holds one directory per artifact, `artifacts/<artifact uuid>/`, plus a root `.gitignore` that
-keeps build output (`artifacts/*/dist/`) out of history. The server keeps a working clone of each workspace at
-`<cache dir>/<workspace id>/`; the sandbox mounts an artifact's directory from there, exactly as a plain
-directory. At rest the repo is a `git bundle` in the object store under an immutable key per head commit,
-`workspaces/<workspace id>/<sha>.bundle`, and `workspaces.head_sha` in Postgres says which one is current.
+An artifact's repository holds its files at the root: `artifact.toml`, `main.md`, `styles.css`, `components/`,
+`assets/`. The server keeps a checkout of each artifact in this process's cache as two sibling directories,
+`<cache dir>/<artifact id>/git` (the repository) and `<cache dir>/<artifact id>/tree` (the working tree), so the
+tree holds nothing but the artifact's files and is what the sandbox mounts; build output under `dist/` is
+excluded through the repository's `info/exclude`, not a file in the tree. At rest the repository is a `git bundle`
+in the object store under an immutable key per head commit, `artifacts/<artifact id>/<sha>.bundle`, and
+`artifacts.head_sha` in Postgres says which one is current.
 
-Every change goes through `edit()`, which holds the workspace's row lock for the duration, syncs the checkout to
-the current head, lets the caller write files and rows, then commits, bundles, uploads and advances `head_sha`
-in the same transaction. Readers use `open_artifact()`, which only syncs. Both take the per-workspace asyncio
-lock, so within one process nothing touches a checkout concurrently; the row lock serialises processes.
+Every change goes through `edit()`, which holds the artifact's row lock for the duration, syncs the checkout to
+the current head, lets the caller write files, then commits, bundles, uploads and advances `head_sha` in the same
+transaction. Readers use `open_artifact()`, which only syncs. Both take the per-artifact asyncio lock, so within
+one process nothing touches a checkout concurrently; the row lock serialises processes. Artifacts in different
+repositories never wait on each other.
+
+A workspace is the owner of artifacts (a user now, an org later): a row, not a repository.
 """
 
 from __future__ import annotations
@@ -20,7 +25,7 @@ import os
 import shutil
 import uuid
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -31,8 +36,8 @@ import db
 import store
 from config import cache_dir
 
-ARTIFACTS_DIR = 'artifacts'
-GITIGNORE = 'artifacts/*/dist/\n'
+# Build output is never committed; the exclude lives in the repository so the tree carries no git files.
+EXCLUDE = 'dist/\n'
 GIT_TIMEOUT = 60.0
 # A fixed environment so git ignores the host user's config and never prompts. Commits are authored by the bot;
 # when users have identities on the repo (the GitHub backend) the author can become the user.
@@ -54,8 +59,8 @@ class GitError(Exception):
     """A git command failed or timed out; the message carries the command and stderr."""
 
 
-class WorkspaceBusy(Exception):
-    """Another process held the workspace's row lock for longer than `lock_timeout`."""
+class ArtifactBusy(Exception):
+    """Another process held the artifact's row lock for longer than `lock_timeout`."""
 
 
 @dataclass(frozen=True)
@@ -66,6 +71,8 @@ class Artifact:
     workspace_id: uuid.UUID
     title: str
     type: str
+    # The commit whose bundle is current; None until the first edit commits.
+    head_sha: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -76,34 +83,50 @@ class Artifact:
             workspace_id=row['workspace_id'],
             title=row['title'],
             type=row['type'],
+            head_sha=row['head_sha'],
             created_at=row['created_at'],
             updated_at=row['updated_at'],
         )
 
 
-ARTIFACT_COLUMNS = 'id, workspace_id, title, type, created_at, updated_at'
+ARTIFACT_COLUMNS = 'id, workspace_id, title, type, head_sha, created_at, updated_at'
 
 
-def checkout_path(workspace_id: uuid.UUID) -> Path:
-    """The working clone of a workspace in this process's cache."""
-    return cache_dir() / str(workspace_id)
+@dataclass(frozen=True)
+class NewArtifact:
+    """The row `edit(..., create=...)` inserts before the first commit."""
+
+    workspace_id: uuid.UUID
+    title: str
+    type: str
+    forked_from: uuid.UUID | None = None
 
 
-def bundle_key(workspace_id: uuid.UUID, sha: str) -> str:
+def checkout_path(artifact_id: uuid.UUID) -> Path:
+    """The working tree of an artifact in this process's cache: its files and nothing else."""
+    return cache_dir() / str(artifact_id) / 'tree'
+
+
+def git_dir(artifact_id: uuid.UUID) -> Path:
+    """The artifact's repository, kept beside the tree rather than inside it."""
+    return cache_dir() / str(artifact_id) / 'git'
+
+
+def bundle_key(artifact_id: uuid.UUID, sha: str) -> str:
     """Object store key of the bundle for one commit; immutable, never overwritten."""
-    return f'workspaces/{workspace_id}/{sha}.bundle'
+    return f'artifacts/{artifact_id}/{sha}.bundle'
 
 
-# Locks are keyed by event loop as well as workspace: an asyncio.Lock binds to the loop that first waits on it,
+# Locks are keyed by event loop as well as artifact: an asyncio.Lock binds to the loop that first waits on it,
 # and tests run each test in a fresh loop.
 _locks: dict[tuple[int, uuid.UUID], asyncio.Lock] = {}
-# The head each checkout in this process is known to match, so an unchanged workspace skips the git calls.
+# The head each checkout in this process is known to match, so an unchanged artifact skips the git calls.
 _synced: dict[uuid.UUID, str] = {}
 
 
-def workspace_lock(workspace_id: uuid.UUID) -> asyncio.Lock:
-    """The in-process lock serialising every use of a workspace's checkout."""
-    key = (id(asyncio.get_running_loop()), workspace_id)
+def artifact_lock(artifact_id: uuid.UUID) -> asyncio.Lock:
+    """The in-process lock serialising every use of an artifact's checkout."""
+    key = (id(asyncio.get_running_loop()), artifact_id)
     return _locks.setdefault(key, asyncio.Lock())
 
 
@@ -116,7 +139,7 @@ def reset_state() -> None:
 async def run_git(*args: str, cwd: Path, env: dict[str, str] | None = None) -> tuple[int, str, str]:
     """Run git in `cwd` and return `(exit code, stdout, stderr)`; raises `GitError` only on a timeout.
 
-    `env` adds to the fixed `GIT_ENV` (author and committer identity for `commit-tree`).
+    `env` adds to the fixed `GIT_ENV`.
     """
     with logfire.span('git {argv}', argv=' '.join(args)) as span:
         proc = await asyncio.create_subprocess_exec(
@@ -145,80 +168,88 @@ async def git(*args: str, cwd: Path, env: dict[str, str] | None = None) -> str:
     return out
 
 
-async def sync_checkout(workspace_id: uuid.UUID, head_sha: str | None) -> Path:
+def repo_args(artifact_id: uuid.UUID) -> list[str]:
+    """The options that point git at an artifact's repository and tree."""
+    return ['--git-dir', str(git_dir(artifact_id)), '--work-tree', str(checkout_path(artifact_id))]
+
+
+async def run_artifact_git(artifact_id: uuid.UUID, *args: str) -> tuple[int, str, str]:
+    """`run_git` against an artifact's repository, from its tree."""
+    return await run_git(*repo_args(artifact_id), *args, cwd=checkout_path(artifact_id))
+
+
+async def artifact_git(artifact_id: uuid.UUID, *args: str) -> str:
+    """`git` against an artifact's repository, from its tree."""
+    return await git(*repo_args(artifact_id), *args, cwd=checkout_path(artifact_id))
+
+
+async def init_checkout(artifact_id: uuid.UUID) -> Path:
+    """A fresh, empty repository and tree for an artifact, replacing whatever the cache held."""
+    base = cache_dir() / str(artifact_id)
+    if base.exists():
+        shutil.rmtree(base)
+    tree = checkout_path(artifact_id)
+    tree.mkdir(parents=True)
+    repo = git_dir(artifact_id)
+    await git('init', '-q', '-b', 'main', '--bare', str(repo), cwd=base)
+    # A bare layout with the tree attached by `--work-tree`; `core.bare` must say so for tree operations to run.
+    await artifact_git(artifact_id, 'config', 'core.bare', 'false')
+    (repo / 'info' / 'exclude').write_text(EXCLUDE, encoding='utf-8')
+    return tree
+
+
+async def sync_checkout(artifact_id: uuid.UUID, head_sha: str | None) -> Path:
     """Make the cached checkout match `head_sha` exactly, fetching the bundle if the commit is not local.
 
-    The caller holds `workspace_lock`. A checkout left dirty or ahead by a failed edit is repaired here, because
-    the reset is unconditional. Build output under `dist/` is ignored by git and survives the reset, so it is
-    deleted for every artifact whose sources changed between the old and new head; the server rebuilds on demand.
+    The caller holds `artifact_lock`. A checkout left dirty or ahead by a failed edit is repaired here, because
+    the reset is unconditional. Build output under `dist/` is excluded from git and survives the reset, so it is
+    deleted whenever the head changes; the server rebuilds on demand.
     """
-    path = checkout_path(workspace_id)
+    tree = checkout_path(artifact_id)
     if head_sha is None:
-        # Nothing exists yet. Start clean even if an earlier failed first edit left a repo behind, and stage the
-        # ignore file so the first commit carries it.
-        if path.exists():
-            shutil.rmtree(path)
-        path.mkdir(parents=True)
-        await git('init', '-q', '-b', 'main', cwd=path)
-        (path / '.gitignore').write_text(GITIGNORE, encoding='utf-8')
-        await git('add', '--', '.gitignore', cwd=path)
-        _synced.pop(workspace_id, None)
-        return path
+        # Nothing exists yet. Start clean even if an earlier failed first edit left a repository behind.
+        _synced.pop(artifact_id, None)
+        return await init_checkout(artifact_id)
 
-    if _synced.get(workspace_id) == head_sha and (path / '.git').is_dir():
-        return path
-    path.mkdir(parents=True, exist_ok=True)
-    if not (path / '.git').is_dir():
-        await git('init', '-q', '-b', 'main', cwd=path)
+    if _synced.get(artifact_id) == head_sha and git_dir(artifact_id).is_dir():
+        return tree
+    if not git_dir(artifact_id).is_dir():
+        await init_checkout(artifact_id)
+    tree.mkdir(parents=True, exist_ok=True)
 
-    code, _, _ = await run_git('cat-file', '-e', f'{head_sha}^{{commit}}', cwd=path)
+    code, _, _ = await run_artifact_git(artifact_id, 'cat-file', '-e', f'{head_sha}^{{commit}}')
     if code != 0:
         # `git fetch <file>` reads a bundle without recording a remote, unlike `git clone <bundle>`.
-        bundle = cache_dir() / f'{workspace_id}.{head_sha}.bundle'
+        bundle = cache_dir() / f'{artifact_id}.{head_sha}.bundle'
         try:
-            data = await store.store().get(bundle_key(workspace_id, head_sha))
+            data = await store.store().get(bundle_key(artifact_id, head_sha))
         except store.StoreMissing as exc:
             raise GitError(
-                f'workspace {workspace_id}: the bundle for head {head_sha} is missing from the object store; '
+                f'artifact {artifact_id}: the bundle for head {head_sha} is missing from the object store; '
                 'DATABASE_URL and OPENARTIFACT_STORE_URL do not describe the same deployment'
             ) from exc
         bundle.write_bytes(data)
         try:
-            await git('fetch', '-q', str(bundle), 'main', cwd=path)
+            await artifact_git(artifact_id, 'fetch', '-q', str(bundle), 'main')
         finally:
             bundle.unlink(missing_ok=True)
 
-    code, old, _ = await run_git('rev-parse', '--verify', '-q', 'HEAD', cwd=path)
+    code, old, _ = await run_artifact_git(artifact_id, 'rev-parse', '--verify', '-q', 'HEAD')
     old_sha = old.strip() if code == 0 else None
-    await git('reset', '-q', '--hard', head_sha, cwd=path)
-    await git('clean', '-q', '-fd', cwd=path)
+    await artifact_git(artifact_id, 'reset', '-q', '--hard', head_sha)
+    await artifact_git(artifact_id, 'clean', '-q', '-fd')
+    if old_sha != head_sha:
+        shutil.rmtree(tree / 'dist', ignore_errors=True)
 
-    artifacts = path / ARTIFACTS_DIR
-    if old_sha is None:
-        stale = [p.name for p in artifacts.iterdir()] if artifacts.is_dir() else []
-    elif old_sha != head_sha:
-        changed = await git('diff', '--name-only', old_sha, head_sha, cwd=path)
-        stale = sorted(
-            {
-                parts[1]
-                for line in changed.splitlines()
-                if (parts := line.split('/'))[0] == ARTIFACTS_DIR and len(parts) > 2
-            }
-        )
-    else:
-        stale = []
-    for name in stale:
-        shutil.rmtree(artifacts / name / 'dist', ignore_errors=True)
-
-    _synced[workspace_id] = head_sha
-    return path
+    _synced[artifact_id] = head_sha
+    return tree
 
 
-async def bundle_and_upload(workspace_id: uuid.UUID, sha: str, cwd: Path) -> str:
-    """Serialise the whole repo at `main` into a bundle and store it under the key for `sha`; returns the key."""
-    key = bundle_key(workspace_id, sha)
-    tmp = cache_dir() / f'{workspace_id}.{sha}.bundle.tmp'
-    await git('bundle', 'create', '-q', str(tmp), 'main', cwd=cwd)
+async def bundle_and_upload(artifact_id: uuid.UUID, sha: str) -> str:
+    """Serialise the repository at `main` into a bundle and store it under the key for `sha`; returns the key."""
+    key = bundle_key(artifact_id, sha)
+    tmp = cache_dir() / f'{artifact_id}.{sha}.bundle.tmp'
+    await artifact_git(artifact_id, 'bundle', 'create', '-q', str(tmp), 'main')
     try:
         data = tmp.read_bytes()
     finally:
@@ -229,24 +260,19 @@ async def bundle_and_upload(workspace_id: uuid.UUID, sha: str, cwd: Path) -> str
 
 @dataclass
 class Edit:
-    """What a caller gets inside `edit()`: where to write, and the transaction to write rows in."""
+    """What a caller gets inside `edit()`: the row as it was when the lock was taken, where to write, and the
+    transaction to write other rows in."""
 
-    workspace_id: uuid.UUID
-    head_sha: str | None
+    artifact: Artifact
+    # The artifact's working tree: write files here.
     path: Path
     conn: db.Connection
     # The commit message; the caller may rewrite it before the block ends (e.g. to record a failed run).
     message: str
-    touched: set[uuid.UUID] = field(default_factory=set)
-
-    def artifact_dir(self, artifact_id: uuid.UUID) -> Path:
-        """The artifact's directory inside the checkout (not created); remembered for the commit."""
-        self.touched.add(artifact_id)
-        return self.path / ARTIFACTS_DIR / str(artifact_id)
 
 
 def strip_nested_git(directory: Path) -> list[str]:
-    """Remove `.git*` entries an agent may have written inside an artifact; they would hide files from the commit."""
+    """Remove `.git*` entries an agent may have written into the tree; they would hide files from the commit."""
     removed: list[str] = []
     if not directory.is_dir():
         return removed
@@ -259,154 +285,87 @@ def strip_nested_git(directory: Path) -> list[str]:
 
 async def commit_edit(tx: Edit) -> str | None:
     """Stage everything, commit if anything changed, and return the new sha; `None` means nothing to commit."""
-    for artifact_id in tx.touched:
-        strip_nested_git(tx.path / ARTIFACTS_DIR / str(artifact_id))
-    await git('add', '-A', cwd=tx.path)
-    code, _, _ = await run_git('diff', '--cached', '--quiet', cwd=tx.path)
-    if code == 0 and tx.head_sha is not None:
+    strip_nested_git(tx.path)
+    artifact_id = tx.artifact.id
+    await artifact_git(artifact_id, 'add', '-A')
+    code, _, _ = await run_artifact_git(artifact_id, 'diff', '--cached', '--quiet')
+    if code == 0 and tx.artifact.head_sha is not None:
         return None
-    await git('commit', '-q', '-m', tx.message, cwd=tx.path)
-    return (await git('rev-parse', 'HEAD', cwd=tx.path)).strip()
+    await artifact_git(artifact_id, 'commit', '-q', '--allow-empty', '-m', tx.message)
+    return (await artifact_git(artifact_id, 'rev-parse', 'HEAD')).strip()
 
 
 @contextlib.asynccontextmanager
-async def edit(workspace_id: uuid.UUID, message: str) -> AsyncGenerator[Edit]:
-    """Change a workspace: lock it, sync the checkout, yield, then commit, bundle, upload and advance the head.
+async def edit(artifact_id: uuid.UUID, message: str, *, create: NewArtifact | None = None) -> AsyncGenerator[Edit]:
+    """Change an artifact: lock it, sync the checkout, yield, then commit, bundle, upload and advance the head.
 
-    The workspace row is locked (`FOR UPDATE`) for the whole block, so two processes editing the same workspace
-    run one after the other, and the second sees the first's commit. If the block raises, or the upload fails,
-    the transaction rolls back, `head_sha` is unchanged and the checkout is reset on its next use.
+    The artifact row is locked (`FOR UPDATE`) for the whole block, so two processes editing the same artifact run
+    one after the other, and the second sees the first's commit. With `create`, the row is inserted first, inside
+    the same transaction, and the block makes the first commit. If the block raises, or the upload fails, the
+    transaction rolls back (the row too, when created here), `head_sha` is unchanged and the checkout is reset on
+    its next use.
     """
-    async with workspace_lock(workspace_id), db.pool().acquire() as conn, conn.transaction():
+    async with artifact_lock(artifact_id), db.pool().acquire() as conn, conn.transaction():
         await conn.execute("SET LOCAL lock_timeout = '60s'")
-        try:
-            row = await conn.fetchrow('SELECT head_sha FROM workspaces WHERE id = $1 FOR UPDATE', workspace_id)
-        except asyncpg.LockNotAvailableError as exc:
-            raise WorkspaceBusy(f'workspace {workspace_id} is busy, try again') from exc
+        if create is not None:
+            row = await conn.fetchrow(
+                'INSERT INTO artifacts (id, workspace_id, title, type, forked_from) VALUES ($1, $2, $3, $4, $5) '
+                f'RETURNING {ARTIFACT_COLUMNS}',
+                artifact_id,
+                create.workspace_id,
+                create.title,
+                create.type,
+                create.forked_from,
+            )
+        else:
+            try:
+                row = await conn.fetchrow(
+                    f'SELECT {ARTIFACT_COLUMNS} FROM artifacts WHERE id = $1 FOR UPDATE', artifact_id
+                )
+            except asyncpg.LockNotAvailableError as exc:
+                raise ArtifactBusy(f'artifact {artifact_id} is busy, try again') from exc
         if row is None:
-            raise LookupError(f'workspace {workspace_id} does not exist')
-        head_sha: str | None = row['head_sha']
+            raise LookupError(f'artifact {artifact_id} does not exist')
+        artifact = Artifact.from_row(row)
         try:
-            path = await sync_checkout(workspace_id, head_sha)
-            tx = Edit(workspace_id, head_sha, path, conn, message)
+            path = await sync_checkout(artifact_id, artifact.head_sha)
+            tx = Edit(artifact, path, conn, message)
             yield tx
             new_sha = await commit_edit(tx)
             if new_sha is None:
                 return
-            await bundle_and_upload(workspace_id, new_sha, path)
+            await bundle_and_upload(artifact_id, new_sha)
             await conn.execute(
-                'UPDATE workspaces SET head_sha = $2, updated_at = now() WHERE id = $1', workspace_id, new_sha
+                'UPDATE artifacts SET head_sha = $2, updated_at = now() WHERE id = $1', artifact_id, new_sha
             )
-            _synced[workspace_id] = new_sha
+            _synced[artifact_id] = new_sha
         except BaseException:
             # The checkout may be dirty or one commit ahead of the head that survives the rollback.
-            _synced.pop(workspace_id, None)
+            _synced.pop(artifact_id, None)
             raise
 
 
 @contextlib.asynccontextmanager
 async def open_artifact(artifact: Artifact) -> AsyncGenerator[Path]:
-    """Read-only access to an artifact's directory, synced to the current head and locked for the block."""
-    async with workspace_lock(artifact.workspace_id):
-        head_sha: str | None = await db.pool().fetchval(
-            'SELECT head_sha FROM workspaces WHERE id = $1', artifact.workspace_id
-        )
-        path = await sync_checkout(artifact.workspace_id, head_sha)
-        yield path / ARTIFACTS_DIR / str(artifact.id)
+    """Read-only access to an artifact's tree, synced to the current head and locked for the block."""
+    async with artifact_lock(artifact.id):
+        head_sha: str | None = await db.pool().fetchval('SELECT head_sha FROM artifacts WHERE id = $1', artifact.id)
+        yield await sync_checkout(artifact.id, head_sha)
 
 
-# Field and record separators for the `git log` format `export_repository` parses; neither appears in messages.
-LOG_FIELD = '\x1f'
-LOG_RECORD = '\x1e'
+async def clone_repository(artifact_id: uuid.UUID, dest: Path) -> None:
+    """Clone the artifact's repository into `dest` as an ordinary working clone with no remote.
 
-
-async def export_repository(workspace_id: uuid.UUID, artifact_id: uuid.UUID, dest: Path) -> int:
-    """Write a standalone git repository of one artifact into `dest`: its files at the head, and its history.
-
-    The workspace history is replayed with the artifact's directory as the root, the way `git subtree split`
-    does: one commit per workspace commit that changed the directory, keeping author, committer, dates and
-    message, built with `commit-tree` against the checkout's object store (an alternates file, removed once the
-    objects are packed into the new repository). `dist/` is excluded locally (`.git/info/exclude`) as it is in the
-    workspace. Call it under the workspace lock with the checkout synced. Returns the number of commits; zero
-    means nothing in the history touched the artifact and `dest` holds an empty repository.
+    `dist/` is excluded locally there too. Call it under the artifact lock with the checkout synced.
     """
-    root = checkout_path(workspace_id)
-    prefix = f'{ARTIFACTS_DIR}/{artifact_id}'
-    fields = LOG_FIELD.join(['%H', '%an', '%ae', '%aI', '%cn', '%ce', '%cI', '%B'])
-    log = await git('log', '--reverse', '--first-parent', f'--format={fields}{LOG_RECORD}', '--', prefix, cwd=root)
-
-    await git('init', '-q', '-b', 'main', cwd=dest)
-    alternates = dest / '.git' / 'objects' / 'info' / 'alternates'
-    alternates.write_text(f'{(root / ".git" / "objects").resolve()}\n')
-    parent: str | None = None
-    previous_tree: str | None = None
-    count = 0
-    for record in log.split(LOG_RECORD):
-        if not record.strip():
-            continue
-        sha, author, email, authored, committer, cemail, committed, message = record.lstrip('\n').split(LOG_FIELD, 7)
-        code, tree, _ = await run_git('rev-parse', '--verify', '-q', f'{sha}:{prefix}', cwd=root)
-        if code != 0:
-            # The directory did not exist at this commit (a deletion; it may come back later).
-            continue
-        tree = tree.strip()
-        if tree == previous_tree:
-            continue
-        env = {
-            'GIT_AUTHOR_NAME': author,
-            'GIT_AUTHOR_EMAIL': email,
-            'GIT_AUTHOR_DATE': authored,
-            'GIT_COMMITTER_NAME': committer,
-            'GIT_COMMITTER_EMAIL': cemail,
-            'GIT_COMMITTER_DATE': committed,
-        }
-        parents = ['-p', parent] if parent else []
-        parent = (await git('commit-tree', tree, *parents, '-m', message.rstrip('\n'), cwd=dest, env=env)).strip()
-        previous_tree = tree
-        count += 1
-
-    if count:
-        await git('update-ref', 'refs/heads/main', parent or '', cwd=dest)
-        # Copy every object the new history needs into the new repository, then cut the tie to the checkout.
-        await git('repack', '-a', '-d', '-q', cwd=dest)
-    alternates.unlink()
-    (dest / '.git' / 'info' / 'exclude').write_text('dist/\n')
-    if count:
-        await git('reset', '-q', '--hard', cwd=dest)
-    return count
+    await git('clone', '-q', str(git_dir(artifact_id)), str(dest), cwd=dest.parent)
+    await git('remote', 'remove', 'origin', cwd=dest)
+    (dest / '.git' / 'info' / 'exclude').write_text(EXCLUDE, encoding='utf-8')
 
 
 # ---------------------------------------------------------------------------
 # Rows
 # ---------------------------------------------------------------------------
-
-
-async def insert_artifact(
-    conn: db.Connection,
-    *,
-    artifact_id: uuid.UUID,
-    workspace_id: uuid.UUID,
-    title: str,
-    type: str,
-    forked_from: uuid.UUID | None = None,
-) -> Artifact:
-    """Insert the artifact row inside an `edit()` transaction."""
-    row = await conn.fetchrow(
-        'INSERT INTO artifacts (id, workspace_id, title, type, forked_from) VALUES ($1, $2, $3, $4, $5) '
-        f'RETURNING {ARTIFACT_COLUMNS}',
-        artifact_id,
-        workspace_id,
-        title,
-        type,
-        forked_from,
-    )
-    assert row is not None
-    return Artifact.from_row(row)
-
-
-async def touch_artifact(conn: db.Connection, artifact_id: uuid.UUID) -> None:
-    """Record that an artifact's files changed."""
-    await conn.execute('UPDATE artifacts SET updated_at = now() WHERE id = $1', artifact_id)
 
 
 async def get_artifact(artifact_id: uuid.UUID) -> Artifact | None:
@@ -434,8 +393,9 @@ async def list_artifacts(workspace_id: uuid.UUID) -> list[Artifact]:
 async def import_directory(workspace_id: uuid.UUID, title: str, type: str, src: Path) -> Artifact:
     """Copy an existing artifact directory (minus `dist/`) into a workspace as a new artifact; one edit."""
     artifact_id = uuid.uuid4()
-    async with edit(workspace_id, f'import: {artifact_id}') as tx:
-        shutil.copytree(src, tx.artifact_dir(artifact_id), ignore=shutil.ignore_patterns('dist'))
-        return await insert_artifact(
-            tx.conn, artifact_id=artifact_id, workspace_id=workspace_id, title=title, type=type
-        )
+    create = NewArtifact(workspace_id=workspace_id, title=title, type=type)
+    async with edit(artifact_id, f'import: {artifact_id}', create=create) as tx:
+        shutil.copytree(src, tx.path, ignore=shutil.ignore_patterns('dist'), dirs_exist_ok=True)
+    found = await get_artifact(artifact_id)
+    assert found is not None
+    return found

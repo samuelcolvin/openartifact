@@ -4,7 +4,7 @@ Routes:
 
     /mcp/                       the MCP endpoint (streamable HTTP) from `mcp_server.py`, behind Google login
     /openartifact.js            the browser runtime, `frontend/dist/openartifact.js`, which every built page links
-    /artifacts/{id}/            an artifact's page, built on demand from its workspace checkout; the markdown
+    /artifacts/{id}/            an artifact's page, built on demand from its checkout; the markdown
                                 export instead when the Accept header prefers text/markdown or text/plain
     /artifacts/{id}/{path}      an image or font from the artifact directory, referenced relatively by the page
     PUT /artifacts/{id}/{path}  an upload to the artifact directory, with a token from the `upload_url` tool
@@ -269,10 +269,7 @@ async def export_filename(found: workspace.Artifact, directory: Path, extension:
     Call it under `open_artifact`, so the checkout is at the head and the commit is the one the content came from.
     """
     title = config_title(directory, found.title)
-    root = workspace.checkout_path(found.workspace_id)
-    sha = (
-        await workspace.git('log', '-1', '--format=%H', '--', f'{workspace.ARTIFACTS_DIR}/{found.id}', cwd=root)
-    ).strip()
+    sha = (await workspace.artifact_git(found.id, 'rev-parse', 'HEAD')).strip()
     stem = f'{title} {sha[:7]}'
     # Characters some file systems refuse, plus controls and the quote that would end the header value.
     stem = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', ' ', stem)
@@ -291,27 +288,15 @@ async def artifact_zip(artifact_id: str) -> Response:
     """The artifact as a git repository in a zip, inside a folder named by the artifact id.
 
     The folder is a clone to work in: the source files (not `dist/`) checked out at the head, and `.git` holding
-    the artifact's own history, replayed from the workspace by `workspace.export_repository`. An artifact that
-    somehow has no history falls back to its files alone.
+    the artifact's history, cloned from the checkout by `workspace.clone_repository`.
     """
     found = await load_artifact(artifact_id)
     with tempfile.TemporaryDirectory(prefix='openartifact-zip-') as tmp:
         exported = Path(tmp) / str(found.id)
-        exported.mkdir()
         async with workspace.open_artifact(found) as directory:
-            commits = await workspace.export_repository(found.workspace_id, found.id, exported)
+            await workspace.clone_repository(found.id, exported)
             filename = await export_filename(found, directory, 'zip')
-            # The fallback reads the checkout, so it happens under the lock; the export is ours to read after.
-            fallback = (
-                None
-                if commits
-                else await asyncio.to_thread(zip_files, directory, source_files(directory), str(found.id))
-            )
-        data = (
-            fallback
-            if fallback is not None
-            else await asyncio.to_thread(zip_files, exported, all_files(exported), str(found.id))
-        )
+        data = await asyncio.to_thread(zip_files, exported, all_files(exported), str(found.id))
     return Response(data, media_type='application/zip', headers=attachment(filename))
 
 
@@ -333,7 +318,7 @@ async def artifact_pdf(artifact_id: str) -> Response:
     if chrome_url is None:
         raise HTTPException(503, 'PDF export is not configured: OPENARTIFACT_CHROME_URL names the chrome service')
     async with workspace.open_artifact(found) as directory:
-        await build_if_missing(directory)
+        await build_if_missing(found, directory)
         filename = await export_filename(found, directory, 'pdf')
     page_url = f'{config.internal_url()}/artifacts/{found.id}/'
     try:
@@ -352,17 +337,15 @@ def artifact_redirect(artifact_id: str) -> RedirectResponse:
     return RedirectResponse(f'/artifacts/{artifact_id}/')
 
 
-def markdown_export_href(directory: Path) -> str:
-    """The `.md` export relative to the page: the artifact directory is `artifacts/<id>/`, the page `/artifacts/<id>/`."""
-    return f'../{directory.name}.md'
+async def build_if_missing(found: workspace.Artifact, directory: Path) -> Path:
+    """`dist/index.html`, built now if this process has not built the current version yet; a failure is a 422.
 
-
-async def build_if_missing(directory: Path) -> Path:
-    """`dist/index.html`, built now if this process has not built the current version yet; a failure is a 422."""
+    The page is served at `/artifacts/<id>/`, so the `.md` export it advertises is `../<id>.md`.
+    """
     page = directory / 'dist' / 'index.html'
     if not page.is_file():
         try:
-            await asyncio.to_thread(build.build_html, directory, markdown_url=markdown_export_href(directory))
+            await asyncio.to_thread(build.build_html, directory, markdown_url=f'../{found.id}.md')
         except build.BuildError as exc:
             raise HTTPException(422, f'build failed: {exc}') from exc
     return page
@@ -371,7 +354,7 @@ async def build_if_missing(directory: Path) -> Path:
 async def built_page(found: workspace.Artifact) -> str:
     """The artifact's page HTML, built if needed."""
     async with workspace.open_artifact(found) as directory:
-        page = await build_if_missing(directory)
+        page = await build_if_missing(found, directory)
         # Read under the lock: a sync for a newer head could delete dist/ between here and the response otherwise.
         return page.read_text(encoding='utf-8')
 
@@ -438,18 +421,16 @@ async def artifact_upload(artifact_id: str, path: str, request: Request, token: 
         raise HTTPException(403, str(exc)) from exc
     body = await read_body(request, size)
     try:
-        async with workspace.edit(found.workspace_id, f'upload: {path}') as tx:
-            directory = tx.artifact_dir(found.id)
-            file = directory / path
+        async with workspace.edit(found.id, f'upload: {path}') as tx:
+            file = tx.path / path
             # The path was validated, but a symlink the agent wrote earlier could still point outside the artifact.
-            if directory.resolve() not in file.resolve().parents:
+            if tx.path.resolve() not in file.resolve().parents:
                 raise HTTPException(403, f'{path!r} resolves outside the artifact')
             try:
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_bytes(body)
             except (IsADirectoryError, NotADirectoryError, FileExistsError) as exc:
                 raise HTTPException(409, f'{path!r} cannot be written: a directory is in the way') from exc
-            await workspace.touch_artifact(tx.conn, found.id)
-    except workspace.WorkspaceBusy as exc:
+    except workspace.ArtifactBusy as exc:
         raise HTTPException(409, str(exc)) from exc
     return {'path': path, 'size': size, 'sha256': hashlib.sha256(body).hexdigest()}

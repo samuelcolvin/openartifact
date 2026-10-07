@@ -18,107 +18,108 @@ ROOT = Path(__file__).resolve().parent.parent
 STARTER = ROOT / 'examples' / 'starter'
 
 
-async def head_sha(ws: uuid.UUID) -> str | None:
-    return await db.pool().fetchval('SELECT head_sha FROM workspaces WHERE id = $1', ws)
+async def head_sha(artifact_id: uuid.UUID) -> str | None:
+    return await db.pool().fetchval('SELECT head_sha FROM artifacts WHERE id = $1', artifact_id)
 
 
-async def git_log(path: Path) -> list[str]:
-    return (await workspace.git('log', '--format=%s', cwd=path)).splitlines()
+async def git_log(artifact_id: uuid.UUID) -> list[str]:
+    return (await workspace.artifact_git(artifact_id, 'log', '--format=%s')).splitlines()
 
 
 async def write_artifact(ws: uuid.UUID, title: str = 'Demo', body: str = '# hi\n') -> workspace.Artifact:
     """One edit creating an artifact with a single file."""
     artifact_id = uuid.uuid4()
-    async with workspace.edit(ws, f'new_artifact: {artifact_id}') as tx:
-        directory = tx.artifact_dir(artifact_id)
-        directory.mkdir(parents=True)
-        (directory / 'main.md').write_text(body)
-        return await workspace.insert_artifact(
-            tx.conn, artifact_id=artifact_id, workspace_id=ws, title=title, type='page'
-        )
+    create = workspace.NewArtifact(workspace_id=ws, title=title, type='page')
+    async with workspace.edit(artifact_id, f'new_artifact: {artifact_id}', create=create) as tx:
+        (tx.path / 'main.md').write_text(body)
+    found = await workspace.get_artifact(artifact_id)
+    assert found is not None
+    return found
 
 
 async def test_first_edit_creates_repo_bundle_and_head(principal: auth.Principal, storage: store.ObjectStore):
     ws = principal.workspace_id
-    assert await head_sha(ws) is None
     artifact = await write_artifact(ws)
-    sha = await head_sha(ws)
-    assert sha is not None
-    path = workspace.checkout_path(ws)
-    assert (await workspace.git('rev-parse', 'HEAD', cwd=path)).strip() == sha
-    assert await git_log(path) == [f'new_artifact: {artifact.id}']
-    assert (path / '.gitignore').read_text() == 'artifacts/*/dist/\n'
-    assert (await workspace.git('status', '--porcelain', cwd=path)) == ''
-    assert await storage.exists(workspace.bundle_key(ws, sha))
-    assert await workspace.get_artifact(artifact.id) == artifact
+    sha = artifact.head_sha
+    assert sha is not None and await head_sha(artifact.id) == sha
+    assert (await workspace.artifact_git(artifact.id, 'rev-parse', 'HEAD')).strip() == sha
+    assert await git_log(artifact.id) == [f'new_artifact: {artifact.id}']
+    # The tree holds the artifact's files and nothing of git's; the repository sits beside it.
+    tree = workspace.checkout_path(artifact.id)
+    assert sorted(p.name for p in tree.iterdir()) == ['main.md']
+    assert (workspace.git_dir(artifact.id) / 'info' / 'exclude').read_text() == 'dist/\n'
+    assert (await workspace.artifact_git(artifact.id, 'status', '--porcelain')) == ''
+    assert await storage.exists(workspace.bundle_key(artifact.id, sha))
     assert await workspace.list_artifacts(ws) == [artifact]
 
 
+async def test_create_rolls_back_with_the_body(principal: auth.Principal):
+    artifact_id = uuid.uuid4()
+    create = workspace.NewArtifact(workspace_id=principal.workspace_id, title='Doomed', type='page')
+    with pytest.raises(RuntimeError, match='boom'):
+        async with workspace.edit(artifact_id, 'new', create=create):
+            raise RuntimeError('boom')
+    assert await workspace.get_artifact(artifact_id) is None
+    assert await workspace.list_artifacts(principal.workspace_id) == []
+
+
 async def test_dist_is_ignored(principal: auth.Principal):
-    ws = principal.workspace_id
-    artifact = await write_artifact(ws)
-    async with workspace.edit(ws, 'noise') as tx:
-        dist = tx.artifact_dir(artifact.id) / 'dist'
+    artifact = await write_artifact(principal.workspace_id)
+    async with workspace.edit(artifact.id, 'noise') as tx:
+        dist = tx.path / 'dist'
         dist.mkdir()
         (dist / 'index.html').write_text('<html>')
-    assert await git_log(workspace.checkout_path(ws)) == [f'new_artifact: {artifact.id}']
-    assert (workspace.checkout_path(ws) / 'artifacts' / str(artifact.id) / 'dist' / 'index.html').exists()
+    assert await git_log(artifact.id) == [f'new_artifact: {artifact.id}']
+    assert (workspace.checkout_path(artifact.id) / 'dist' / 'index.html').exists()
 
 
 async def test_edit_without_changes_is_a_noop(principal: auth.Principal, storage: store.ObjectStore):
-    ws = principal.workspace_id
-    await write_artifact(ws)
-    before = await head_sha(ws)
-    async with workspace.edit(ws, 'nothing'):
+    artifact = await write_artifact(principal.workspace_id)
+    async with workspace.edit(artifact.id, 'nothing'):
         pass
-    assert await head_sha(ws) == before
-    assert await storage.list(f'workspaces/{ws}/') == [workspace.bundle_key(ws, before or '')]
+    assert await head_sha(artifact.id) == artifact.head_sha
+    assert await storage.list(f'artifacts/{artifact.id}/') == [
+        workspace.bundle_key(artifact.id, artifact.head_sha or '')
+    ]
 
 
 async def test_body_error_rolls_back_and_resets_checkout(principal: auth.Principal):
-    ws = principal.workspace_id
-    artifact = await write_artifact(ws)
-    before = await head_sha(ws)
+    artifact = await write_artifact(principal.workspace_id)
     with pytest.raises(RuntimeError, match='boom'):
-        async with workspace.edit(ws, 'bad') as tx:
-            (tx.artifact_dir(artifact.id) / 'main.md').write_text('changed')
-            await workspace.touch_artifact(tx.conn, artifact.id)
+        async with workspace.edit(artifact.id, 'bad') as tx:
+            (tx.path / 'main.md').write_text('changed')
             raise RuntimeError('boom')
-    assert await head_sha(ws) == before
+    assert await head_sha(artifact.id) == artifact.head_sha
     async with workspace.open_artifact(artifact) as directory:
         assert (directory / 'main.md').read_text() == '# hi\n'
-    assert (await workspace.get_artifact(artifact.id)) == artifact  # updated_at untouched: the row write rolled back
+    assert (await workspace.get_artifact(artifact.id)) == artifact  # updated_at untouched: nothing was committed
 
 
 async def test_upload_failure_rolls_back(principal: auth.Principal, monkeypatch: pytest.MonkeyPatch):
-    ws = principal.workspace_id
-    artifact = await write_artifact(ws)
-    before = await head_sha(ws)
+    artifact = await write_artifact(principal.workspace_id)
 
     async def failing_put(self: store.ObjectStore, key: str, data: bytes) -> None:
         raise OSError('store down')
 
     monkeypatch.setattr(store.ObjectStore, 'put', failing_put)
     with pytest.raises(OSError, match='store down'):
-        async with workspace.edit(ws, 'run_code') as tx:
-            (tx.artifact_dir(artifact.id) / 'main.md').write_text('changed')
+        async with workspace.edit(artifact.id, 'run_code') as tx:
+            (tx.path / 'main.md').write_text('changed')
     monkeypatch.undo()
-    assert await head_sha(ws) == before
+    assert await head_sha(artifact.id) == artifact.head_sha
     # The local commit that was never published is discarded on the next sync.
     async with workspace.open_artifact(artifact) as directory:
         assert (directory / 'main.md').read_text() == '# hi\n'
-    assert await git_log(workspace.checkout_path(ws)) == [f'new_artifact: {artifact.id}']
+    assert await git_log(artifact.id) == [f'new_artifact: {artifact.id}']
 
 
 async def test_missing_bundle_is_a_clear_error(
     principal: auth.Principal, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """A database pointing at a bundle the store does not have, as when the two come from different deployments."""
-    ws = principal.workspace_id
-    artifact = await write_artifact(ws)
-    sha = await head_sha(ws)
-    assert sha is not None
-    await store.store().delete(workspace.bundle_key(ws, sha))
+    artifact = await write_artifact(principal.workspace_id)
+    assert artifact.head_sha is not None
+    await store.store().delete(workspace.bundle_key(artifact.id, artifact.head_sha))
     monkeypatch.setenv('OPENARTIFACT_CACHE_DIR', str(tmp_path / 'cache-b'))
     workspace.reset_state()
     with pytest.raises(workspace.GitError, match='missing from the object store'):
@@ -129,73 +130,99 @@ async def test_missing_bundle_is_a_clear_error(
 async def test_second_cache_syncs_from_bundle(
     principal: auth.Principal, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    ws = principal.workspace_id
-    artifact = await write_artifact(ws, body='# from A\n')
-    async with workspace.edit(ws, 'run_code') as tx:
-        (tx.artifact_dir(artifact.id) / 'extra.txt').write_text('second commit')
+    artifact = await write_artifact(principal.workspace_id, body='# from A\n')
+    async with workspace.edit(artifact.id, 'run_code') as tx:
+        (tx.path / 'extra.txt').write_text('second commit')
     # Another process: an empty cache directory and no memory of what is synced.
     monkeypatch.setenv('OPENARTIFACT_CACHE_DIR', str(tmp_path / 'cache-b'))
     workspace.reset_state()
     async with workspace.open_artifact(artifact) as directory:
         assert (directory / 'main.md').read_text() == '# from A\n'
         assert (directory / 'extra.txt').read_text() == 'second commit'
-    path_b = workspace.checkout_path(ws)
-    assert len(await git_log(path_b)) == 2
-    assert 'origin' not in await workspace.git('remote', cwd=path_b)
+    assert len(await git_log(artifact.id)) == 2
+    assert 'origin' not in await workspace.artifact_git(artifact.id, 'remote')
     # And it can continue the history.
-    async with workspace.edit(ws, 'run_code') as tx:
-        (tx.artifact_dir(artifact.id) / 'third.txt').write_text('3')
-    assert len(await git_log(path_b)) == 3
+    async with workspace.edit(artifact.id, 'run_code') as tx:
+        (tx.path / 'third.txt').write_text('3')
+    assert len(await git_log(artifact.id)) == 3
 
 
-async def test_sync_removes_stale_dist_for_changed_artifacts(
+async def test_sync_removes_stale_dist_for_a_changed_artifact(
     principal: auth.Principal, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     ws = principal.workspace_id
     changed = await write_artifact(ws, 'Changed')
     untouched = await write_artifact(ws, 'Untouched')
-    cache_a = workspace.checkout_path(ws)
+    cache_a = Path(workspace.cache_dir())
     for artifact in (changed, untouched):
-        dist = cache_a / 'artifacts' / str(artifact.id) / 'dist'
+        dist = workspace.checkout_path(artifact.id) / 'dist'
         dist.mkdir()
         (dist / 'index.html').write_text('built')
     # Process B edits `changed`.
     monkeypatch.setenv('OPENARTIFACT_CACHE_DIR', str(tmp_path / 'cache-b'))
     workspace.reset_state()
-    async with workspace.edit(ws, 'run_code') as tx:
-        (tx.artifact_dir(changed.id) / 'main.md').write_text('# new\n')
+    async with workspace.edit(changed.id, 'run_code') as tx:
+        (tx.path / 'main.md').write_text('# new\n')
     # Back in process A, the next sync drops only the stale build.
-    monkeypatch.setenv('OPENARTIFACT_CACHE_DIR', str(cache_a.parent))
+    monkeypatch.setenv('OPENARTIFACT_CACHE_DIR', str(cache_a))
     workspace.reset_state()
     async with workspace.open_artifact(changed) as directory:
         assert (directory / 'main.md').read_text() == '# new\n'
         assert not (directory / 'dist').exists()
-    assert (cache_a / 'artifacts' / str(untouched.id) / 'dist' / 'index.html').exists()
+    async with workspace.open_artifact(untouched) as directory:
+        assert (directory / 'dist' / 'index.html').exists()
+
+
+async def test_artifacts_do_not_share_a_lock(principal: auth.Principal):
+    """Two artifacts are two repositories: an edit of one can run inside an edit of the other."""
+    ws = principal.workspace_id
+    first = await write_artifact(ws, 'First')
+    second = await write_artifact(ws, 'Second')
+    async with workspace.edit(first.id, 'outer') as outer:
+        (outer.path / 'a.txt').write_text('a')
+        async with workspace.edit(second.id, 'inner') as inner:
+            (inner.path / 'b.txt').write_text('b')
+    assert await git_log(first.id) == ['outer', f'new_artifact: {first.id}']
+    assert await git_log(second.id) == ['inner', f'new_artifact: {second.id}']
 
 
 async def test_nested_git_entries_are_stripped(principal: auth.Principal):
-    ws = principal.workspace_id
-    artifact = await write_artifact(ws)
-    async with workspace.edit(ws, 'run_code') as tx:
-        directory = tx.artifact_dir(artifact.id)
-        (directory / '.git').mkdir()
-        (directory / '.git' / 'HEAD').write_text('ref: refs/heads/main')
-        (directory / '.gitignore').write_text('main.md\n')
-        (directory / 'kept.txt').write_text('kept')
-    path = workspace.checkout_path(ws)
-    tracked = (await workspace.git('ls-files', cwd=path)).split()
-    assert f'artifacts/{artifact.id}/kept.txt' in tracked
-    assert not any('.git' in name.split('/')[-1] for name in tracked if name != '.gitignore')
-    assert not (path / 'artifacts' / str(artifact.id) / '.git').exists()
+    artifact = await write_artifact(principal.workspace_id)
+    async with workspace.edit(artifact.id, 'run_code') as tx:
+        (tx.path / '.git').mkdir()
+        (tx.path / '.git' / 'HEAD').write_text('ref: refs/heads/main')
+        (tx.path / '.gitignore').write_text('main.md\n')
+        (tx.path / 'kept.txt').write_text('kept')
+    tracked = (await workspace.artifact_git(artifact.id, 'ls-files')).split()
+    assert tracked == ['kept.txt', 'main.md']
+    assert not (workspace.checkout_path(artifact.id) / '.git').exists()
 
 
 async def test_import_directory(principal: auth.Principal):
     artifact = await workspace.import_directory(principal.workspace_id, 'Starter', 'deck', STARTER)
-    assert artifact.title == 'Starter'
+    assert artifact.title == 'Starter' and artifact.head_sha is not None
     async with workspace.open_artifact(artifact) as directory:
         assert (directory / 'main.md').is_file()
         assert (directory / 'components' / 'Hero.html').is_file()
         assert not (directory / 'dist').exists()
+    assert await git_log(artifact.id) == [f'import: {artifact.id}']
+
+
+async def test_clone_repository(principal: auth.Principal, tmp_path: Path):
+    artifact = await write_artifact(principal.workspace_id)
+    async with workspace.edit(artifact.id, 'second') as tx:
+        (tx.path / 'main.md').write_text('# two\n')
+    dest = tmp_path / 'clone'
+    async with workspace.open_artifact(artifact):
+        await workspace.clone_repository(artifact.id, dest)
+    assert (dest / 'main.md').read_text() == '# two\n'
+    assert (await workspace.git('log', '--format=%s', cwd=dest)).splitlines() == [
+        'second',
+        f'new_artifact: {artifact.id}',
+    ]
+    assert (await workspace.git('status', '--porcelain', cwd=dest)) == ''
+    assert (await workspace.git('remote', cwd=dest)) == ''
+    assert (dest / '.git' / 'info' / 'exclude').read_text() == 'dist/\n'
 
 
 async def test_lookups_are_scoped(principal: auth.Principal, db_pool: db.Pool):
@@ -208,18 +235,16 @@ async def test_lookups_are_scoped(principal: auth.Principal, db_pool: db.Pool):
     assert await workspace.get_artifact(uuid.uuid4()) is None
 
 
-async def test_edit_unknown_workspace(db_pool: db.Pool, storage: store.ObjectStore):
+async def test_edit_unknown_artifact(db_pool: db.Pool, storage: store.ObjectStore):
     with pytest.raises(LookupError, match='does not exist'):
         async with workspace.edit(uuid.uuid4(), 'x'):
             pass
 
 
 async def test_bundle_verifies(principal: auth.Principal, storage: store.ObjectStore, tmp_path: Path):
-    ws = principal.workspace_id
-    await write_artifact(ws)
-    sha = await head_sha(ws)
-    assert sha
+    artifact = await write_artifact(principal.workspace_id)
+    assert artifact.head_sha
     bundle = tmp_path / 'check.bundle'
-    bundle.write_bytes(await storage.get(workspace.bundle_key(ws, sha)))
+    bundle.write_bytes(await storage.get(workspace.bundle_key(artifact.id, artifact.head_sha)))
     out = await workspace.git('bundle', 'list-heads', str(bundle), cwd=tmp_path)
-    assert out.split() == [sha, 'refs/heads/main']
+    assert out.split() == [artifact.head_sha, 'refs/heads/main']

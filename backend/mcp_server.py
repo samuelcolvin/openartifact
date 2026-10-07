@@ -1,10 +1,10 @@
 """MCP server that lets an agent create an artifact's source files, edit them in a sandbox and build the page.
 
-Artifacts belong to the calling user's workspace (see `auth.py` and `workspace.py`): a git repository, cached as
-a working clone, with one directory per artifact holding the files `build.py` expects: `artifact.toml`,
-`main.md` (pages separated by `---`), optional `styles.css`, `components/` and `assets/`. Every tool that changes
-files goes through `workspace.edit`, so each call is a commit and the repo is pushed to the object store before
-the tool returns. The server instructions an agent sees first are `instructions.md` next to this module.
+Artifacts belong to the calling user's workspace (see `auth.py` and `workspace.py`). Each artifact is a git
+repository, cached as a working tree holding the files `build.py` expects: `artifact.toml`, `main.md` (pages
+separated by `---`), optional `styles.css`, `components/` and `assets/`. Every tool that changes files goes
+through `workspace.edit`, so each call is a commit and the repository is pushed to the object store before the
+tool returns. The server instructions an agent sees first are `instructions.md` next to this module.
 
 Tools:
 
@@ -103,12 +103,14 @@ async def resolve(artifact: str) -> workspace.Artifact:
 
 
 @contextlib.asynccontextmanager
-async def editing(workspace_id: uuid.UUID, message: str) -> AsyncGenerator[workspace.Edit]:
+async def editing(
+    artifact_id: uuid.UUID, message: str, *, create: workspace.NewArtifact | None = None
+) -> AsyncGenerator[workspace.Edit]:
     """`workspace.edit` with its contention error turned into a `ToolError` the agent can act on."""
     try:
-        async with workspace.edit(workspace_id, message) as tx:
+        async with workspace.edit(artifact_id, message, create=create) as tx:
             yield tx
-    except workspace.WorkspaceBusy as exc:
+    except workspace.ArtifactBusy as exc:
         raise ToolError(str(exc)) from exc
 
 
@@ -178,14 +180,10 @@ async def new_artifact(
     principal = await auth.current_principal()
     artifact_id = uuid.uuid4()
     config = {'title': title, 'type': type, 'theme': theme}
-    async with editing(principal.workspace_id, f'new_artifact: {artifact_id}') as tx:
-        directory = tx.artifact_dir(artifact_id)
-        directory.mkdir(parents=True)
-        (directory / 'artifact.toml').write_text(render_toml(config), encoding='utf-8')
-        (directory / 'main.md').write_text(content, encoding='utf-8')
-        await workspace.insert_artifact(
-            tx.conn, artifact_id=artifact_id, workspace_id=principal.workspace_id, title=title, type=type
-        )
+    create = workspace.NewArtifact(workspace_id=principal.workspace_id, title=title, type=type)
+    async with editing(artifact_id, f'new_artifact: {artifact_id}', create=create) as tx:
+        (tx.path / 'artifact.toml').write_text(render_toml(config), encoding='utf-8')
+        (tx.path / 'main.md').write_text(content, encoding='utf-8')
     if not build:
         return f'artifact: {artifact_id}\npage (after `build`): {artifact_url(artifact_id)}\n'
     # Built after the edit has committed, so an artifact whose first build fails still exists to be fixed.
@@ -210,11 +208,10 @@ async def run_code(artifact: str, code: str, inputs: dict[str, Any] | None = Non
     found = await resolve(artifact)
     streams = CollectStreams()
     failure: ToolError | None = None
-    async with editing(found.workspace_id, f'run_code: {found.id}') as tx:
-        directory = tx.artifact_dir(found.id)
+    async with editing(found.id, f'run_code: {found.id}') as tx:
         # Closed explicitly rather than with `with`: `MountDir.__exit__` is typed as possibly swallowing exceptions,
         # which makes `result` look unbound to pyright after the block.
-        mount = MountDir(host_path=directory, virtual_path=VIRTUAL_PATH, mode='read-write')
+        mount = MountDir(host_path=tx.path, virtual_path=VIRTUAL_PATH, mode='read-write')
         result: object = None
         try:
             async with pool().checkout(limits=LIMITS) as session:
@@ -229,7 +226,6 @@ async def run_code(artifact: str, code: str, inputs: dict[str, Any] | None = Non
         if failure is not None:
             # Whatever the code wrote before failing is committed too, so the agent can inspect and fix it.
             tx.message = f'run_code (failed): {found.id}'
-        await workspace.touch_artifact(tx.conn, found.id)
     if failure is not None:
         raise failure
     return format_output(streams, result)

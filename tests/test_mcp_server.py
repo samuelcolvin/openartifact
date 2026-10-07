@@ -48,7 +48,11 @@ def artifact_id(output: str) -> str:
 
 
 def files_of(me: auth.Principal, artifact: str) -> Path:
-    return workspace.checkout_path(me.workspace_id) / 'artifacts' / artifact
+    return workspace.checkout_path(uuid.UUID(artifact))
+
+
+async def git_log(artifact: str) -> list[str]:
+    return (await workspace.artifact_git(uuid.UUID(artifact), 'log', '--format=%s')).splitlines()
 
 
 @pytest.fixture
@@ -57,8 +61,8 @@ async def demo(me: auth.Principal) -> str:
     return artifact_id(await mcp_server.new_artifact('Demo', '# Demo\n'))
 
 
-async def head_sha(ws: uuid.UUID) -> str | None:
-    return await db.pool().fetchval('SELECT head_sha FROM workspaces WHERE id = $1', ws)
+async def head_sha(artifact: str) -> str | None:
+    return await db.pool().fetchval('SELECT head_sha FROM artifacts WHERE id = $1', uuid.UUID(artifact))
 
 
 # --- new_artifact ----------------------------------------------------------
@@ -74,10 +78,9 @@ async def test_new_artifact_builds_and_commits(me: auth.Principal):
     assert (directory / 'artifact.toml').read_text() == ('title = "My Deck!"\ntype = "deck"\ntheme = "dark"\n')
     assert (directory / 'dist' / 'index.html').is_file()
     # One commit, recorded as the head, bundled; the build output is not in it.
-    path = workspace.checkout_path(me.workspace_id)
-    assert (await workspace.git('log', '--format=%s', cwd=path)).splitlines() == [f'new_artifact: {artifact}']
-    assert await head_sha(me.workspace_id) == (await workspace.git('rev-parse', 'HEAD', cwd=path)).strip()
-    assert 'dist' not in await workspace.git('ls-files', cwd=path)
+    assert await git_log(artifact) == [f'new_artifact: {artifact}']
+    assert await head_sha(artifact) == (await workspace.artifact_git(uuid.UUID(artifact), 'rev-parse', 'HEAD')).strip()
+    assert 'dist' not in await workspace.artifact_git(uuid.UUID(artifact), 'ls-files')
     row = await workspace.get_artifact(uuid.UUID(artifact))
     assert row is not None and (row.title, row.type, row.workspace_id) == ('My Deck!', 'deck', me.workspace_id)
 
@@ -89,7 +92,7 @@ async def test_new_artifact_reports_build_errors_and_keeps_files(me: auth.Princi
     directory = files_of(me, str(row.id))
     assert (directory / 'main.md').read_text() == '# heading\n---\n# next\n'
     assert not (directory / 'dist').exists()
-    assert await head_sha(me.workspace_id) is not None
+    assert await head_sha(str(row.id)) is not None
 
 
 async def test_new_artifact_page_takes_plain_markdown(me: auth.Principal):
@@ -107,7 +110,7 @@ async def test_new_artifact_without_build(me: auth.Principal):
     directory = files_of(me, artifact)
     assert (directory / 'main.md').read_text() == content
     assert not (directory / 'dist').exists()
-    assert await head_sha(me.workspace_id) is not None
+    assert await head_sha(artifact) is not None
     with pytest.raises(ToolError, match='components directory not found'):
         await mcp_server.build_artifact(artifact)
 
@@ -141,8 +144,7 @@ async def test_run_code_writes_and_commits(me: auth.Principal, demo: str, pool: 
     )
     assert out == 'done\n3\n'
     assert (files_of(me, demo) / 'main.md').read_text() == '# hi\n'
-    log = (await workspace.git('log', '--format=%s', cwd=workspace.checkout_path(me.workspace_id))).splitlines()
-    assert log == [f'run_code: {demo}', f'new_artifact: {demo}']
+    assert await git_log(demo) == [f'run_code: {demo}', f'new_artifact: {demo}']
 
 
 async def test_run_code_mounts_at_virtual_path(me: auth.Principal, demo: str, pool: None):
@@ -174,8 +176,7 @@ async def test_run_code_commits_even_when_the_code_fails(me: auth.Principal, dem
     assert message.startswith('before\n')
     assert 'ZeroDivisionError: division by zero' in message
     assert (files_of(me, demo) / 'partial.txt').read_text() == 'p'
-    log = (await workspace.git('log', '--format=%s', cwd=workspace.checkout_path(me.workspace_id))).splitlines()
-    assert log[0] == f'run_code (failed): {demo}'
+    assert (await git_log(demo))[0] == f'run_code (failed): {demo}'
 
 
 async def test_run_code_reports_syntax_errors(me: auth.Principal, demo: str, pool: None):
@@ -207,8 +208,7 @@ async def test_upload_url_signs_one_url_per_file(me: auth.Principal, demo: str):
         assert url.startswith(prefix), url
         upload.verify_token(url.removeprefix(prefix), uuid.UUID(demo), path.replace('%20', ' '), size)
     # Minting writes nothing: no new commit.
-    log = (await workspace.git('log', '--format=%s', cwd=workspace.checkout_path(me.workspace_id))).splitlines()
-    assert log == [f'new_artifact: {demo}']
+    assert await git_log(demo) == [f'new_artifact: {demo}']
 
 
 async def test_upload_url_rejects_bad_requests(me: auth.Principal, demo: str):

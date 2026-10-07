@@ -54,7 +54,7 @@ make dev                                      # http://127.0.0.1:8765, MCP at /m
 make docker-up                                # or build the Docker image and run server and database together
 ```
 
-Artifacts are stored as git repositories (one per user, one directory per artifact), bundled into an object store under `data/store/` locally or an `s3://` URL in production, with Postgres holding users and artifact metadata. In production set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `OPENARTIFACT_SECRET_KEY` instead of the dev token and the MCP endpoint is behind Google login.
+Each artifact is a git repository, bundled into an object store under `data/store/` locally or an `s3://` URL in production, with Postgres holding users and artifact metadata. In production set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `OPENARTIFACT_SECRET_KEY` instead of the dev token and the MCP endpoint is behind Google login.
 
 The builder itself is a library, `backend/build.py`, with no dependencies beyond Python 3.11+. To build a deck directory by hand:
 
