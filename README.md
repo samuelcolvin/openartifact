@@ -54,7 +54,9 @@ make dev                                      # http://127.0.0.1:8765, MCP at /m
 make docker-up                                # or build the Docker image and run server and database together
 ```
 
-Each artifact is a git repository, bundled into an object store under `data/store/` locally or an `s3://` URL in production, with Postgres holding users and artifact metadata. In production set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `OPENARTIFACT_SECRET_KEY` instead of the dev token and the MCP endpoint is behind Google login.
+Each artifact is a git repository, bundled into an object store under `data/store/` locally or an `s3://` URL in production, with Postgres holding users and artifact metadata. In production set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `OPENARTIFACT_SECRET_KEY` instead of the dev token: the MCP endpoint is then behind Google login, and so are artifact pages. Register two redirect URIs on the Google OAuth client, `<base URL>/auth/callback` for MCP clients and `<base URL>/login/callback` for browsers.
+
+Anyone signing in with a Google Workspace account joins the organisation of their domain (samuel@pydantic.dev lands in pydantic.dev). An artifact is personal (private, or public to anyone with the link) or belongs to the owner's organisation (visible to it, optionally editable by it, optionally public too); the owner always sees and edits it. The viewer toolbar shows the visibility, signs people in and out, and forks an artifact into the viewer's own space. Without Google configured, `/login` offers a development sign-in that doubles as the MCP dev token's user.
 
 The builder itself is a library, `backend/build.py`, with no dependencies beyond Python 3.11+. To build a deck directory by hand:
 

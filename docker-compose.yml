@@ -10,6 +10,10 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/openartifact
       OPENARTIFACT_DEV_TOKEN: ${OPENARTIFACT_DEV_TOKEN:-dev}
+      # Set these three in the environment to put the MCP endpoint and the pages behind Google login instead.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      OPENARTIFACT_SECRET_KEY: ${OPENARTIFACT_SECRET_KEY:-}
       OPENARTIFACT_BASE_URL: http://127.0.0.1:${OPENARTIFACT_PORT:-8765}
       # The chrome service fetches pages from the app over the compose network, not at the public address. Not as
       # `http://app:8765`: `app` is a Google TLD on Chrome's HSTS preload list, so Chrome forces the bare hostname

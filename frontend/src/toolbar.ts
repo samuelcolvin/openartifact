@@ -6,7 +6,10 @@
  *
  * It holds the artifact title, for a deck the previous / next buttons, a counter and a full-screen
  * toggle, a Download menu for the `.pdf`, `.md` and `.zip` exports served beside the page, and the
- * brand. Fork and Edit will join the right-hand group later.
+ * brand. Once the page is up it fetches `<page>.json` (who may see the artifact, and who is looking)
+ * and adds a visibility badge, a Fork button for a signed-in viewer, and a sign-in link or an account
+ * menu with sign-out. That fetch is the one asynchronous thing here: it is viewer chrome, not page
+ * content, and the print sheet hides the host anyway. Edit will join the right-hand group later.
  *
  * Auto-hide: the bar shows while the pointer is near the top of the window or over the bar, while
  * focus is inside it or the menu is open, and slides away a second after the pointer leaves that
@@ -35,6 +38,17 @@ const NEAR_TOP = 96
 const LINGER = 1000
 /** How long the bar is shown at load, so visitors learn it is there (ms). */
 const INTRO_SHOW = 2500
+
+/** What `/artifacts/<id>.json` answers: the artifact's placement and permissions, and the viewer's rights. */
+interface ArtifactAccess {
+  visibility: 'private' | 'org' | 'public'
+  org_editable: boolean
+  organization: { domain: string; name: string } | null
+  viewer: { name: string | null; email: string | null; picture: string | null } | null
+  can_edit: boolean
+  can_fork: boolean
+  login_url: string
+}
 
 const ICONS = {
   prev: '<svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg>',
@@ -110,7 +124,8 @@ export function initToolbar(options: ToolbarOptions): HTMLElement {
 
   const end = el('div', { class: 'group end' })
   const base = exportBase(window.location.pathname)
-  const menu = base === null ? null : buildDownloadMenu(end, base)
+  const menus: Menu[] = []
+  if (base !== null) menus.push(buildDownloadMenu(end, base))
   end.append(el('a', { class: 'brand', href: REPO_URL, target: '_blank', rel: 'noopener noreferrer' }, 'OpenArtifact'))
 
   shadow.append(el('div', { class: 'bar', role: 'toolbar', 'aria-label': 'OpenArtifact viewer' }, start, center, end))
@@ -128,9 +143,72 @@ export function initToolbar(options: ToolbarOptions): HTMLElement {
   // The deck's wheel listener on window flips pages; a flick over the bar or the open menu should not.
   host.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true })
 
-  installAutoHide(host, () => menu?.isOpen() ?? false)
+  installAutoHide(host, () => menus.some((menu) => menu.isOpen()))
   document.body.append(host)
+
+  if (base !== null) {
+    const first = end.firstElementChild
+    fetch(`${base}.json`, { credentials: 'same-origin', headers: { accept: 'application/json' } })
+      .then((response) => (response.ok ? (response.json() as Promise<ArtifactAccess>) : null))
+      .then((info) => {
+        if (info) menus.push(...renderAccess(end, first, base, info))
+      })
+      .catch(() => {})
+  }
   return host
+}
+
+/** The viewer's part of the right-hand group, inserted before `before`: badge, Fork, sign-in or the account menu. */
+function renderAccess(group: HTMLElement, before: Element | null, base: string, info: ArtifactAccess): Menu[] {
+  const insert = (node: Node) => group.insertBefore(node, before)
+  const label = info.visibility === 'org' ? 'Org' : info.visibility === 'public' ? 'Public' : 'Private'
+  const who = info.organization ? `Visible to ${info.organization.domain}` : `${label} artifact`
+  const detail = info.org_editable ? `${who}, editable by the organisation` : who
+  insert(el('span', { class: `badge ${info.visibility}`, title: detail }, label))
+
+  if (info.can_fork) {
+    const form = el('form', { method: 'post', action: `${base}/fork`, class: 'inline' })
+    form.append(
+      el('button', { type: 'submit', class: 'menu-button', title: 'Copy this artifact into your own space' }, 'Fork'),
+    )
+    insert(form)
+  }
+
+  if (info.viewer === null) {
+    insert(el('a', { class: 'menu-button sign-in', href: info.login_url }, 'Sign in'))
+    return []
+  }
+  const viewer = info.viewer
+  const name = viewer.name || viewer.email || 'Account'
+  const button = el('button', {
+    type: 'button',
+    class: 'icon account',
+    'aria-haspopup': 'menu',
+    'aria-expanded': 'false',
+    title: name,
+    'aria-label': `Account: ${name}`,
+  })
+  if (viewer.picture) {
+    button.append(el('img', { class: 'avatar', src: viewer.picture, alt: '', referrerpolicy: 'no-referrer' }))
+  } else {
+    button.append(el('span', { class: 'avatar initial' }, name.slice(0, 1).toUpperCase()))
+  }
+  const details = el('div', { class: 'who' }, el('b', {}, name))
+  if (viewer.email) details.append(el('small', {}, viewer.email))
+  if (info.organization) details.append(el('small', {}, info.organization.domain))
+  const logout = el('form', { method: 'post', action: '/logout' })
+  logout.append(el('input', { type: 'hidden', name: 'next', value: window.location.pathname }))
+  logout.append(el('button', { type: 'submit', role: 'menuitem' }, 'Sign out'))
+  const menu = el(
+    'div',
+    { class: 'menu', role: 'menu', hidden: '' },
+    details,
+    el('div', { class: 'separator' }),
+    logout,
+  )
+  const wrap = el('div', { class: 'menu-wrap' }, button, menu)
+  insert(wrap)
+  return [buildMenu(wrap, button, menu)]
 }
 
 /** Previous / next, the counter and the full-screen toggle, kept in step with the deck. */
@@ -173,7 +251,7 @@ interface Menu {
   isOpen(): boolean
 }
 
-/** The Download menu: one link per export, with the keyboard handling of a menu. */
+/** The Download menu: one link per export, below the menu button. */
 function buildDownloadMenu(group: HTMLElement, base: string): Menu {
   const button = el(
     'button',
@@ -200,7 +278,12 @@ function buildDownloadMenu(group: HTMLElement, base: string): Menu {
   }
   const wrap = el('div', { class: 'menu-wrap' }, button, menu)
   group.append(wrap)
+  return buildMenu(wrap, button, menu)
+}
 
+/** Wire a menu button and its popup: open / close, roving focus over the `[role=menuitem]`s, Escape, outside click. */
+function buildMenu(wrap: HTMLElement, button: HTMLButtonElement, menu: HTMLElement): Menu {
+  const items = () => Array.from(menu.querySelectorAll<HTMLElement>('[role=menuitem]'))
   const setOpen = (open: boolean) => {
     menu.hidden = !open
     button.setAttribute('aria-expanded', String(open))
@@ -214,12 +297,13 @@ function buildDownloadMenu(group: HTMLElement, base: string): Menu {
       e.preventDefault()
       e.stopPropagation()
       setOpen(true)
-      items[0].focus()
+      items()[0]?.focus()
     }
   })
   menu.addEventListener('keydown', (e) => {
-    const index = items.indexOf(document.activeElement as HTMLAnchorElement)
-    const focusItem = (i: number) => items[(i + items.length) % items.length].focus()
+    const all = items()
+    const index = all.indexOf(document.activeElement as HTMLElement)
+    const focusItem = (i: number) => all[(i + all.length) % all.length]?.focus()
     switch (e.key) {
       case 'ArrowDown':
         focusItem(index + 1)
@@ -231,7 +315,7 @@ function buildDownloadMenu(group: HTMLElement, base: string): Menu {
         focusItem(0)
         break
       case 'End':
-        focusItem(items.length - 1)
+        focusItem(all.length - 1)
         break
       case 'Escape':
         setOpen(false)
@@ -243,7 +327,9 @@ function buildDownloadMenu(group: HTMLElement, base: string): Menu {
     e.preventDefault()
     e.stopPropagation()
   })
-  menu.addEventListener('click', () => setOpen(false))
+  menu.addEventListener('click', (e) => {
+    if ((e.target as Element).closest('[role=menuitem]')) setOpen(false)
+  })
   // Escape anywhere closes it; the deck ignores Escape, so no need to stop it.
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isOpen()) setOpen(false)

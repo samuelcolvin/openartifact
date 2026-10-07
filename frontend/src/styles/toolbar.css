@@ -178,6 +178,90 @@ a:focus-visible {
   position: relative;
 }
 
+form.inline {
+  display: contents;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--oa-border);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--oa-muted);
+  cursor: default;
+}
+
+.badge.public {
+  color: #4ad7c5;
+  border-color: color-mix(in srgb, #4ad7c5 40%, transparent);
+}
+
+.badge.org {
+  color: #b388ff;
+  border-color: color-mix(in srgb, #b388ff 40%, transparent);
+}
+
+.sign-in {
+  color: var(--oa-fg);
+}
+
+.sign-in:hover {
+  background: var(--oa-hover);
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: linear-gradient(135deg, #4a9eff, #b388ff);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.menu .who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  line-height: 1.3;
+}
+
+.menu .who b {
+  font-weight: 600;
+  color: var(--oa-fg);
+}
+
+.menu form {
+  display: contents;
+}
+
+.menu form button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--oa-fg);
+  text-align: left;
+  line-height: 1.2;
+}
+
+.menu form button:hover,
+.menu form button:focus-visible {
+  background: var(--oa-hover);
+  outline: none;
+}
+
 .menu-button {
   display: inline-flex;
   align-items: center;
