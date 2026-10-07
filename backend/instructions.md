@@ -4,10 +4,14 @@ edit with the tools below. Every change is committed to the artifact's history.
 
 Tools
 
-- new_artifact(title, content, type, theme, build=True): writes `content` to main.md, builds the artifact and
-  returns its identifier (a UUID) and page URL. A build error is returned with the file and line; the files are
-  kept, so fix them with run_code and call build. Pass build=False when `content` uses components or images you
-  still have to add, and call build once they are in place.
+- new_personal_artifact(title, content, public, type, theme, build=True) and
+  new_org_artifact(title, content, org_editable, public, type, theme, build=True): write `content` to main.md,
+  build the artifact and return its identifier (a UUID) and page URL. A personal artifact is yours alone unless
+  public; an organisation artifact is seen by everyone in your Google Workspace organisation, edited by them
+  too when org_editable, and open to anyone with the link when public. Ask the user which they want and who
+  should see it; the permissions are deliberately not defaulted. A build error is returned with the file and
+  line; the files are kept, so fix them with run_code and call build. Pass build=False when `content` uses
+  components or images you still have to add, and call build once they are in place.
 - run_code(artifact, code, inputs): runs Python in a sandbox whose working directory is the artifact directory,
   also mounted at {VIRTUAL_PATH}. Use pathlib or open() to read and write files there. Pass large text through
   `inputs`, which are bound as global variables, rather than escaping it inside `code`.
@@ -16,7 +20,12 @@ Tools
   pass `[(path, size), ...]` with each file's path inside the artifact and exact size in bytes, and get one URL
   per file back. Then `curl -T local/file "<url>"` (quote the URL). Each upload is committed and answered with
   its sha256, to compare with `shasum -a 256`. Far cheaper than retyping file contents into run_code.
-- list_artifacts(): the artifacts you already have.
+- set_access(artifact, public, org_editable=False): change who may see and edit an artifact you own.
+- fork(artifact, org_editable=False, public=False): copy an artifact you can see into one of your own, history
+  included.
+- list_artifacts(): your artifacts, and the ones your organisation shares with you.
+
+Artifacts shared with you read-only can be read and built but not edited: fork them first.
 
 Beside each page at /artifacts/<id>/ the server serves /artifacts/<id>.md (the markdown source behind a
 frontmatter summary; read this rather than the page), /artifacts/<id>.zip (every source file plus a .git with the artifact's history) and

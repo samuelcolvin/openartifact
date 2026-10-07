@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import re
 import shutil
 import threading
 import time
@@ -15,6 +16,7 @@ from typing import TypeVar
 
 import httpx2
 import logfire
+import login
 import pytest
 import uvicorn
 from conftest import DEV_TOKEN
@@ -41,11 +43,20 @@ def client(server_env: None) -> Iterator[TestClient]:
         yield client
 
 
-async def seed_starter() -> workspace.Artifact:
-    """Import the starter deck as a new user's artifact; runs in the app's loop."""
+async def seed_starter() -> tuple[auth.Principal, workspace.Artifact]:
+    """Import the starter deck as the seed user's (private) artifact; runs in the app's loop."""
     async with db.pool().acquire() as conn, conn.transaction():
-        principal = await auth.upsert_user(conn, sub='seed', email='seed@example.com', name=None, picture=None)
-    return await workspace.import_directory(principal.workspace_id, 'Starter', 'deck', STARTER)
+        principal = await auth.upsert_user(conn, sub='seed', email='seed@example.com', name='Seed', picture=None)
+    return principal, await workspace.import_directory(principal.workspace_id, 'Starter', 'deck', STARTER)
+
+
+def sign_in(client: TestClient, principal: auth.Principal) -> None:
+    """Give the client the session cookie a browser gets from `/login`."""
+    client.cookies.set(login.SESSION_COOKIE, login.make_session(principal.user_id, FAR_FUTURE))
+
+
+def sign_out(client: TestClient) -> None:
+    client.cookies.delete(login.SESSION_COOKIE)
 
 
 def in_app(client: TestClient, fn: Callable[[], Awaitable[T]]) -> T:
@@ -55,12 +66,14 @@ def in_app(client: TestClient, fn: Callable[[], Awaitable[T]]) -> T:
 
 
 def starter(client: TestClient) -> workspace.Artifact:
-    """Seed the starter deck through the running app."""
-    return in_app(client, seed_starter)
+    """Seed the starter deck through the running app, signed in as its owner (the artifact is private)."""
+    principal, artifact = in_app(client, seed_starter)
+    sign_in(client, principal)
+    return artifact
 
 
 def test_index(client: TestClient):
-    assert client.get('/').json() == {'mcp': '/mcp/', 'runtime': '/openartifact.js'}
+    assert client.get('/').json() == {'mcp': '/mcp/', 'runtime': '/openartifact.js', 'login': '/login'}
 
 
 def test_health(client: TestClient):
@@ -219,14 +232,14 @@ def test_page_url_serves_markdown_to_clients_that_prefer_text(client: TestClient
     for accept in ('text/markdown', 'text/plain', 'text/plain;q=0.9, text/html;q=0.8', 'text/markdown, */*;q=0.1'):
         response = client.get(url, headers={'accept': accept})
         assert response.headers['content-type'] == 'text/markdown; charset=utf-8', accept
-        assert response.headers['vary'] == 'Accept'
+        assert response.headers['vary'] == 'Accept, Cookie'
         assert response.text == markdown
     # Browsers, `*/*`, `text/*` and no header at all get the page: HTML wins ties.
     browser = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
     for headers in ({'accept': browser}, {'accept': '*/*'}, {'accept': 'text/*'}, {}):
         response = client.get(url, headers=headers)
         assert response.headers['content-type'].startswith('text/html'), headers
-        assert response.headers['vary'] == 'Accept'
+        assert response.headers['vary'] == 'Accept, Cookie'
         assert 'id="artifact-markdown"' in response.text
 
 
@@ -327,10 +340,21 @@ def test_artifact_pdf_is_printed_by_the_chrome_service(client: TestClient, monke
     sha = last_commit(client, artifact)
     assert response.headers['content-disposition'].startswith(f'attachment; filename="OpenArtifact Starter {sha}.pdf"')
     assert response.content == b'%PDF-1.4 stub'
-    # The chrome service was given the internal address, and the page had been built for it to fetch.
-    assert asked == [f'http://app:8765/artifacts/{artifact.id}/']
+    # The chrome service was given the internal address of the print pass, and the page had been built for it.
+    [page_url] = asked
+    match = re.fullmatch(rf'http://app:8765/print/([^/]+)/artifacts/{artifact.id}/', page_url)
+    assert match, page_url
+    token = match.group(1)
     directory = workspace.checkout_path(artifact.id)
     assert (directory / 'dist' / 'index.html').is_file()
+    # The pass lets Chrome, which has no session, fetch the private page and its media; nothing else does.
+    sign_out(client)
+    assert client.get(f'/print/{token}/artifacts/{artifact.id}/').status_code == 200
+    assert client.get(f'/print/{token}/artifacts/{artifact.id}/assets/logo.svg').status_code == 200
+    assert client.get(f'/print/{token}x/artifacts/{artifact.id}/').status_code == 403
+    other = in_app(client, seed_starter)[1]
+    assert client.get(f'/print/{token}/artifacts/{other.id}/').status_code == 403
+    assert client.get(f'/artifacts/{artifact.id}/', headers={'accept': 'application/json'}).status_code == 401
 
 
 def test_artifact_pdf_reports_chrome_failures(client: TestClient, monkeypatch: pytest.MonkeyPatch):
@@ -533,8 +557,19 @@ def live_server(server_env: None) -> Iterator[str]:
 async def test_mcp_over_http(live_server: str):
     async with Client(f'{live_server}/mcp/', auth=DEV_TOKEN) as client:
         tools = {tool.name for tool in await client.list_tools()}
-        assert tools == {'new_artifact', 'run_code', 'build', 'upload_url', 'list_artifacts'}
-        created = await client.call_tool('new_artifact', {'title': 'Demo', 'content': '# Demo\n'})
+        assert tools == {
+            'new_personal_artifact',
+            'new_org_artifact',
+            'run_code',
+            'build',
+            'upload_url',
+            'set_access',
+            'fork',
+            'list_artifacts',
+        }
+        created = await client.call_tool(
+            'new_personal_artifact', {'title': 'Demo', 'content': '# Demo\n', 'public': True}
+        )
         name = created.data.partition('\n')[0].removeprefix('artifact: ')
         result = await client.call_tool(
             'run_code',
@@ -544,7 +579,7 @@ async def test_mcp_over_http(live_server: str):
         built = await client.call_tool('build', {'artifact': name})
         assert built.data.endswith(f'page: http://127.0.0.1:8765/artifacts/{name}/\n')
         listed = await client.call_tool('list_artifacts', {})
-        assert listed.data.startswith(f'{name}  deck  Demo  ')
+        assert listed.data.startswith(f'{name}  deck  Demo  [public]  ')
         logo = (STARTER / 'assets' / 'logo.svg').read_bytes()
         minted = await client.call_tool('upload_url', {'artifact': name, 'files': [['assets/logo.svg', len(logo)]]})
         [upload_url] = minted.data
@@ -569,7 +604,7 @@ async def test_native_telemetry_reaches_logfire(live_server: str, capfire: Captu
     async with httpx2.AsyncClient() as http:
         assert (await http.get(f'{live_server}/')).status_code == 200
     async with Client(f'{live_server}/mcp/', auth=DEV_TOKEN) as client:
-        created = await client.call_tool('new_artifact', {'title': 'T', 'content': '# T\n'})
+        created = await client.call_tool('new_personal_artifact', {'title': 'T', 'content': '# T\n', 'public': False})
         name = created.data.partition('\n')[0].removeprefix('artifact: ')
         await client.call_tool('run_code', {'artifact': name, 'code': "print('hi')"})
     spans = capfire.exporter.exported_spans_as_dict()
@@ -586,3 +621,198 @@ async def test_native_telemetry_reaches_logfire(live_server: str, capfire: Captu
         'git {argv}',
     } <= names
     assert any(span['attributes'].get('db.system') == 'postgresql' for span in spans)
+
+
+# --- access ------------------------------------------------------------------
+
+
+def set_access(client: TestClient, artifact: workspace.Artifact, visibility: str, org_editable: bool = False) -> None:
+    in_app(client, lambda: workspace.set_access(artifact.id, visibility=visibility, org_editable=org_editable))
+
+
+def org_members(client: TestClient) -> tuple[auth.Principal, auth.Principal]:
+    """A colleague of the seed user (same Workspace domain) and an outsider, created through the app."""
+
+    async def make() -> tuple[auth.Principal, auth.Principal]:
+        async with db.pool().acquire() as conn, conn.transaction():
+            await auth.upsert_user(conn, sub='seed', email='seed@x.test', name='Seed', picture=None, hd='x.test')
+            colleague = await auth.upsert_user(conn, sub='c', email='c@x.test', name='C', picture=None, hd='x.test')
+            outsider = await auth.upsert_user(conn, sub='s', email='s@gmail.test', name='S', picture=None)
+        return colleague, outsider
+
+    return in_app(client, make)
+
+
+def org_artifact(client: TestClient, artifact: workspace.Artifact, colleague: auth.Principal) -> None:
+    """Move the seed artifact into the organisation (the row's org, as `new_org_artifact` would set it)."""
+    org_id = colleague.organization_id
+    assert org_id is not None
+    in_app(
+        client,
+        lambda: db.pool().execute(
+            "UPDATE artifacts SET organization_id = $2, visibility = 'org' WHERE id = $1", artifact.id, org_id
+        ),
+    )
+
+
+ROUTES = (
+    '/artifacts/{id}/',
+    '/artifacts/{id}/main.md',
+    '/artifacts/{id}/assets/logo.svg',
+    '/artifacts/{id}.md',
+    '/artifacts/{id}.zip',
+    '/artifacts/{id}.json',
+)
+
+
+def statuses(client: TestClient, artifact: workspace.Artifact) -> set[int]:
+    """The status every artifact route answers with, as a JSON client (no redirects)."""
+    headers = {'accept': 'application/json'}
+    return {client.get(route.format(id=artifact.id), headers=headers).status_code for route in ROUTES}
+
+
+def test_private_artifact_is_the_owners_alone(client: TestClient):
+    artifact = starter(client)
+    colleague, outsider = org_members(client)
+    assert statuses(client, artifact) == {200}
+    # A visitor: a browser is sent to sign in, anything else gets a 401 that says where.
+    sign_out(client)
+    assert statuses(client, artifact) == {401}
+    page = client.get(f'/artifacts/{artifact.id}/', headers={'accept': 'text/html'}, follow_redirects=False)
+    assert page.status_code == 303
+    assert page.headers['location'] == f'/login?next=%2Fartifacts%2F{artifact.id}%2F'
+    denied = client.get(f'/artifacts/{artifact.id}.json')
+    assert denied.status_code == 401 and denied.json()['login_url'] == f'/login?next=%2Fartifacts%2F{artifact.id}%2F'
+    # Signed in but not shared with: a 403 page for a browser, JSON otherwise. Colleagues too: it is personal.
+    for who in (colleague, outsider):
+        sign_in(client, who)
+        assert statuses(client, artifact) == {403}
+        page = client.get(f'/artifacts/{artifact.id}/', headers={'accept': 'text/html'})
+        assert page.status_code == 403 and 'This artifact is private' in page.text and (who.email or '') in page.text
+        assert page.headers['content-security-policy'].startswith("default-src 'none'")
+    # The upload route is governed by its own token, not the session.
+    sign_out(client)
+    assert client.put(upload_to(artifact, 'x.txt', 1), content=b'x').status_code == 200
+
+
+def test_org_visible_and_editable(client: TestClient):
+    artifact = starter(client)
+    colleague, outsider = org_members(client)
+    org_artifact(client, artifact, colleague)
+    sign_in(client, colleague)
+    assert statuses(client, artifact) == {200}
+    info = client.get(f'/artifacts/{artifact.id}.json').json()
+    assert info['visibility'] == 'org' and info['organization'] == {'domain': 'x.test', 'name': 'x.test'}
+    assert info['viewer'] == {'name': 'C', 'email': 'c@x.test', 'picture': None}
+    assert (info['can_edit'], info['can_fork'], info['org_editable']) == (False, True, False)
+    sign_in(client, outsider)
+    assert statuses(client, artifact) == {403}
+    sign_out(client)
+    assert statuses(client, artifact) == {401}
+    set_access(client, artifact, 'org', org_editable=True)
+    sign_in(client, colleague)
+    assert client.get(f'/artifacts/{artifact.id}.json').json()['can_edit'] is True
+
+
+def test_public_artifact_is_open_to_all(client: TestClient):
+    artifact = starter(client)
+    set_access(client, artifact, 'public')
+    sign_out(client)
+    assert statuses(client, artifact) == {200}
+    info = client.get(f'/artifacts/{artifact.id}.json').json()
+    assert info['viewer'] is None and info['can_fork'] is False and info['can_edit'] is False
+    assert info['login_url'] == f'/login?next=%2Fartifacts%2F{artifact.id}%2F'
+    page = client.get(f'/artifacts/{artifact.id}/')
+    assert page.headers['cache-control'] == 'private' and page.headers['vary'] == 'Accept, Cookie'
+
+
+def test_browser_fork(client: TestClient):
+    artifact = starter(client)
+    colleague, _outsider = org_members(client)
+    org_artifact(client, artifact, colleague)
+    # Anonymous: sign in first. Cross-site: refused.
+    sign_out(client)
+    assert client.post(f'/artifacts/{artifact.id}/fork').status_code == 401
+    sign_in(client, colleague)
+    assert client.post(f'/artifacts/{artifact.id}/fork', headers={'sec-fetch-site': 'cross-site'}).status_code == 403
+    response = client.post(f'/artifacts/{artifact.id}/fork', follow_redirects=False)
+    assert response.status_code == 303
+    location = response.headers['location']
+    fork_id = uuid.UUID(location.removeprefix('/artifacts/').rstrip('/'))
+    fork = in_app(client, lambda: workspace.get_artifact(fork_id))
+    assert fork is not None and fork.forked_from == artifact.id and fork.workspace_id == colleague.workspace_id
+    assert (fork.visibility, fork.organization_id) == ('private', None)
+    info = client.get(f'{location[:-1]}.json').json()
+    assert info['forked_from'] == str(artifact.id) and info['can_edit'] is True
+    assert client.get(f'{location}main.md').content == (STARTER / 'main.md').read_bytes()
+    log = in_app(client, lambda: workspace.artifact_git(fork_id, 'log', '--format=%s')).splitlines()
+    assert log[0] == f'fork of {artifact.id}'
+
+
+@pytest.mark.filterwarnings('ignore:A configured store is unstable')
+def test_oauth_metadata_points_at_served_routes(monkeypatch: pytest.MonkeyPatch):
+    """With Google configured, every URL the OAuth metadata advertises is a route the app serves.
+
+    The MCP app is mounted at the root with its endpoint at `/mcp/`, which is what makes this hold: mounted under
+    `/mcp`, the routes would sit one level below the URLs built from the base URL.
+    """
+    from cryptography.fernet import Fernet
+    from fastmcp import FastMCP
+
+    monkeypatch.setenv('GOOGLE_CLIENT_ID', 'client-id.apps.googleusercontent.com')
+    monkeypatch.setenv('GOOGLE_CLIENT_SECRET', 'client-secret')
+    monkeypatch.setenv('OPENARTIFACT_SECRET_KEY', Fernet.generate_key().decode())
+    monkeypatch.setenv('OPENARTIFACT_BASE_URL', 'https://example.com')
+    provider = auth.make_auth_provider()
+    throwaway = FastAPI()
+    throwaway.mount('/', FastMCP('t', auth=provider).http_app(path='/mcp/'))
+    with TestClient(throwaway, base_url='https://example.com') as http:
+        metadata = http.get('/.well-known/oauth-authorization-server').json()
+        urls = {metadata[key] for key in ('authorization_endpoint', 'token_endpoint', 'registration_endpoint')}
+        assert urls == {f'https://example.com/{p}' for p in ('authorize', 'token', 'register')}
+        for url in urls:
+            # GET on a POST-only route is 405, which still proves the route is there; a miss would be 404.
+            assert http.get(url).status_code != 404, url
+        challenge = http.post('/mcp/', json={}).headers['www-authenticate']
+        resource = re.search(r'resource_metadata="([^"]+)"', challenge)
+        assert resource and http.get(resource.group(1)).status_code == 200, challenge
+    # Building the provider installed our consent and error pages in FastMCP's modules.
+    import fastmcp.server.auth.oauth_proxy.consent as fastmcp_consent
+    import fastmcp.server.auth.oauth_proxy.proxy as fastmcp_proxy
+    import pages
+
+    assert vars(fastmcp_consent)['create_consent_html'] is pages.consent_html
+    assert vars(fastmcp_proxy)['create_error_html'] is pages.oauth_error_html
+
+
+def test_our_consent_page_matches_fastmcp_contract():
+    """`pages.consent_html` accepts every argument FastMCP's renderer takes, and renders the form it expects."""
+    import inspect
+
+    import pages
+    from fastmcp.server.auth.oauth_proxy import ui
+
+    theirs = inspect.signature(ui.create_consent_html).parameters
+    ours = inspect.signature(pages.consent_html).parameters
+    accepts_rest = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in ours.values())
+    named = {name for name, p in ours.items() if p.kind is inspect.Parameter.KEYWORD_ONLY}
+    assert accepts_rest and {'client_id', 'redirect_uri', 'scopes', 'txn_id', 'csrf_token'} <= named <= set(theirs)
+    html = pages.consent_html(
+        client_id='c',
+        redirect_uri='https://x/cb',
+        scopes=['openid'],
+        txn_id='t1',
+        csrf_token='k1',
+        client_name='Claude',
+    )
+    for needle in (
+        'name="txn_id" value="t1"',
+        'name="csrf_token" value="k1"',
+        'value="approve"',
+        'value="deny"',
+        'Claude',
+    ):
+        assert needle in html
+    theirs_error = inspect.signature(ui.create_error_html).parameters
+    assert {'error_title', 'error_message', 'error_details'} <= set(theirs_error)
+    assert '<h1>Oops</h1>' in pages.oauth_error_html('Oops', 'it broke', {'code': 'x'})

@@ -64,6 +64,7 @@ def make_auth_provider() -> AuthProvider:
             fernet=Fernet(secret_key),
             raise_on_decryption_error=False,
         )
+        install_pages()
         return GoogleProvider(
             client_id=client_id,
             client_secret=os.environ.get('GOOGLE_CLIENT_SECRET'),
@@ -80,6 +81,22 @@ def make_auth_provider() -> AuthProvider:
         'no authentication configured: set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and OPENARTIFACT_SECRET_KEY, '
         'or OPENARTIFACT_DEV_TOKEN for local development'
     )
+
+
+def install_pages() -> None:
+    """Make FastMCP's consent and OAuth error pages ours (`pages.py`).
+
+    FastMCP binds the renderers as module globals in the modules that call them, so replacing those names is the
+    whole override: the consent logic, CSRF tokens and cookies stay FastMCP's. `test_server.py` pins the keyword
+    arguments our renderers must accept.
+    """
+    import fastmcp.server.auth.oauth_proxy.consent as fastmcp_consent
+    import fastmcp.server.auth.oauth_proxy.proxy as fastmcp_proxy
+    import pages
+
+    # Written through the module dict: a plain assignment is a private-import error for the type checker.
+    fastmcp_consent.__dict__['create_consent_html'] = pages.consent_html
+    fastmcp_proxy.__dict__['create_error_html'] = pages.oauth_error_html
 
 
 @dataclass(frozen=True)

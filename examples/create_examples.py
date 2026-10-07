@@ -4,7 +4,7 @@ Start the server first (`make docker-up`), then:
 
     uv run examples/create_examples.py
 
-For each example directory next to this script, the script calls `new_artifact` with a one-line placeholder,
+For each example directory next to this script, the script calls `new_personal_artifact` (public) with a one-line placeholder,
 writes the example's files into the artifact with one `run_code` call (the files are passed as `inputs`, so
 nothing is escaped inside the code), then calls `build` and prints the page URL. `OPENARTIFACT_MCP_URL` points
 the client somewhere other than the local default; `OPENARTIFACT_DEV_TOKEN` is the bearer token the server was
@@ -47,7 +47,7 @@ def write_files_code(paths: list[str]) -> str:
 
 
 def artifact_id(result: str) -> str:
-    """The identifier from `new_artifact`'s first line, `artifact: <id>`."""
+    """The identifier from the creation tool's first line, `artifact: <id>`."""
     return result.partition('\n')[0].removeprefix('artifact: ')
 
 
@@ -58,12 +58,13 @@ async def create_example(client: Client[StreamableHttpTransport], name: str) -> 
     title = str(config.get('title', name))
     files = example_files(directory)
 
-    print(f'> new_artifact ({name})')
+    print(f'> new_personal_artifact ({name})')
     created = await client.call_tool(
-        'new_artifact',
+        'new_personal_artifact',
         {
             'title': title,
             'content': f'# {title}\n',
+            'public': True,
             'type': config.get('type', 'deck'),
             'theme': config.get('theme', 'light'),
         },

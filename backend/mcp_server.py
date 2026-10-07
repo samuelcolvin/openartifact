@@ -8,7 +8,10 @@ tool returns. The server instructions an agent sees first are `instructions.md` 
 
 Tools:
 
-- `new_artifact` creates an artifact from markdown and builds it once; the identifier it returns is a UUID.
+- `new_personal_artifact` and `new_org_artifact` create an artifact from markdown and build it once; the
+  identifier they return is a UUID. The first is the caller's own (private or public); the second lives in the
+  caller's organisation (visible to it, optionally editable by it, optionally public). `set_access` changes a
+  caller's own artifact's permissions later; `fork` copies an artifact one can see, history included.
 - `run_code` runs agent-written Python in a pydantic-monty sandbox with the artifact directory mounted
   read-write at `/artifact`. Nothing else on the host is visible to the sandbox.
 - `build` validates the files and writes `dist/index.html`, which `server.py` serves.
@@ -36,6 +39,7 @@ from pathlib import Path
 from typing import Any, Literal, get_args
 from urllib.parse import quote
 
+import access
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.providers.skills import SkillProvider
@@ -87,18 +91,26 @@ def parse_artifact_id(value: str) -> uuid.UUID:
         return uuid.UUID(value)
     except ValueError:
         raise ToolError(
-            f'invalid artifact id {value!r}: pass the identifier returned by `new_artifact` or `list_artifacts`'
+            f'invalid artifact id {value!r}: pass the identifier returned when the artifact was created, or one '
+            'from `list_artifacts`'
         ) from None
 
 
-async def resolve(artifact: str) -> workspace.Artifact:
-    """The artifact an agent named, if it exists in the caller's workspace."""
+async def resolve(artifact: str, *, edit: bool = False) -> workspace.Artifact:
+    """The artifact an agent named, if the caller may see it (and change it, with `edit`).
+
+    An artifact the caller cannot see is reported as not existing, like a missing one; one they can see but not
+    change says so and points at `fork`.
+    """
     principal = await auth.current_principal()
-    found = await workspace.get_artifact_in(principal.workspace_id, parse_artifact_id(artifact))
-    if found is None:
+    found = await workspace.get_artifact(parse_artifact_id(artifact))
+    if found is None or not access.can_view(found, principal):
         raise ToolError(
-            f'artifact {artifact} does not exist; create one with `new_artifact` or pick one from `list_artifacts`'
+            f'artifact {artifact} does not exist; create one with `new_personal_artifact` or `new_org_artifact`, '
+            'or pick one from `list_artifacts`'
         )
+    if edit and not access.can_edit(found, principal):
+        raise ToolError(f'artifact {artifact} is shared with you read-only; `fork` it to get a copy you can edit')
     return found
 
 
@@ -157,30 +169,40 @@ def format_output(streams: CollectStreams, result: object) -> str:
 # Nothing after `Args:` is shown, so what a tool returns is said in the lead text rather than in a `Returns:`.
 
 
-async def new_artifact(
-    title: str, content: str, type: ArtifactType = 'deck', theme: Theme = 'light', build: bool = True
+def access_summary(found: workspace.Artifact) -> str:
+    """One word or two describing who may see and edit an artifact, for tool output."""
+    if found.organization_id is None:
+        return found.visibility
+    editable = ', editable by the organisation' if found.org_editable else ''
+    return ('public' if found.visibility == 'public' else 'visible to the organisation') + editable
+
+
+async def create_artifact(
+    principal: auth.Principal,
+    *,
+    title: str,
+    content: str,
+    type: ArtifactType,
+    theme: Theme,
+    build: bool,
+    visibility: str,
+    org_editable: bool,
+    organization_id: uuid.UUID | None,
 ) -> str:
-    """Create an artifact from markdown and, by default, build it.
-
-    Returns the artifact identifier (a UUID) to pass to the other tools, and the URL of its page. A build problem
-    is returned as an error naming the file and line; the files are kept, so fix them with `run_code` and call
-    `build`.
-
-    Args:
-        title: The artifact's title, written to `artifact.toml`.
-        content: The markdown for `main.md`. A line containing only `---`, with a blank line before it, starts a
-            new page.
-        type: How the pages are laid out: `deck` shows one 16:9 page at a time (every page is a slide),
-            `document` stacks fixed-width sheets that print one per A4 page, `page` is a continuous web page
-            (usually a single page).
-        theme: The colour theme, written to `artifact.toml`; `styles.css` can override its variables later.
-        build: Build straight away. Pass false when `content` refers to components or images you have still to
-            add with `upload_url` or `run_code`, then call `build` once they are in place.
-    """
-    principal = await auth.current_principal()
+    """What the two creation tools share: write `artifact.toml` and `main.md` in one edit, then build."""
+    problem = access.check_access(visibility, org_editable, organization_id)
+    if problem is not None:
+        raise ToolError(problem)
     artifact_id = uuid.uuid4()
     config = {'title': title, 'type': type, 'theme': theme}
-    create = workspace.NewArtifact(workspace_id=principal.workspace_id, title=title, type=type)
+    create = workspace.NewArtifact(
+        workspace_id=principal.workspace_id,
+        title=title,
+        type=type,
+        visibility=visibility,
+        org_editable=org_editable,
+        organization_id=organization_id,
+    )
     async with editing(artifact_id, f'new_artifact: {artifact_id}', create=create) as tx:
         (tx.path / 'artifact.toml').write_text(render_toml(config), encoding='utf-8')
         (tx.path / 'main.md').write_text(content, encoding='utf-8')
@@ -189,6 +211,154 @@ async def new_artifact(
     # Built after the edit has committed, so an artifact whose first build fails still exists to be fixed.
     built = await build_artifact(str(artifact_id))
     return f'artifact: {artifact_id}\n{built}'
+
+
+async def new_personal_artifact(
+    title: str,
+    content: str,
+    public: bool,
+    type: ArtifactType = 'deck',
+    theme: Theme = 'light',
+    build: bool = True,
+) -> str:
+    """Create an artifact of your own from markdown and, by default, build it.
+
+    A personal artifact is yours alone unless `public`. Use `new_org_artifact` for one your organisation should
+    see. Returns the artifact identifier (a UUID) to pass to the other tools, and the URL of its page. A build
+    problem is returned as an error naming the file and line; the files are kept, so fix them with `run_code` and
+    call `build`.
+
+    Args:
+        title: The artifact's title, written to `artifact.toml`.
+        content: The markdown for `main.md`. A line containing only `---`, with a blank line before it, starts a
+            new page.
+        public: Whether anyone with the link can see, download and fork it; otherwise only you can see it. Ask
+            the user if they have not said.
+        type: How the pages are laid out: `deck` shows one 16:9 page at a time (every page is a slide),
+            `document` stacks fixed-width sheets that print one per A4 page, `page` is a continuous web page
+            (usually a single page).
+        theme: The colour theme, written to `artifact.toml`; `styles.css` can override its variables later.
+        build: Build straight away. Pass false when `content` refers to components or images you have still to
+            add with `upload_url` or `run_code`, then call `build` once they are in place.
+    """
+    principal = await auth.current_principal()
+    return await create_artifact(
+        principal,
+        title=title,
+        content=content,
+        type=type,
+        theme=theme,
+        build=build,
+        visibility='public' if public else 'private',
+        org_editable=False,
+        organization_id=None,
+    )
+
+
+async def new_org_artifact(
+    title: str,
+    content: str,
+    org_editable: bool,
+    public: bool,
+    type: ArtifactType = 'deck',
+    theme: Theme = 'light',
+    build: bool = True,
+) -> str:
+    """Create an artifact in your organisation from markdown and, by default, build it.
+
+    Everyone in your organisation (your Google Workspace domain) can see, download and fork it; `org_editable`
+    lets them edit it too, and `public` opens it to anyone with the link as well. You remain its owner. Fails for
+    an account that is not in an organisation; use `new_personal_artifact` then. Returns the artifact identifier
+    (a UUID) to pass to the other tools, and the URL of its page. A build problem is returned as an error naming
+    the file and line; the files are kept, so fix them with `run_code` and call `build`.
+
+    Args:
+        title: The artifact's title, written to `artifact.toml`.
+        content: The markdown for `main.md`. A line containing only `---`, with a blank line before it, starts a
+            new page.
+        org_editable: Whether everyone in the organisation may edit it, not only see it. Ask the user if they
+            have not said.
+        public: Whether anyone with the link can see, download and fork it too. Ask the user if they have not
+            said.
+        type: How the pages are laid out: `deck` shows one 16:9 page at a time (every page is a slide),
+            `document` stacks fixed-width sheets that print one per A4 page, `page` is a continuous web page
+            (usually a single page).
+        theme: The colour theme, written to `artifact.toml`; `styles.css` can override its variables later.
+        build: Build straight away. Pass false when `content` refers to components or images you have still to
+            add with `upload_url` or `run_code`, then call `build` once they are in place.
+    """
+    principal = await auth.current_principal()
+    if principal.organization_id is None:
+        raise ToolError(
+            'your account is not in an organisation: sign in with a Google Workspace account to share with one, '
+            'or create a personal artifact with `new_personal_artifact`'
+        )
+    return await create_artifact(
+        principal,
+        title=title,
+        content=content,
+        type=type,
+        theme=theme,
+        build=build,
+        visibility='public' if public else 'org',
+        org_editable=org_editable,
+        organization_id=principal.organization_id,
+    )
+
+
+async def set_access(artifact: str, public: bool, org_editable: bool = False) -> str:
+    """Change who may see and edit one of your own artifacts.
+
+    A personal artifact is private unless `public`, and can never be editable by an organisation. An
+    organisation's artifact stays visible to the organisation, is open to anyone with the link when `public`, and
+    editable by the organisation when `org_editable`. Only the owner can do this.
+
+    Args:
+        artifact: The identifier of an artifact you own.
+        public: Whether anyone with the link can see, download and fork it.
+        org_editable: Whether everyone in its organisation may edit it (organisation artifacts only).
+    """
+    found = await resolve(artifact)
+    principal = await auth.current_principal()
+    if not access.can_manage(found, principal):
+        raise ToolError(f'artifact {artifact} is not yours; only its owner can change who may see it')
+    if found.organization_id is None:
+        visibility = 'public' if public else 'private'
+    else:
+        visibility = 'public' if public else 'org'
+    problem = access.check_access(visibility, org_editable, found.organization_id)
+    if problem is not None:
+        raise ToolError(problem)
+    changed = await workspace.set_access(found.id, visibility=visibility, org_editable=org_editable)
+    return f'artifact: {changed.id}\naccess: {access_summary(changed)}\n'
+
+
+async def fork(artifact: str, org_editable: bool = False, public: bool = False) -> str:
+    """Copy an artifact you can see into a new one of your own, history included.
+
+    The copy lives in your organisation when you have one (visible to it; `org_editable` and `public` as for
+    `new_org_artifact`), otherwise it is a personal artifact (private unless `public`). Returns the new identifier
+    and page URL; the original is untouched.
+
+    Args:
+        artifact: The identifier of the artifact to copy.
+        org_editable: Whether everyone in your organisation may edit the copy (ignored without an organisation).
+        public: Whether anyone with the link can see the copy.
+    """
+    found = await resolve(artifact)
+    principal = await auth.current_principal()
+    organization_id = principal.organization_id
+    if organization_id is None:
+        visibility, org_editable = ('public' if public else 'private'), False
+    else:
+        visibility = 'public' if public else 'org'
+    created = await workspace.fork_artifact(
+        found, principal.workspace_id, organization_id=organization_id, visibility=visibility, org_editable=org_editable
+    )
+    return (
+        f'artifact: {created.id}\nforked from: {found.id}\naccess: {access_summary(created)}\n'
+        f'page: {artifact_url(created.id)}\n'
+    )
 
 
 async def run_code(artifact: str, code: str, inputs: dict[str, Any] | None = None) -> str:
@@ -200,12 +370,12 @@ async def run_code(artifact: str, code: str, inputs: dict[str, Any] | None = Non
     traceback; files written before it are kept.
 
     Args:
-        artifact: The identifier returned by `new_artifact` or `list_artifacts`.
+        artifact: The identifier returned when the artifact was created, or one from `list_artifacts`.
         code: The Python source to run.
         inputs: Values bound as global variables before the code runs. The easiest way to pass large text: put
             it here rather than escaping it inside `code`.
     """
-    found = await resolve(artifact)
+    found = await resolve(artifact, edit=True)
     streams = CollectStreams()
     failure: ToolError | None = None
     async with editing(found.id, f'run_code: {found.id}') as tx:
@@ -240,7 +410,7 @@ async def build_artifact(artifact: str) -> str:
     `/artifact/dist/`.
 
     Args:
-        artifact: The identifier returned by `new_artifact` or `list_artifacts`.
+        artifact: The identifier returned when the artifact was created, or one from `list_artifacts`.
     """
     found = await resolve(artifact)
     async with workspace.open_artifact(found) as directory:
@@ -263,11 +433,11 @@ async def upload_url(artifact: str, files: list[tuple[str, int]]) -> list[str]:
     overwritten; `dist/` and `.git` entries are refused.
 
     Args:
-        artifact: The identifier returned by `new_artifact` or `list_artifacts`.
+        artifact: The identifier returned when the artifact was created, or one from `list_artifacts`.
         files: `(path, size)` pairs: the path the file will have inside the artifact, relative, such as
             `assets/logo.png` or `components/Card.html`, and its exact size in bytes.
     """
-    found = await resolve(artifact)
+    found = await resolve(artifact, edit=True)
     if not files:
         raise ToolError('files is empty: pass at least one (path, size) pair')
     expires = int(time.time()) + upload.TOKEN_TTL
@@ -288,17 +458,28 @@ async def upload_url(artifact: str, files: list[tuple[str, int]]) -> list[str]:
 
 
 async def list_artifacts() -> str:
-    """List the caller's artifacts, oldest first: one line per artifact with its id, type, title and page URL."""
+    """List your artifacts, oldest first, one line each with id, type, title, who may see it and the page URL;
+    then the ones others in your organisation share with you, with their owner's email."""
     principal = await auth.current_principal()
-    found = await workspace.list_artifacts(principal.workspace_id)
-    if not found:
-        return 'no artifacts yet; create one with `new_artifact`\n'
-    return ''.join(f'{a.id}  {a.type}  {a.title}  {artifact_url(a.id)}\n' for a in found)
+    mine = await workspace.list_artifacts(principal.workspace_id)
+    shared = await workspace.list_shared_artifacts(principal.org_ids, principal.workspace_id)
+    lines = [f'{a.id}  {a.type}  {a.title}  [{access_summary(a)}]  {artifact_url(a.id)}\n' for a in mine]
+    if not lines:
+        lines.append('no artifacts of your own yet; create one with `new_personal_artifact` or `new_org_artifact`\n')
+    if shared:
+        lines.append('\nshared with you by your organisation:\n')
+        for a, owner in shared:
+            editable = ', editable' if a.org_editable else ''
+            lines.append(f'{a.id}  {a.type}  {a.title}  [{owner or "unknown"}{editable}]  {artifact_url(a.id)}\n')
+    return ''.join(lines)
 
 
-mcp.tool(new_artifact)
+mcp.tool(new_personal_artifact)
+mcp.tool(new_org_artifact)
 mcp.tool(run_code)
 mcp.tool(build_artifact, name='build')
 mcp.tool(upload_url)
+mcp.tool(set_access)
+mcp.tool(fork)
 mcp.tool(list_artifacts)
 mcp.add_provider(SkillProvider(SKILL_DIR))

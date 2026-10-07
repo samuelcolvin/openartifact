@@ -11,11 +11,18 @@ Routes:
     /artifacts/{id}.md          the markdown source behind a frontmatter summary of the artifact
     /artifacts/{id}.zip         the artifact as a git repository (its files and history) in a zip
     /artifacts/{id}.pdf         the page printed to PDF by the chrome service (`chrome/`)
-    /                           JSON index of the above
+    /artifacts/{id}.json        the artifact's placement, permissions and the viewer's rights, for the toolbar
+    POST /artifacts/{id}/fork   copy the artifact into the signed-in viewer's own space
+    /print/{token}/artifacts/{id}/...   the page and its media for the chrome service, by a short-lived pass
+    /login, /login/google, /login/callback, /logout, /login/dev   browser sign-in (`login.py`)
+    /authorize, /token, /consent, /auth/callback, /.well-known/*  the MCP OAuth routes (FastMCP, root mount)
+    /                           JSON index
 
-Pages are public to anyone holding the artifact's UUID, and so are their sources: `main.md`, `artifact.toml`,
-`styles.css` and `components/*` are served as text next to the page (they are in the page anyway), so an agent can
-read the markdown directly. Only `dist/` is withheld.
+Who may see an artifact is decided by `access.py` from its placement and permissions: a public artifact by
+anyone, an organisation's by its members, a private one by its owner. The browser session (`login.py`) says who
+the viewer is; `load_artifact` applies the rules to the page, its media and sources (`main.md`, `artifact.toml`,
+`styles.css` and `components/*`, served as text next to the page) and the exports alike. Only `dist/` is never
+served. A visitor without access is sent to sign in; a signed-in user without access gets a 403 page.
 
 Run by `main.py`. Configuration is by environment: `DATABASE_URL`, `OPENARTIFACT_STORE_URL`,
 `OPENARTIFACT_CACHE_DIR` (one per process, never shared), `OPENARTIFACT_BASE_URL`, and for auth `GOOGLE_CLIENT_ID` /
@@ -32,6 +39,7 @@ import json
 import mimetypes
 import re
 import tempfile
+import time
 import tomllib
 import uuid
 import zipfile
@@ -39,9 +47,13 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from urllib.parse import quote
 
+import access
 import httpx2
+import login
+import pages
+import signing
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 
 import build
 import config
@@ -66,6 +78,10 @@ SOURCE_MEDIA_TYPES = {
     '.css': 'text/plain; charset=utf-8',
     '.html': 'text/plain; charset=utf-8',
 }
+# The print pass the chrome service uses to fetch a page that may be private: a token over the artifact id that
+# lives for five minutes, minted by the `.pdf` route for a viewer who may see the artifact.
+PRINT_PURPOSE = b'openartifact print url'
+PRINT_TTL = 300
 
 
 # The MCP endpoint is `/mcp/`; the app is mounted at the root (last, below) so the OAuth routes FastMCP registers
@@ -93,16 +109,81 @@ app = FastAPI(
 )
 
 
-async def load_artifact(artifact_id: str) -> workspace.Artifact:
-    """The artifact for a URL segment, or 404; a value that is not a UUID is also a 404, not a validation error."""
+class LoginRequired(Exception):
+    """A visitor asked for something only a signed-in user may see."""
+
+
+class Forbidden(Exception):
+    """A signed-in user asked for something not shared with them."""
+
+
+def wants_html(request: Request) -> bool:
+    """A browser navigating (as opposed to a script or the toolbar's fetch): send pages and redirects, not JSON."""
+    return request.method == 'GET' and 'text/html' in request.headers.get('accept', '')
+
+
+ARTIFACT_PATH_RE = re.compile(r'^/artifacts/([0-9a-f-]{36})(?:[/.]|$)')
+
+
+def page_path(path: str) -> str:
+    """Where to come back to after signing in: the artifact's page for any of its URLs, else the path itself."""
+    match = ARTIFACT_PATH_RE.match(path)
+    return f'/artifacts/{match.group(1)}/' if match else path
+
+
+@app.exception_handler(LoginRequired)
+async def login_required(request: Request, exc: LoginRequired) -> Response:
+    target = login.login_url(page_path(request.url.path))
+    if wants_html(request):
+        return RedirectResponse(target, status_code=303)
+    return JSONResponse({'detail': 'sign in required', 'login_url': target}, status_code=401)
+
+
+@app.exception_handler(Forbidden)
+async def forbidden(request: Request, exc: Forbidden) -> Response:
+    if wants_html(request):
+        viewer = await login.current_viewer(request)
+        body = pages.forbidden_html(viewer.email if viewer else None, page_path(request.url.path))
+        return pages.page_response('Private artifact', body, status=403)
+    return JSONResponse({'detail': 'this artifact is not shared with you'}, status_code=403)
+
+
+def parse_artifact_id(artifact_id: str) -> uuid.UUID:
+    """The UUID in a URL segment, or 404; a value that is not a UUID is a 404 too, not a validation error."""
     try:
-        parsed = uuid.UUID(artifact_id)
+        return uuid.UUID(artifact_id)
     except ValueError:
         raise HTTPException(404, f'invalid artifact id {artifact_id!r}') from None
-    found = await workspace.get_artifact(parsed)
+
+
+async def find_artifact(artifact_id: str) -> workspace.Artifact:
+    """The row for a URL segment, or 404; no access check (the print pass has its own)."""
+    found = await workspace.get_artifact(parse_artifact_id(artifact_id))
     if found is None:
         raise HTTPException(404, f'artifact {artifact_id} not found')
     return found
+
+
+async def load_artifact(artifact_id: str, request: Request, *, edit: bool = False) -> workspace.Artifact:
+    """The artifact for a URL segment, if the viewer may see it (and change it, with `edit`).
+
+    Missing is a 404. Not allowed is `LoginRequired` for a visitor and `Forbidden` for a signed-in user, which
+    the handlers above turn into a redirect to sign-in or the 403 page for a browser, and JSON otherwise.
+    """
+    found = await find_artifact(artifact_id)
+    viewer = await login.current_viewer(request)
+    allowed = access.can_edit(found, viewer) if edit else access.can_view(found, viewer)
+    if not allowed:
+        raise LoginRequired() if viewer is None else Forbidden()
+    return found
+
+
+def private(response: Response) -> Response:
+    """Mark a response that depends on who is asking, so shared caches keep out of it."""
+    response.headers['Cache-Control'] = 'private'
+    vary = response.headers.get('Vary')
+    response.headers['Vary'] = f'{vary}, Cookie' if vary else 'Cookie'
+    return response
 
 
 def contained_file(directory: Path, relative: str, allowed: tuple[str, ...]) -> Path:
@@ -122,8 +203,8 @@ def contained_file(directory: Path, relative: str, allowed: tuple[str, ...]) -> 
 
 @app.get('/')
 def index() -> dict[str, object]:
-    """The MCP endpoint and the runtime; artifacts are listed per user by the `list_artifacts` tool."""
-    return {'mcp': '/mcp/', 'runtime': '/openartifact.js'}
+    """The MCP endpoint, the runtime and sign-in; artifacts are listed per user by the `list_artifacts` tool."""
+    return {'mcp': '/mcp/', 'runtime': '/openartifact.js', 'login': '/login'}
 
 
 @app.get('/health/')
@@ -205,9 +286,49 @@ async def markdown_response(found: workspace.Artifact) -> Response:
 
 
 @app.get('/artifacts/{artifact_id}.md')
-async def artifact_markdown(artifact_id: str) -> Response:
+async def artifact_markdown(artifact_id: str, request: Request) -> Response:
     """The markdown source behind a frontmatter summary: what an agent should read instead of parsing the page."""
-    return await markdown_response(await load_artifact(artifact_id))
+    return private(await markdown_response(await load_artifact(artifact_id, request)))
+
+
+@app.get('/artifacts/{artifact_id}.json')
+async def artifact_json(artifact_id: str, request: Request) -> Response:
+    """The artifact's placement and permissions, and what the viewer may do; what the toolbar renders from."""
+    found = await load_artifact(artifact_id, request)
+    viewer = await login.current_viewer(request)
+    organization = None
+    if found.organization_id is not None:
+        org = await workspace.get_organization(found.organization_id)
+        organization = {'domain': org.domain, 'name': org.name} if org else None
+    body: dict[str, object] = {
+        'id': str(found.id),
+        'title': found.title,
+        'type': found.type,
+        'visibility': found.visibility,
+        'org_editable': found.org_editable,
+        'organization': organization,
+        'forked_from': str(found.forked_from) if found.forked_from else None,
+        'viewer': {'name': viewer.name, 'email': viewer.email, 'picture': viewer.picture} if viewer else None,
+        'can_edit': access.can_edit(found, viewer),
+        'can_fork': access.can_fork(found, viewer),
+        'login_url': login.login_url(f'/artifacts/{found.id}/'),
+    }
+    return private(JSONResponse(body))
+
+
+@app.post('/artifacts/{artifact_id}/fork')
+async def artifact_fork(artifact_id: str, request: Request) -> Response:
+    """Copy the artifact, history included, into the signed-in viewer's personal space as a private artifact."""
+    if not login.same_origin(request):
+        raise HTTPException(403, 'cross-site request')
+    found = await load_artifact(artifact_id, request)
+    viewer = await login.current_viewer(request)
+    if viewer is None:
+        raise LoginRequired()
+    fork = await workspace.fork_artifact(
+        found, viewer.workspace_id, organization_id=None, visibility='private', org_editable=False
+    )
+    return RedirectResponse(f'/artifacts/{fork.id}/', status_code=303)
 
 
 def prefers_text(accept: str | None) -> bool:
@@ -285,20 +406,20 @@ def attachment(filename: str) -> dict[str, str]:
 
 
 @app.get('/artifacts/{artifact_id}.zip')
-async def artifact_zip(artifact_id: str) -> Response:
+async def artifact_zip(artifact_id: str, request: Request) -> Response:
     """The artifact as a git repository in a zip, inside a folder named by the artifact id.
 
     The folder is a clone to work in: the source files (not `dist/`) checked out at the head, and `.git` holding
     the artifact's history, cloned from the checkout by `workspace.clone_repository`.
     """
-    found = await load_artifact(artifact_id)
+    found = await load_artifact(artifact_id, request)
     with tempfile.TemporaryDirectory(prefix='openartifact-zip-') as tmp:
         exported = Path(tmp) / str(found.id)
         async with workspace.open_artifact(found) as directory:
             await workspace.clone_repository(found.id, exported)
             filename = await export_filename(found, directory, 'zip')
         data = await asyncio.to_thread(zip_files, exported, all_files(exported), str(found.id))
-    return Response(data, media_type='application/zip', headers=attachment(filename))
+    return private(Response(data, media_type='application/zip', headers=attachment(filename)))
 
 
 def chrome_client() -> httpx2.AsyncClient:
@@ -306,22 +427,38 @@ def chrome_client() -> httpx2.AsyncClient:
     return httpx2.AsyncClient(timeout=60)
 
 
+def print_token(artifact_id: uuid.UUID) -> str:
+    """A pass for the chrome service to fetch one artifact's page for the next few minutes."""
+    return signing.token(PRINT_PURPOSE, str(artifact_id), expires=int(time.time()) + PRINT_TTL)
+
+
+def verify_print_token(token: str, artifact_id: uuid.UUID) -> None:
+    """403 unless `token` is a live pass for this artifact."""
+    try:
+        signing.verify(PRINT_PURPOSE, token, str(artifact_id))
+    except signing.SignatureError as exc:
+        raise HTTPException(403, f'invalid print pass: {exc}') from exc
+
+
 @app.get('/artifacts/{artifact_id}.pdf')
-async def artifact_pdf(artifact_id: str) -> Response:
+async def artifact_pdf(artifact_id: str, request: Request) -> Response:
     """The page printed to PDF by the chrome service, which fetches it from this server.
 
     The page is built first, so a broken artifact is a 422 here rather than a PDF of an error page; and the
-    artifact lock is released before the chrome service is called, because it fetches `/artifacts/{id}/` from
-    this process, which would wait on the same lock.
+    artifact lock is released before the chrome service is called, because it fetches the page from this
+    process, which would wait on the same lock. Chrome carries no session, so it is sent to the print pass URL
+    (`/print/{token}/artifacts/{id}/`), which serves the page and its media to whoever holds a live pass; the
+    pass is minted here for a viewer who may see the artifact, and it lands in the error text of a failed print,
+    which that same viewer reads.
     """
-    found = await load_artifact(artifact_id)
+    found = await load_artifact(artifact_id, request)
     chrome_url = config.chrome_url()
     if chrome_url is None:
         raise HTTPException(503, 'PDF export is not configured: OPENARTIFACT_CHROME_URL names the chrome service')
     async with workspace.open_artifact(found) as directory:
         await build_if_missing(found, directory)
         filename = await export_filename(found, directory, 'pdf')
-    page_url = f'{config.internal_url()}/artifacts/{found.id}/'
+    page_url = f'{config.internal_url()}/print/{print_token(found.id)}/artifacts/{found.id}/'
     try:
         async with chrome_client() as client:
             response = await client.post(f'{chrome_url}/pdf/', json={'url': page_url})
@@ -329,7 +466,7 @@ async def artifact_pdf(artifact_id: str) -> Response:
         raise HTTPException(502, f'chrome service unreachable: {exc}') from exc
     if response.status_code != 200:
         raise HTTPException(502, f'chrome service failed ({response.status_code}): {response.text}')
-    return Response(response.content, media_type='application/pdf', headers=attachment(filename))
+    return private(Response(response.content, media_type='application/pdf', headers=attachment(filename)))
 
 
 @app.get('/artifacts/{artifact_id}')
@@ -360,10 +497,8 @@ async def built_page(found: workspace.Artifact) -> str:
         return page.read_text(encoding='utf-8')
 
 
-@app.get('/artifacts/{artifact_id}/')
-async def artifact_index(artifact_id: str, request: Request) -> Response:
+async def page_response(found: workspace.Artifact, request: Request) -> Response:
     """The artifact's page; or its markdown export when the client asks for text rather than HTML."""
-    found = await load_artifact(artifact_id)
     if prefers_text(request.headers.get('accept')):
         response = await markdown_response(found)
     else:
@@ -373,15 +508,41 @@ async def artifact_index(artifact_id: str, request: Request) -> Response:
     return response
 
 
-@app.get('/artifacts/{artifact_id}/{path:path}')
-async def artifact_media(artifact_id: str, path: str) -> Response:
+async def media_response(found: workspace.Artifact, path: str) -> Response:
     """An image or font the page references relatively, or one of the source files, from the artifact directory."""
-    found = await load_artifact(artifact_id)
     async with workspace.open_artifact(found) as directory:
         file = contained_file(directory, path, SERVED_EXTS)
         data = file.read_bytes()
     media_type = SOURCE_MEDIA_TYPES.get(file.suffix.lower()) or mimetypes.guess_type(file.name)[0]
     return Response(data, media_type=media_type or 'application/octet-stream')
+
+
+@app.get('/artifacts/{artifact_id}/')
+async def artifact_index(artifact_id: str, request: Request) -> Response:
+    """The artifact's page, for a viewer who may see it."""
+    return private(await page_response(await load_artifact(artifact_id, request), request))
+
+
+@app.get('/artifacts/{artifact_id}/{path:path}')
+async def artifact_media(artifact_id: str, path: str, request: Request) -> Response:
+    """A file from the artifact directory, for a viewer who may see it."""
+    return private(await media_response(await load_artifact(artifact_id, request), path))
+
+
+@app.get('/print/{token}/artifacts/{artifact_id}/')
+async def print_index(token: str, artifact_id: str, request: Request) -> Response:
+    """The page for the chrome service, by print pass rather than session; relative media resolve below it."""
+    found = await find_artifact(artifact_id)
+    verify_print_token(token, found.id)
+    return await page_response(found, request)
+
+
+@app.get('/print/{token}/artifacts/{artifact_id}/{path:path}')
+async def print_media(token: str, artifact_id: str, path: str) -> Response:
+    """A file from the artifact directory for the chrome service, by print pass."""
+    found = await find_artifact(artifact_id)
+    verify_print_token(token, found.id)
+    return await media_response(found, path)
 
 
 async def read_body(request: Request, size: int) -> bytes:
@@ -407,7 +568,7 @@ async def artifact_upload(artifact_id: str, path: str, request: Request, token: 
     workspace is locked, so a slow upload does not hold up other edits. The answer carries the file's SHA-256 for
     the uploader to compare with the local file.
     """
-    found = await load_artifact(artifact_id)
+    found = await find_artifact(artifact_id)
     length = request.headers.get('content-length')
     if length is None:
         raise HTTPException(411, 'Content-Length is required: send the file as a plain body, not chunked')
@@ -437,5 +598,6 @@ async def artifact_upload(artifact_id: str, path: str, request: Request, token: 
     return {'path': path, 'size': size, 'sha256': hashlib.sha256(body).hexdigest()}
 
 
+app.include_router(login.router)
 # Last: the MCP app answers everything no route above matched (the endpoint, the OAuth routes, and 404s).
 app.mount('/', mcp_app)

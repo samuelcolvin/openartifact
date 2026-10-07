@@ -7,6 +7,7 @@ import tomllib
 import uuid
 from collections.abc import AsyncGenerator, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastmcp import Client
@@ -16,6 +17,7 @@ import auth
 import build
 import db
 import mcp_server
+import store
 import upload
 import workspace
 
@@ -40,8 +42,13 @@ def me(principal: auth.Principal) -> Iterator[auth.Principal]:
         yield principal
 
 
+async def new_artifact(title: str, content: str, **kwargs: Any) -> str:
+    """A private personal artifact: what most tests need."""
+    return await mcp_server.new_personal_artifact(title, content, False, **kwargs)
+
+
 def artifact_id(output: str) -> str:
-    """Pull the identifier out of `new_artifact`'s result."""
+    """Pull the identifier out of a creation tool's result."""
     first, _, _ = output.partition('\n')
     assert first.startswith('artifact: ')
     return first.removeprefix('artifact: ')
@@ -58,7 +65,7 @@ async def git_log(artifact: str) -> list[str]:
 @pytest.fixture
 async def demo(me: auth.Principal) -> str:
     """An existing deck with one slide; returns its id."""
-    return artifact_id(await mcp_server.new_artifact('Demo', '# Demo\n'))
+    return artifact_id(await new_artifact('Demo', '# Demo\n'))
 
 
 async def head_sha(artifact: str) -> str | None:
@@ -69,7 +76,7 @@ async def head_sha(artifact: str) -> str | None:
 
 
 async def test_new_artifact_builds_and_commits(me: auth.Principal):
-    out = await mcp_server.new_artifact('My Deck!', '# Hello\n', theme='dark')
+    out = await new_artifact('My Deck!', '# Hello\n', theme='dark')
     artifact = artifact_id(out)
     assert re.fullmatch(UUID_RE, artifact)
     assert out.endswith(f'page: http://127.0.0.1:8765/artifacts/{artifact}/\n')
@@ -87,7 +94,7 @@ async def test_new_artifact_builds_and_commits(me: auth.Principal):
 
 async def test_new_artifact_reports_build_errors_and_keeps_files(me: auth.Principal):
     with pytest.raises(ToolError, match=r'main\.md:2: put a blank line before ---'):
-        await mcp_server.new_artifact('Broken', '# heading\n---\n# next\n')
+        await new_artifact('Broken', '# heading\n---\n# next\n')
     [row] = await workspace.list_artifacts(me.workspace_id)
     directory = files_of(me, str(row.id))
     assert (directory / 'main.md').read_text() == '# heading\n---\n# next\n'
@@ -96,7 +103,7 @@ async def test_new_artifact_reports_build_errors_and_keeps_files(me: auth.Princi
 
 
 async def test_new_artifact_page_takes_plain_markdown(me: auth.Principal):
-    artifact = artifact_id(await mcp_server.new_artifact('Notes', '# Notes\n\nSome text.\n', type='page'))
+    artifact = artifact_id(await new_artifact('Notes', '# Notes\n\nSome text.\n', type='page'))
     assert (files_of(me, artifact) / 'artifact.toml').read_text() == 'title = "Notes"\ntype = "page"\ntheme = "light"\n'
     assert (files_of(me, artifact) / 'dist' / 'index.html').is_file()
 
@@ -104,7 +111,7 @@ async def test_new_artifact_page_takes_plain_markdown(me: auth.Principal):
 async def test_new_artifact_without_build(me: auth.Principal):
     # Content that needs a component not yet written: with `build=False` creating it is not an error.
     content = '<component src="Card.html"></component>\n'
-    out = await mcp_server.new_artifact('Later', content, build=False)
+    out = await new_artifact('Later', content, build=False)
     artifact = artifact_id(out)
     assert out == f'artifact: {artifact}\npage (after `build`): http://127.0.0.1:8765/artifacts/{artifact}/\n'
     directory = files_of(me, artifact)
@@ -117,12 +124,12 @@ async def test_new_artifact_without_build(me: auth.Principal):
 
 async def test_new_artifact_rejects_old_slide_markers(me: auth.Principal):
     with pytest.raises(ToolError, match=r'main\.md:1: <slide \.\.\./> is no longer supported'):
-        await mcp_server.new_artifact('Doc', '<slide/>\n# Doc\n', type='document')
+        await new_artifact('Doc', '<slide/>\n# Doc\n', type='document')
 
 
 async def test_new_artifact_reports_unknown_placeholders(me: auth.Principal):
     with pytest.raises(ToolError, match=r'main\.md:3: unknown placeholder \{\{ AUTHOR \}\}; built-ins and \[context\]'):
-        await mcp_server.new_artifact('Doc', '# Doc\n\nBy {{ AUTHOR }}\n', type='document')
+        await new_artifact('Doc', '# Doc\n\nBy {{ AUTHOR }}\n', type='document')
 
 
 def test_literals_match_builder():
@@ -249,13 +256,16 @@ async def test_build_reports_validation_errors(me: auth.Principal, demo: str, po
         await mcp_server.build_artifact(demo)
 
 
+NONE_YET = 'no artifacts of your own yet; create one with `new_personal_artifact` or `new_org_artifact`\n'
+
+
 async def test_list_artifacts(me: auth.Principal):
-    assert await mcp_server.list_artifacts() == 'no artifacts yet; create one with `new_artifact`\n'
-    first = artifact_id(await mcp_server.new_artifact('First', '# 1\n'))
-    second = artifact_id(await mcp_server.new_artifact('Second', '# 2\n', type='page'))
+    assert await mcp_server.list_artifacts() == NONE_YET
+    first = artifact_id(await new_artifact('First', '# 1\n'))
+    second = artifact_id(await mcp_server.new_personal_artifact('Second', '# 2\n', True, type='page'))
     assert await mcp_server.list_artifacts() == (
-        f'{first}  deck  First  http://127.0.0.1:8765/artifacts/{first}/\n'
-        f'{second}  page  Second  http://127.0.0.1:8765/artifacts/{second}/\n'
+        f'{first}  deck  First  [private]  http://127.0.0.1:8765/artifacts/{first}/\n'
+        f'{second}  page  Second  [public]  http://127.0.0.1:8765/artifacts/{second}/\n'
     )
 
 
@@ -263,11 +273,77 @@ async def test_other_users_cannot_see_my_artifacts(me: auth.Principal, demo: str
     async with db_pool.acquire() as conn, conn.transaction():
         other = await auth.upsert_user(conn, sub='user-b', email='b@example.com', name=None, picture=None)
     with auth.as_principal(other):
-        assert await mcp_server.list_artifacts() == 'no artifacts yet; create one with `new_artifact`\n'
+        assert await mcp_server.list_artifacts() == NONE_YET
         with pytest.raises(ToolError, match='does not exist'):
             await mcp_server.build_artifact(demo)
         with pytest.raises(ToolError, match='does not exist'):
             await mcp_server.run_code(demo, 'pass')
+        with pytest.raises(ToolError, match='does not exist'):
+            await mcp_server.fork(demo)
+
+
+@pytest.fixture
+async def org_users(
+    db_pool: db.Pool, storage: store.ObjectStore
+) -> tuple[auth.Principal, auth.Principal, auth.Principal]:
+    """Two members of one Workspace organisation and a user with none."""
+    async with db_pool.acquire() as conn, conn.transaction():
+        owner = await auth.upsert_user(conn, sub='o', email='o@x.test', name='Owner', picture=None, hd='x.test')
+        colleague = await auth.upsert_user(conn, sub='c', email='c@x.test', name=None, picture=None, hd='x.test')
+        outsider = await auth.upsert_user(conn, sub='s', email='s@gmail.test', name=None, picture=None)
+    return owner, colleague, outsider
+
+
+async def test_org_artifacts(org_users: tuple[auth.Principal, auth.Principal, auth.Principal], pool: None):
+    owner, colleague, outsider = org_users
+    with auth.as_principal(outsider), pytest.raises(ToolError, match='not in an organisation'):
+        await mcp_server.new_org_artifact('Nope', '# n\n', False, False)
+    with auth.as_principal(owner):
+        visible = artifact_id(await mcp_server.new_org_artifact('Visible', '# v\n', False, False))
+        editable = artifact_id(await mcp_server.new_org_artifact('Editable', '# e\n', True, False, type='page'))
+        private = artifact_id(await new_artifact('Private', '# p\n'))
+        listed = await mcp_server.list_artifacts()
+        assert f'{visible}  deck  Visible  [visible to the organisation]' in listed
+        assert f'{editable}  page  Editable  [visible to the organisation, editable by the organisation]' in listed
+        assert 'shared with you' not in listed
+    with auth.as_principal(colleague):
+        listed = await mcp_server.list_artifacts()
+        assert listed.startswith(NONE_YET)
+        assert '\nshared with you by your organisation:\n' in listed
+        assert f'{visible}  deck  Visible  [o@x.test]  ' in listed
+        assert f'{editable}  page  Editable  [o@x.test, editable]  ' in listed
+        assert private not in listed
+        # Read-only: build works, editing does not, forking does.
+        assert 'page:' in await mcp_server.build_artifact(visible)
+        with pytest.raises(ToolError, match='read-only'):
+            await mcp_server.run_code(visible, 'pass')
+        with pytest.raises(ToolError, match='read-only'):
+            await mcp_server.upload_url(visible, [('a.png', 1)])
+        assert await mcp_server.run_code(editable, "print('ok')") == 'ok\n'
+        with pytest.raises(ToolError, match='does not exist'):
+            await mcp_server.build_artifact(private)
+        with pytest.raises(ToolError, match='not yours'):
+            await mcp_server.set_access(visible, public=True)
+        forked = await mcp_server.fork(visible)
+        copy = artifact_id(forked)
+        assert f'forked from: {visible}\naccess: visible to the organisation\n' in forked
+        assert (await mcp_server.run_code(copy, "print(open('main.md').read())")) == '# v\n\n'
+        row = await workspace.get_artifact(uuid.UUID(copy))
+        assert row is not None and row.forked_from == uuid.UUID(visible) and row.workspace_id == colleague.workspace_id
+    with auth.as_principal(outsider), pytest.raises(ToolError, match='does not exist'):
+        await mcp_server.build_artifact(visible)
+    # The owner opens it to the world; the outsider can now read and fork (personal, since they have no org).
+    with auth.as_principal(owner):
+        out = await mcp_server.set_access(visible, public=True, org_editable=True)
+        assert out == f'artifact: {visible}\naccess: public, editable by the organisation\n'
+        with pytest.raises(ToolError, match='cannot be editable by an organisation'):
+            await mcp_server.set_access(private, public=False, org_editable=True)
+    with auth.as_principal(outsider):
+        assert 'page:' in await mcp_server.build_artifact(visible)
+        with pytest.raises(ToolError, match='read-only'):
+            await mcp_server.run_code(visible, 'pass')
+        forked = await mcp_server.fork(visible, public=True)
+        assert 'access: public\n' in forked
 
 
 async def test_tools_require_a_caller(db_pool: db.Pool, storage: object):
@@ -306,18 +382,33 @@ async def test_skill_is_served(me: auth.Principal):
 async def test_tools_over_mcp(me: auth.Principal, pool: None):
     async with Client(mcp_server.mcp) as client:
         tools = {tool.name: tool for tool in await client.list_tools()}
-        assert set(tools) == {'new_artifact', 'run_code', 'build', 'upload_url', 'list_artifacts'}
+        assert set(tools) == {
+            'new_personal_artifact',
+            'new_org_artifact',
+            'run_code',
+            'build',
+            'upload_url',
+            'set_access',
+            'fork',
+            'list_artifacts',
+        }
         # The Google-style docstrings are split: the lead is the description, `Args:` entries describe parameters.
-        description = tools['new_artifact'].description or ''
-        assert description.startswith('Create an artifact from markdown and, by default, build it.')
+        description = tools['new_personal_artifact'].description or ''
+        assert description.startswith('Create an artifact of your own from markdown and, by default, build it.')
         assert 'Args:' not in description
-        properties = tools['new_artifact'].input_schema['properties']
+        schema = tools['new_personal_artifact'].input_schema
+        properties = schema['properties']
         assert properties['build']['description'].startswith('Build straight away.')
         assert properties['type']['enum'] == list(mcp_server.TYPES)
+        # Permissions are explicit: `public` has no default, so the schema requires it.
+        assert set(schema['required']) == {'title', 'content', 'public'}
+        assert set(tools['new_org_artifact'].input_schema['required']) == {'title', 'content', 'org_editable', 'public'}
         files = tools['upload_url'].input_schema['properties']['files']
         assert files['description'].startswith('`(path, size)` pairs')
 
-        created = await client.call_tool('new_artifact', {'title': 'Demo', 'content': '# Demo\n'})
+        created = await client.call_tool(
+            'new_personal_artifact', {'title': 'Demo', 'content': '# Demo\n', 'public': False}
+        )
         name = artifact_id(created.data)
 
         # The (path, size) pairs arrive as JSON arrays and come back as a list of URLs.
@@ -343,7 +434,9 @@ async def test_tools_over_mcp(me: auth.Principal, pool: None):
         # `theme` and `type` are Literals, so bad values are rejected by the schema before the tool runs.
         for bad in ({'theme': 'neon'}, {'type': 'scroll'}):
             rejected = await client.call_tool(
-                'new_artifact', {'title': 'T', 'content': '# T\n', **bad}, raise_on_error=False
+                'new_personal_artifact',
+                {'title': 'T', 'content': '# T\n', 'public': False, **bad},
+                raise_on_error=False,
             )
             assert rejected.is_error
         assert len(await workspace.list_artifacts(me.workspace_id)) == 1
