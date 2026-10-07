@@ -48,19 +48,26 @@ def test_me_and_configure(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     assert me['viewer']['email'] == 'seed@x.test' and me['organization'] == {'domain': 'x.test', 'name': 'x.test'}
     sign_in(client, colleague)
     assert client.get('/api/me').json()['viewer']['name'] == 'C'
-    monkeypatch.setenv('OPENARTIFACT_MODELS', 'anthropic:claude-opus-5-5=Opus, test:x = Test X')
+    monkeypatch.setenv('OPENARTIFACT_MODELS', 'gateway/anthropic:claude-opus-5-5=Opus, test:x = Test X')
     assert client.get('/api/configure').json() == {
-        'models': [{'id': 'anthropic:claude-opus-5-5', 'name': 'Opus'}, {'id': 'test:x', 'name': 'Test X'}],
-        'default': 'anthropic:claude-opus-5-5',
+        'models': [{'id': 'gateway/anthropic:claude-opus-5-5', 'name': 'Opus'}, {'id': 'test:x', 'name': 'Test X'}],
+        'default': 'gateway/anthropic:claude-opus-5-5',
     }
     monkeypatch.setenv('OPENARTIFACT_MODELS', 'test:x=Test X')
     assert client.get('/api/configure').json()['default'] == 'test:x'
     monkeypatch.delenv('OPENARTIFACT_MODELS')
-    monkeypatch.delenv('ANTHROPIC_API_KEY', raising=False)
-    monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+    monkeypatch.delenv('PYDANTIC_AI_GATEWAY_API_KEY', raising=False)
     assert client.get('/api/configure').json() == {'models': [], 'default': None}
-    monkeypatch.setenv('OPENAI_API_KEY', 'k')
-    assert client.get('/api/configure').json()['default'] == 'openai-responses:gpt-5.2'
+    monkeypatch.setenv('PYDANTIC_AI_GATEWAY_API_KEY', 'pylf_v1_eu_test')
+    configured = client.get('/api/configure').json()
+    assert configured['default'] == 'gateway/anthropic:claude-opus-5-5'
+    assert [m['id'] for m in configured['models']] == [
+        'gateway/anthropic:claude-opus-5-5',
+        'gateway/anthropic:claude-sonnet-5-5',
+        'gateway/openai:gpt-6-astra',
+        'gateway/openai:gpt-6.1-sol',
+        'gateway/openai:gpt-6-luna',
+    ]
     assert artifact.id
 
 

@@ -26,15 +26,20 @@ import auth
 import mcp_server
 import workspace
 
-DEFAULT_MODEL = 'anthropic:claude-opus-5-5'
-# What the picker offers when `OPENARTIFACT_MODELS` is not set, per provider key present in the environment.
-BUILTIN_MODELS: dict[str, list[tuple[str, str]]] = {
-    'ANTHROPIC_API_KEY': [
-        ('anthropic:claude-opus-5-5', 'Claude Opus 5.5'),
-        ('anthropic:claude-sonnet-5-5', 'Claude Sonnet 5.5'),
-    ],
-    'OPENAI_API_KEY': [('openai-responses:gpt-5.2', 'GPT-5.2')],
-}
+# Every built-in model goes through the Pydantic AI Gateway (`gateway/<upstream>:<model>`), so one key,
+# PYDANTIC_AI_GATEWAY_API_KEY, covers them all and usage is metered in one place. `OPENARTIFACT_MODELS` replaces the
+# list for anyone who wants other models or direct provider access.
+GATEWAY_KEY = 'PYDANTIC_AI_GATEWAY_API_KEY'
+DEFAULT_MODEL = 'gateway/anthropic:claude-opus-5-5'
+# What the picker offers when `OPENARTIFACT_MODELS` is not set and the gateway key is: the two current Claude models
+# and the three newest OpenAI ones. `gateway/openai` is the Responses API.
+BUILTIN_MODELS: list[tuple[str, str]] = [
+    (DEFAULT_MODEL, 'Claude Opus 5.5'),
+    ('gateway/anthropic:claude-sonnet-5-5', 'Claude Sonnet 5.5'),
+    ('gateway/openai:gpt-6-astra', 'GPT-6 Astra'),
+    ('gateway/openai:gpt-6.1-sol', 'GPT-6.1 Sol'),
+    ('gateway/openai:gpt-6-luna', 'GPT-6 Luna'),
+]
 # Tool calls per turn before the run stops: an agent that cannot converge should not loop for ever.
 REQUEST_LIMIT = 40
 # The tools the agent may call; the rest of the MCP server (creating, forking, sharing, listing) stays with the user.
@@ -85,8 +90,8 @@ class ModelChoice:
 
 
 def configured_models() -> list[ModelChoice]:
-    """The models the picker offers: `OPENARTIFACT_MODELS` (`id=Name,id=Name`), else the built-ins whose provider
-    key is set. The first is the default unless `DEFAULT_MODEL` is among them."""
+    """The models the picker offers: `OPENARTIFACT_MODELS` (`id=Name,id=Name`), else the built-ins when the gateway
+    key is set, else none. The first is the default unless `DEFAULT_MODEL` is among them."""
     configured = os.environ.get('OPENARTIFACT_MODELS')
     if configured:
         choices: list[ModelChoice] = []
@@ -96,12 +101,9 @@ def configured_models() -> list[ModelChoice]:
             if model_id:
                 choices.append(ModelChoice(model_id, name.strip() or model_id))
         return choices
-    return [
-        ModelChoice(model_id, name)
-        for key, models in BUILTIN_MODELS.items()
-        if os.environ.get(key)
-        for model_id, name in models
-    ]
+    if os.environ.get(GATEWAY_KEY):
+        return [ModelChoice(model_id, name) for model_id, name in BUILTIN_MODELS]
+    return []
 
 
 def default_model() -> str | None:
@@ -118,9 +120,7 @@ def check_model(model_id: str | None) -> str:
     if model_id is None:
         chosen = default_model()
         if chosen is None:
-            raise ValueError(
-                'no model is configured: set an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY) or OPENARTIFACT_MODELS'
-            )
+            raise ValueError(f'no model is configured: set {GATEWAY_KEY} or OPENARTIFACT_MODELS')
         return chosen
     if model_id not in {choice.id for choice in configured_models()}:
         raise ValueError(f'unknown model {model_id!r}')
