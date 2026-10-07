@@ -1,0 +1,47 @@
+tests/test_workspace.py
+  s_d9c84d24ba8b7a::t_670bee4393ad7a 251-306
+backend/access.py
+  s_d9c84d24ba8b7a::t_508448dd3c8ed0 1-90
+tests/test_db.py
+  s_d9c84d24ba8b7a::t_22ffb02cf03ca0 58
+backend/migrations/0003_organizations.sql
+  s_d9c84d24ba8b7a::t_508448dd3c8ed0 1-30
+tests/test_access.py
+  s_d9c84d24ba8b7a::t_670bee4393ad7a 9
+  s_d9c84d24ba8b7a::t_22ffb02cf03ca0 1-8,10-82
+backend/signing.py
+  s_d9c84d24ba8b7a::t_508448dd3c8ed0 1-4,6-24,27-47
+  s_d9c84d24ba8b7a::t_670bee4393ad7a 5
+  s_d9c84d24ba8b7a::t_dbb8e0f1f9e335 25-26
+backend/workspace.py
+  s_d9c84d24ba8b7a::t_bc941c085a3641 27,68,76-80,92-95,101-119,129-131,135-143,261,274-294,359-360,365-367,443-510
+backend/server.py
+  s_d9c84d24ba8b7a::t_535c7fa2569012 71-74,438-441
+tests/conftest.py
+  s_d9c84d24ba8b7a::t_bc941c085a3641 30,95
+backend/auth.py
+  s_d9c84d24ba8b7a::t_bc941c085a3641 8-11,20,22,87-92,97-100,120-169,172-178,180-182,193-213,217-221,230-236
+backend/upload.py
+  s_d9c84d24ba8b7a::t_508448dd3c8ed0 13,15-16,61-62,67,73-80
+tests/test_server.py
+  s_d9c84d24ba8b7a::t_535c7fa2569012 581-582
+tests/test_signing.py
+  s_d9c84d24ba8b7a::t_22ffb02cf03ca0 1-29,31-39
+  s_d9c84d24ba8b7a::t_0ee34b4489da35 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "728d2bd5c76b12249607bd56df723e01f2cf7d03",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
