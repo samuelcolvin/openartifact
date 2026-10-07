@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.capabilities import WebSearch
 from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.models import Model
 from pydantic_ai.tools import ToolDefinition
@@ -42,6 +43,9 @@ BUILTIN_MODELS: list[tuple[str, str]] = [
 ]
 # Tool calls per turn before the run stops: an agent that cannot converge should not loop for ever.
 REQUEST_LIMIT = 40
+# Web searches the model may run per turn, through its provider's own search tool (Anthropic's and OpenAI's both
+# work through the gateway): enough to check a few facts, not enough to research a book.
+WEB_SEARCH_USES = 5
 # The tools the agent may call; the rest of the MCP server (creating, forking, sharing, listing) stays with the user.
 AGENT_TOOLS = frozenset({'run_code', 'build'})
 
@@ -58,6 +62,9 @@ How to work:
   embedding it in the code. The sandbox runs a subset of Python: `Path.read_text()` and `Path.write_text()` take
   no keyword arguments, and there is no network.
 - After every change, call `build`. A build error names the file and line: fix it and build again.
+- You can search the web. Do so when the user asks for current information, when a figure, date or name needs
+  checking, or when they point you at a page. Put the sources the content relies on into the artifact, as links
+  or a short sources list, so the reader can check them too; keep quotations short.
 - Keep replies short and concrete. Say what you changed; do not paste whole files back into the chat.
 - Never create, fork or delete artifacts, and never change who may see this one: the user does that themselves.
 
@@ -145,6 +152,8 @@ agent: Agent[ChatDeps, str] = Agent(
     instructions=[PREAMBLE, skill_text()],
     toolsets=[toolset],
     name='openartifact-editor',
+    # The provider's own web search, run on their side: no tool of ours, no request against REQUEST_LIMIT.
+    capabilities=[WebSearch(max_uses=WEB_SEARCH_USES)],
 )
 
 
