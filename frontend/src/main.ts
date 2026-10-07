@@ -117,7 +117,11 @@ function main(): void {
     if (title) document.title = title
   }
 
-  initToolbar({ title: config.title, type: config.type, theme: config.theme, deck })
+  // Viewer chrome belongs to the top-level viewer: inside a frame (the editor's live preview, an embedding page)
+  // the surrounding page is the viewer and the toolbar stays out.
+  if (window.self === window.top) {
+    initToolbar({ title: config.title, type: config.type, theme: config.theme, deck })
+  }
 }
 
 main()
