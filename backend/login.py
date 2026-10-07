@@ -26,13 +26,13 @@ from typing import Any, cast
 from urllib.parse import urlencode, urlsplit
 
 import httpx2
-import pages
-import signing
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 
 import auth
 import db
+import pages
+import signing
 from config import base_url
 
 router = APIRouter()

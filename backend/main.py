@@ -15,6 +15,8 @@ logfire.configure(service_name='openartifact', send_to_logfire='if-token-present
 # FastAPI and FastMCP pick up Logfire's global providers on their own; asyncpg, monty and httpx need hooking up.
 logfire.instrument_asyncpg()
 logfire.instrument_monty()
+# The editing agent's runs, model requests and tool calls (`agent.py`).
+logfire.instrument_pydantic_ai()
 # Every httpx / httpx2 client in the process: the call to the chrome service gets a span and carries the trace
 # context, so its spans join the request's trace. (Logfire's signature mentions `httpx.Client`, and only httpx2 is
 # installed here, so pyright sees Unknown.)

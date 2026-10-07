@@ -16,7 +16,8 @@ Routes:
     /print/{token}/artifacts/{id}/...   the page and its media for the chrome service, by a short-lived pass
     /login, /login/google, /login/callback, /logout, /login/dev   browser sign-in (`login.py`)
     /authorize, /token, /consent, /auth/callback, /.well-known/*  the MCP OAuth routes (FastMCP, root mount)
-    /                           JSON index
+    /, /edit/{id}               the web app's shell (`frontend/app/`, assets under /app/), signed-in users only
+    /api/...                    the JSON API behind it, including the editing chat (`api.py`)
 
 Who may see an artifact is decided by `access.py` from its placement and permissions: a public artifact by
 anyone, an organisation's by its members, a private one by its owner. The browser session (`login.py`) says who
@@ -47,24 +48,29 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from urllib.parse import quote
 
-import access
 import httpx2
-import login
-import pages
-import signing
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 
+import access
+import api
 import build
 import config
 import db
+import login
 import mcp_server
+import pages
+import signing
 import store
 import upload
 import workspace
 
 # openartifact.js is not packaged; it is read from the frontend build output in this checkout.
 RUNTIME_JS_PATH = config.ROOT / 'frontend' / 'dist' / 'openartifact.js'
+# The web app (`frontend/app/`, built by Vite): its shell is served at `/` and `/edit/{id}`, its assets under `/app/`.
+APP_DIR = config.ROOT / 'frontend' / 'dist' / 'app'
+APP_INDEX = APP_DIR / 'index.html'
 # What `/artifacts/{id}/{path}` will hand out from the artifact directory: images the build checked, fonts that
 # `styles.css` may declare with `@font-face`, and the source files themselves (`main.md`, `artifact.toml`,
 # `styles.css`, `components/*`), so a reader can fetch the markdown instead of parsing the page. The build output
@@ -201,10 +207,25 @@ def contained_file(directory: Path, relative: str, allowed: tuple[str, ...]) -> 
     return path
 
 
+async def app_shell(request: Request) -> Response:
+    """The web app's HTML shell, for a signed-in user; a visitor is sent to sign in first."""
+    if await login.current_viewer(request) is None:
+        raise LoginRequired()
+    if not APP_INDEX.is_file():
+        raise HTTPException(404, f'{APP_INDEX} is missing: run `pnpm -C frontend build`')
+    return FileResponse(APP_INDEX, media_type='text/html', headers={'Cache-Control': 'no-store'})
+
+
 @app.get('/')
-def index() -> dict[str, object]:
-    """The MCP endpoint, the runtime and sign-in; artifacts are listed per user by the `list_artifacts` tool."""
-    return {'mcp': '/mcp/', 'runtime': '/openartifact.js', 'login': '/login'}
+async def index(request: Request) -> Response:
+    """The web app: the artifact list. The JSON index moved to `/api/`."""
+    return await app_shell(request)
+
+
+@app.get('/edit/{artifact_id}')
+async def edit_page(artifact_id: str, request: Request) -> Response:
+    """The web app: the editor for one artifact (the app itself checks access and loads it)."""
+    return await app_shell(request)
 
 
 @app.get('/health/')
@@ -599,5 +620,7 @@ async def artifact_upload(artifact_id: str, path: str, request: Request, token: 
 
 
 app.include_router(login.router)
+app.include_router(api.router)
+app.mount('/app', StaticFiles(directory=APP_DIR, check_dir=False), name='app')
 # Last: the MCP app answers everything no route above matched (the endpoint, the OAuth routes, and 404s).
 app.mount('/', mcp_app)

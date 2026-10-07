@@ -9,6 +9,10 @@ Why?
 * Good support for PDF generation - configure `page` css property properly
 * No JavaScript toolchain needed to build a deck: the runtime is one prebuilt `openartifact.js`, the builder is one Python module with no dependencies
 
+## The web app
+
+Signed in, `/` lists your artifacts and the ones your organisation shares with you, and `/edit/<id>` opens the editor: a chat with an agent on the left, the live page on the right. The agent is a pydantic-ai agent whose tools are this server's own MCP tools (`run_code` and `build`), run in-process as you, so its edits are commits in the artifact's history like any other. Each turn streams over the Vercel AI SDK protocol; the conversation is kept per artifact and per user. The model picker offers the models configured on the server: set `ANTHROPIC_API_KEY` and / or `OPENAI_API_KEY` for the built-in list (Claude Opus 5.5 is the default when available), or `OPENARTIFACT_MODELS="anthropic:claude-opus-5-5=Opus,openai-responses:gpt-5.2=GPT-5.2"` to name them yourself.
+
 ## Artifact types
 
 An artifact is markdown split into pages on `---` lines. `type` in `artifact.toml` picks how the pages are laid out; `theme` picks the colours.
@@ -42,7 +46,7 @@ Clone the repo and build the browser runtime once:
 ```bash
 git clone https://github.com/samuelcolvin/openartifact
 cd openartifact
-pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/openartifact.js
+pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/openartifact.js and frontend/dist/app/
 ```
 
 Then start Postgres and the server, and let an agent drive it over MCP:
@@ -169,4 +173,4 @@ uv run basedpyright
 uv run pytest
 ```
 
-`pnpm -C frontend dev` rebuilds `frontend/dist/openartifact.js` on every change to `frontend/src/`; the server serves the new file on the next request. Headless Chrome (`--dump-dom`, `--screenshot`) is handy for checking the runtime without a browser session.
+`pnpm -C frontend dev` rebuilds `frontend/dist/openartifact.js` on every change to `frontend/src/`; the server serves the new file on the next request. `pnpm -C frontend app:dev` runs Vite's dev server for the web app (`frontend/app/`) on :5173 with hot reload, proxying everything else to the Python server on :8765; `pnpm -C frontend build:app` writes the production bundle the Python server serves. Headless Chrome (`--dump-dom`, `--screenshot`) is handy for checking the runtime without a browser session.

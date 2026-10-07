@@ -7,9 +7,9 @@
  * It holds the artifact title, for a deck the previous / next buttons, a counter and a full-screen
  * toggle, a Download menu for the `.pdf`, `.md` and `.zip` exports served beside the page, and the
  * brand. Once the page is up it fetches `<page>.json` (who may see the artifact, and who is looking)
- * and adds a visibility badge, a Fork button for a signed-in viewer, and a sign-in link or an account
- * menu with sign-out. That fetch is the one asynchronous thing here: it is viewer chrome, not page
- * content, and the print sheet hides the host anyway. Edit will join the right-hand group later.
+ * and adds a visibility badge, Edit (the web app's editor) for someone who may change it, Fork for a
+ * signed-in viewer, and a sign-in link or an account menu with sign-out. That fetch is the one asynchronous thing here: it is viewer chrome, not page
+ * content, and the print sheet hides the host anyway.
  *
  * Auto-hide: the bar shows while the pointer is near the top of the window or over the bar, while
  * focus is inside it or the menu is open, and slides away a second after the pointer leaves that
@@ -41,6 +41,7 @@ const INTRO_SHOW = 2500
 
 /** What `/artifacts/<id>.json` answers: the artifact's placement and permissions, and the viewer's rights. */
 interface ArtifactAccess {
+  id: string
   visibility: 'private' | 'org' | 'public'
   org_editable: boolean
   organization: { domain: string; name: string } | null
@@ -166,6 +167,9 @@ function renderAccess(group: HTMLElement, before: Element | null, base: string, 
   const detail = info.org_editable ? `${who}, editable by the organisation` : who
   insert(el('span', { class: `badge ${info.visibility}`, title: detail }, label))
 
+  if (info.can_edit) {
+    insert(el('a', { class: 'menu-button', href: `/edit/${info.id}`, title: 'Open the editor' }, 'Edit'))
+  }
   if (info.can_fork) {
     const form = el('form', { method: 'post', action: `${base}/fork`, class: 'inline' })
     form.append(

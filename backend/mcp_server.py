@@ -39,7 +39,6 @@ from pathlib import Path
 from typing import Any, Literal, get_args
 from urllib.parse import quote
 
-import access
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.providers.skills import SkillProvider
@@ -53,6 +52,7 @@ from pydantic_monty import (
     ResourceLimits,
 )
 
+import access
 import auth
 import build
 import upload
@@ -184,12 +184,15 @@ async def create_artifact(
     content: str,
     type: ArtifactType,
     theme: Theme,
-    build: bool,
     visibility: str,
     org_editable: bool,
     organization_id: uuid.UUID | None,
-) -> str:
-    """What the two creation tools share: write `artifact.toml` and `main.md` in one edit, then build."""
+) -> uuid.UUID:
+    """What the two creation tools and the web app share: write `artifact.toml` and `main.md` in one edit.
+
+    Returns the new id; the caller builds (or not) and formats its answer. A bad combination of placement and
+    permissions is a `ToolError` before anything is written.
+    """
     problem = access.check_access(visibility, org_editable, organization_id)
     if problem is not None:
         raise ToolError(problem)
@@ -206,6 +209,11 @@ async def create_artifact(
     async with editing(artifact_id, f'new_artifact: {artifact_id}', create=create) as tx:
         (tx.path / 'artifact.toml').write_text(render_toml(config), encoding='utf-8')
         (tx.path / 'main.md').write_text(content, encoding='utf-8')
+    return artifact_id
+
+
+async def created(artifact_id: uuid.UUID, build: bool) -> str:
+    """A creation tool's answer: the id and page URL, after building unless told not to."""
     if not build:
         return f'artifact: {artifact_id}\npage (after `build`): {artifact_url(artifact_id)}\n'
     # Built after the edit has committed, so an artifact whose first build fails still exists to be fixed.
@@ -242,17 +250,17 @@ async def new_personal_artifact(
             add with `upload_url` or `run_code`, then call `build` once they are in place.
     """
     principal = await auth.current_principal()
-    return await create_artifact(
+    artifact_id = await create_artifact(
         principal,
         title=title,
         content=content,
         type=type,
         theme=theme,
-        build=build,
         visibility='public' if public else 'private',
         org_editable=False,
         organization_id=None,
     )
+    return await created(artifact_id, build)
 
 
 async def new_org_artifact(
@@ -293,17 +301,17 @@ async def new_org_artifact(
             'your account is not in an organisation: sign in with a Google Workspace account to share with one, '
             'or create a personal artifact with `new_personal_artifact`'
         )
-    return await create_artifact(
+    artifact_id = await create_artifact(
         principal,
         title=title,
         content=content,
         type=type,
         theme=theme,
-        build=build,
         visibility='public' if public else 'org',
         org_editable=org_editable,
         organization_id=principal.organization_id,
     )
+    return await created(artifact_id, build)
 
 
 async def set_access(artifact: str, public: bool, org_editable: bool = False) -> str:

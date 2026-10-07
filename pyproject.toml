@@ -18,6 +18,7 @@ dependencies = [
     "py-key-value-aio[postgresql,wrappers-encryption]>=0.4.6",
     "pydantic-monty>=1.0.0",
     "uvicorn>=0.54.0",
+    "pydantic-ai-slim[anthropic,mcp,openai]==2.54.0",
 ]
 
 # Not a package: backend/ is a handful of modules imported by path (pytest and pyright add it to the path), with
@@ -62,7 +63,7 @@ mccabe = { max-complexity = 14 }
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
-known-first-party = ["auth", "build", "config", "db", "chrome", "mcp_server", "server", "store", "upload", "workspace"]
+known-first-party = ["access", "agent", "api", "auth", "build", "chats", "config", "db", "chrome", "login", "mcp_server", "pages", "server", "signing", "store", "upload", "workspace"]
 
 [tool.ruff.format]
 docstring-code-format = true

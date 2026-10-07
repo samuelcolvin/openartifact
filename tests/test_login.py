@@ -8,7 +8,6 @@ from collections.abc import Iterator
 from urllib.parse import parse_qs, urlsplit
 
 import httpx2
-import login
 import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
@@ -16,6 +15,7 @@ from fastapi.testclient import TestClient
 
 import auth
 import db
+import login
 import server
 import workspace
 

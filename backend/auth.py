@@ -6,7 +6,8 @@ Postgres. Each Google identity becomes a row in `users` with its own workspace o
 credentials, `OPENARTIFACT_DEV_TOKEN` names one static bearer token for a development user.
 
 Tools call `current_principal()`; it reads the verified token's claims. Browser sessions (`login.py`) resolve to
-the same `Principal` through `load_principal()`. Code that is not inside an MCP request (tests, scripts) wraps
+the same `Principal` through `load_principal()`, and the editing agent (`agent.py`, `api.py`) runs the tools
+in-process as that user through `set_principal()`. Code that is not inside an MCP request (tests, scripts) wraps
 calls in `as_principal()`. Organisations come from Google Workspace accounts: `hosted_domain()` reads the `hd`
 claim and `upsert_user()` records the membership.
 """
@@ -18,6 +19,7 @@ import logging
 import os
 import uuid
 from collections.abc import Generator, Mapping
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import cast
 
@@ -92,6 +94,7 @@ def install_pages() -> None:
     """
     import fastmcp.server.auth.oauth_proxy.consent as fastmcp_consent
     import fastmcp.server.auth.oauth_proxy.proxy as fastmcp_proxy
+
     import pages
 
     # Written through the module dict: a plain assignment is a private-import error for the type checker.
@@ -120,6 +123,20 @@ class Principal:
 # Set by `as_principal()` for code running outside an MCP request (tests, scripts). A plain global rather than a
 # ContextVar: it is process-wide by design, and a ContextVar would not reach a test task from a sync fixture.
 _override: Principal | None = None
+# Set by `set_principal()` for an agent run that acts as a browser user: the agent calls the MCP tools in-process,
+# with no token, so the tools find the caller here. A ContextVar, so concurrent runs for different users on one
+# server do not see each other; it reaches the in-process MCP session because that is created inside the run.
+_context: ContextVar[Principal | None] = ContextVar('openartifact_principal', default=None)
+
+
+def set_principal(principal: Principal) -> Token[Principal | None]:
+    """Make `current_principal()` return `principal` in the current context until `reset_principal`."""
+    return _context.set(principal)
+
+
+def reset_principal(token: Token[Principal | None]) -> None:
+    """Undo `set_principal`."""
+    _context.reset(token)
 
 
 @contextlib.contextmanager
@@ -236,6 +253,9 @@ async def current_principal() -> Principal:
     Not cached: organisation membership is settled at sign-in and may change between calls, and the upsert is one
     short transaction next to the upstream verification FastMCP already does per request.
     """
+    contextual = _context.get()
+    if contextual is not None:
+        return contextual
     if _override is not None:
         return _override
     token = get_access_token()

@@ -16,7 +16,6 @@ from typing import TypeVar
 
 import httpx2
 import logfire
-import login
 import pytest
 import uvicorn
 from conftest import DEV_TOKEN
@@ -28,6 +27,7 @@ from logfire.testing import CaptureLogfire
 
 import auth
 import db
+import login
 import server
 import upload
 import workspace
@@ -73,7 +73,7 @@ def starter(client: TestClient) -> workspace.Artifact:
 
 
 def test_index(client: TestClient):
-    assert client.get('/').json() == {'mcp': '/mcp/', 'runtime': '/openartifact.js', 'login': '/login'}
+    assert client.get('/api/').json() == {'mcp': '/mcp/', 'runtime': '/openartifact.js', 'login': '/login', 'app': '/'}
 
 
 def test_health(client: TestClient):
@@ -602,7 +602,7 @@ async def test_native_telemetry_reaches_logfire(live_server: str, capfire: Captu
     logfire.instrument_asyncpg()
     logfire.instrument_monty()
     async with httpx2.AsyncClient() as http:
-        assert (await http.get(f'{live_server}/')).status_code == 200
+        assert (await http.get(f'{live_server}/api/')).status_code == 200
     async with Client(f'{live_server}/mcp/', auth=DEV_TOKEN) as client:
         created = await client.call_tool('new_personal_artifact', {'title': 'T', 'content': '# T\n', 'public': False})
         name = created.data.partition('\n')[0].removeprefix('artifact: ')
@@ -611,7 +611,7 @@ async def test_native_telemetry_reaches_logfire(live_server: str, capfire: Captu
     names = {span['name'] for span in spans}
     # Exported names are message templates: FastAPI's route, FastMCP's tool, monty's session and run, our git spans.
     assert {
-        'GET /',
+        'GET /api/',
         'fastapi.endpoint',
         # The MCP app is a root mount, so FastAPI's telemetry knows the request only as the mount's path.
         'POST /{path}',
@@ -779,6 +779,7 @@ def test_oauth_metadata_points_at_served_routes(monkeypatch: pytest.MonkeyPatch)
     # Building the provider installed our consent and error pages in FastMCP's modules.
     import fastmcp.server.auth.oauth_proxy.consent as fastmcp_consent
     import fastmcp.server.auth.oauth_proxy.proxy as fastmcp_proxy
+
     import pages
 
     assert vars(fastmcp_consent)['create_consent_html'] is pages.consent_html
@@ -789,8 +790,9 @@ def test_our_consent_page_matches_fastmcp_contract():
     """`pages.consent_html` accepts every argument FastMCP's renderer takes, and renders the form it expects."""
     import inspect
 
-    import pages
     from fastmcp.server.auth.oauth_proxy import ui
+
+    import pages
 
     theirs = inspect.signature(ui.create_consent_html).parameters
     ours = inspect.signature(pages.consent_html).parameters

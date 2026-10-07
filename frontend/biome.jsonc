@@ -37,7 +37,7 @@
       "nursery": { "preset": "none" }
     }
   },
-  "css": { "formatter": { "quoteStyle": "single" } },
+  "css": { "parser": { "tailwindDirectives": true }, "formatter": { "quoteStyle": "single" } },
   "javascript": {
     "formatter": {
       "trailingCommas": "all",
@@ -50,6 +50,10 @@
     "actions": { "source": { "organizeImports": "on" } }
   },
   "overrides": [
+    {
+      "includes": ["app/src/**/*.css"],
+      "linter": { "rules": { "suspicious": { "noUnknownAtRules": "off" } } }
+    },
     {
       "includes": ["src/styles/base.css", "src/hljs.css"],
       "linter": {

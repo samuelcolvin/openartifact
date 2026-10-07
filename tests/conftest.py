@@ -27,7 +27,7 @@ import workspace
 DEV_TOKEN = 'test-dev-token'
 os.environ['OPENARTIFACT_DEV_TOKEN'] = DEV_TOKEN  # not setdefault: the Makefile exports a dev token of its own
 
-TABLES = ('users', 'credentials', 'workspaces', 'organizations', 'organization_members', 'artifacts')
+TABLES = ('users', 'credentials', 'workspaces', 'organizations', 'organization_members', 'artifacts', 'chats')
 
 
 @pytest.fixture(scope='session')

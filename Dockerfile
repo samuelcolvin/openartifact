@@ -1,6 +1,6 @@
 # The application image: the FastAPI server with the MCP endpoint, openartifact.js and artifact pages.
 #
-# Two build stages feed the final one: node builds frontend/dist/openartifact.js, uv installs the locked Python
+# Two build stages feed the final one: node builds frontend/dist/ (openartifact.js and the web app), uv installs the locked Python
 # dependencies into a virtualenv. The final image is python:3.14-slim plus git (artifacts are git repositories).
 # Chrome is deliberately not here: PDF export is the chrome image (chrome/Dockerfile), which the app calls over HTTP.
 #
@@ -10,14 +10,15 @@
 # Runtime configuration is by environment, see backend/server.py. Inside the container the checkout cache and the
 # local object store default to /data, so mount a volume there unless OPENARTIFACT_STORE_URL points at S3.
 
-# --- openartifact.js --------------------------------------------------------
+# --- openartifact.js and the web app -----------------------------------------
 FROM node:24-slim AS frontend
 WORKDIR /build
 RUN corepack enable
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
-COPY frontend/tsconfig.json ./
+COPY frontend/tsconfig.json frontend/tsconfig.app.json frontend/vite.config.ts ./
 COPY frontend/src ./src
+COPY frontend/app ./app
 RUN pnpm build
 
 # --- Python dependencies ----------------------------------------------------
