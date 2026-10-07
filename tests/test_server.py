@@ -578,7 +578,8 @@ async def test_native_telemetry_reaches_logfire(live_server: str, capfire: Captu
     assert {
         'GET /',
         'fastapi.endpoint',
-        'POST /mcp/{path}',
+        # The MCP app is a root mount, so FastAPI's telemetry knows the request only as the mount's path.
+        'POST /{path}',
         'tools/call run_code',
         'session {script_name}',
         'run code',

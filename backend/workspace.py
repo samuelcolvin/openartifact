@@ -24,7 +24,7 @@ import contextlib
 import os
 import shutil
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -65,7 +65,7 @@ class ArtifactBusy(Exception):
 
 @dataclass(frozen=True)
 class Artifact:
-    """A row of the `artifacts` table."""
+    """A row of the `artifacts` table. Who may see or change it is decided by `access.py` from these fields."""
 
     id: uuid.UUID
     workspace_id: uuid.UUID
@@ -73,6 +73,11 @@ class Artifact:
     type: str
     # The commit whose bundle is current; None until the first edit commits.
     head_sha: str | None
+    # Placement and permissions: see `access.py` and `0003_organizations.sql`.
+    visibility: str
+    org_editable: bool
+    organization_id: uuid.UUID | None
+    forked_from: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
 
@@ -84,12 +89,34 @@ class Artifact:
             title=row['title'],
             type=row['type'],
             head_sha=row['head_sha'],
+            visibility=row['visibility'],
+            org_editable=row['org_editable'],
+            organization_id=row['organization_id'],
+            forked_from=row['forked_from'],
             created_at=row['created_at'],
             updated_at=row['updated_at'],
         )
 
 
-ARTIFACT_COLUMNS = 'id, workspace_id, title, type, head_sha, created_at, updated_at'
+ARTIFACT_FIELDS = (
+    'id',
+    'workspace_id',
+    'title',
+    'type',
+    'head_sha',
+    'visibility',
+    'org_editable',
+    'organization_id',
+    'forked_from',
+    'created_at',
+    'updated_at',
+)
+ARTIFACT_COLUMNS = ', '.join(ARTIFACT_FIELDS)
+
+
+def artifact_columns(alias: str) -> str:
+    """The artifact columns qualified by a table alias, for joins."""
+    return ', '.join(f'{alias}.{field}' for field in ARTIFACT_FIELDS)
 
 
 @dataclass(frozen=True)
@@ -99,7 +126,19 @@ class NewArtifact:
     workspace_id: uuid.UUID
     title: str
     type: str
+    visibility: str = 'private'
+    org_editable: bool = False
+    organization_id: uuid.UUID | None = None
     forked_from: uuid.UUID | None = None
+
+
+@dataclass(frozen=True)
+class Organization:
+    """A row of the `organizations` table: a Google Workspace domain and its display name."""
+
+    id: uuid.UUID
+    domain: str
+    name: str
 
 
 def checkout_path(artifact_id: uuid.UUID) -> Path:
@@ -219,20 +258,7 @@ async def sync_checkout(artifact_id: uuid.UUID, head_sha: str | None) -> Path:
 
     code, _, _ = await run_artifact_git(artifact_id, 'cat-file', '-e', f'{head_sha}^{{commit}}')
     if code != 0:
-        # `git fetch <file>` reads a bundle without recording a remote, unlike `git clone <bundle>`.
-        bundle = cache_dir() / f'{artifact_id}.{head_sha}.bundle'
-        try:
-            data = await store.store().get(bundle_key(artifact_id, head_sha))
-        except store.StoreMissing as exc:
-            raise GitError(
-                f'artifact {artifact_id}: the bundle for head {head_sha} is missing from the object store; '
-                'DATABASE_URL and OPENARTIFACT_STORE_URL do not describe the same deployment'
-            ) from exc
-        bundle.write_bytes(data)
-        try:
-            await artifact_git(artifact_id, 'fetch', '-q', str(bundle), 'main')
-        finally:
-            bundle.unlink(missing_ok=True)
+        await fetch_bundle(artifact_id, artifact_id, head_sha)
 
     code, old, _ = await run_artifact_git(artifact_id, 'rev-parse', '--verify', '-q', 'HEAD')
     old_sha = old.strip() if code == 0 else None
@@ -243,6 +269,27 @@ async def sync_checkout(artifact_id: uuid.UUID, head_sha: str | None) -> Path:
 
     _synced[artifact_id] = head_sha
     return tree
+
+
+async def fetch_bundle(artifact_id: uuid.UUID, source_id: uuid.UUID, sha: str) -> None:
+    """Fetch `source_id`'s bundle for `sha` from the object store into `artifact_id`'s repository (`FETCH_HEAD`).
+
+    The source is the artifact itself when syncing, or another artifact when forking. `git fetch <file>` reads a
+    bundle without recording a remote, unlike `git clone <bundle>`.
+    """
+    bundle = cache_dir() / f'{artifact_id}.{sha}.bundle'
+    try:
+        data = await store.store().get(bundle_key(source_id, sha))
+    except store.StoreMissing as exc:
+        raise GitError(
+            f'artifact {source_id}: the bundle for head {sha} is missing from the object store; '
+            'DATABASE_URL and OPENARTIFACT_STORE_URL do not describe the same deployment'
+        ) from exc
+    bundle.write_bytes(data)
+    try:
+        await artifact_git(artifact_id, 'fetch', '-q', str(bundle), 'main')
+    finally:
+        bundle.unlink(missing_ok=True)
 
 
 async def bundle_and_upload(artifact_id: uuid.UUID, sha: str) -> str:
@@ -309,12 +356,15 @@ async def edit(artifact_id: uuid.UUID, message: str, *, create: NewArtifact | No
         await conn.execute("SET LOCAL lock_timeout = '60s'")
         if create is not None:
             row = await conn.fetchrow(
-                'INSERT INTO artifacts (id, workspace_id, title, type, forked_from) VALUES ($1, $2, $3, $4, $5) '
-                f'RETURNING {ARTIFACT_COLUMNS}',
+                'INSERT INTO artifacts (id, workspace_id, title, type, visibility, org_editable, organization_id, '
+                f'forked_from) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING {ARTIFACT_COLUMNS}',
                 artifact_id,
                 create.workspace_id,
                 create.title,
                 create.type,
+                create.visibility,
+                create.org_editable,
+                create.organization_id,
                 create.forked_from,
             )
         else:
@@ -388,6 +438,76 @@ async def list_artifacts(workspace_id: uuid.UUID) -> list[Artifact]:
         f'SELECT {ARTIFACT_COLUMNS} FROM artifacts WHERE workspace_id = $1 ORDER BY created_at, id', workspace_id
     )
     return [Artifact.from_row(row) for row in rows]
+
+
+async def list_shared_artifacts(
+    org_ids: Iterable[uuid.UUID], exclude_workspace: uuid.UUID
+) -> list[tuple[Artifact, str | None]]:
+    """Artifacts other members of the given organisations share (visible to the organisation or public), oldest
+    first, each with its owner's email."""
+    rows = await db.pool().fetch(
+        f'SELECT {artifact_columns("a")}, u.email AS owner_email FROM artifacts a '
+        'JOIN workspaces w ON w.id = a.workspace_id JOIN users u ON u.id = w.owner_user_id '
+        "WHERE a.organization_id = ANY($1::uuid[]) AND a.visibility IN ('org', 'public') AND a.workspace_id <> $2 "
+        'ORDER BY a.created_at, a.id',
+        list(org_ids),
+        exclude_workspace,
+    )
+    return [(Artifact.from_row(row), row['owner_email']) for row in rows]
+
+
+async def set_access(artifact_id: uuid.UUID, *, visibility: str, org_editable: bool) -> Artifact:
+    """Change who may see and edit an artifact. Metadata, not content: no commit. The caller validated the
+    combination with `access.check_access`; the database checks it again."""
+    row = await db.pool().fetchrow(
+        'UPDATE artifacts SET visibility = $2, org_editable = $3, updated_at = now() WHERE id = $1 '
+        f'RETURNING {ARTIFACT_COLUMNS}',
+        artifact_id,
+        visibility,
+        org_editable,
+    )
+    if row is None:
+        raise LookupError(f'artifact {artifact_id} does not exist')
+    return Artifact.from_row(row)
+
+
+async def get_organization(organization_id: uuid.UUID) -> Organization | None:
+    """An organisation by id."""
+    row = await db.pool().fetchrow('SELECT id, domain, name FROM organizations WHERE id = $1', organization_id)
+    return Organization(id=row['id'], domain=row['domain'], name=row['name']) if row else None
+
+
+async def fork_artifact(
+    source: Artifact,
+    workspace_id: uuid.UUID,
+    *,
+    organization_id: uuid.UUID | None,
+    visibility: str,
+    org_editable: bool,
+) -> Artifact:
+    """Copy an artifact into a workspace as a new one, history included, with `forked_from` set.
+
+    The new repository fetches the source's current bundle (an immutable key, so the source needs no lock) and
+    starts from its head; the edit then adds an empty "fork of" commit on top, so the fork's history is the
+    source's history plus the fork. The caller checked `access.can_fork`.
+    """
+    artifact_id = uuid.uuid4()
+    create = NewArtifact(
+        workspace_id=workspace_id,
+        title=source.title,
+        type=source.type,
+        visibility=visibility,
+        org_editable=org_editable,
+        organization_id=organization_id,
+        forked_from=source.id,
+    )
+    async with edit(artifact_id, f'fork of {source.id}', create=create):
+        if source.head_sha is not None:
+            await fetch_bundle(artifact_id, source.id, source.head_sha)
+            await artifact_git(artifact_id, 'reset', '-q', '--hard', 'FETCH_HEAD')
+    found = await get_artifact(artifact_id)
+    assert found is not None
+    return found
 
 
 async def import_directory(workspace_id: uuid.UUID, title: str, type: str, src: Path) -> Artifact:

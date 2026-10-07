@@ -27,7 +27,7 @@ import workspace
 DEV_TOKEN = 'test-dev-token'
 os.environ['OPENARTIFACT_DEV_TOKEN'] = DEV_TOKEN  # not setdefault: the Makefile exports a dev token of its own
 
-TABLES = ('users', 'credentials', 'workspaces', 'artifacts')
+TABLES = ('users', 'credentials', 'workspaces', 'organizations', 'organization_members', 'artifacts')
 
 
 @pytest.fixture(scope='session')
@@ -92,8 +92,7 @@ async def db_pool(test_database_url: str) -> AsyncGenerator[db.Pool]:
             yield pool
         finally:
             await pool.execute(f'TRUNCATE {", ".join(TABLES)} CASCADE')
-            # Per-process caches would otherwise point at rows and checkouts that no longer exist.
-            auth.reset_cache()
+            # Per-process state would otherwise point at checkouts that no longer exist.
             workspace.reset_state()
 
 
@@ -135,5 +134,4 @@ def server_env(test_database_url: str, tmp_path: Path, monkeypatch: pytest.Monke
         yield
     finally:
         asyncio.run(truncate_all())
-        auth.reset_cache()
         workspace.reset_state()

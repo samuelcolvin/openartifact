@@ -248,3 +248,59 @@ async def test_bundle_verifies(principal: auth.Principal, storage: store.ObjectS
     bundle.write_bytes(await storage.get(workspace.bundle_key(artifact.id, artifact.head_sha)))
     out = await workspace.git('bundle', 'list-heads', str(bundle), cwd=tmp_path)
     assert out.split() == [artifact.head_sha, 'refs/heads/main']
+
+
+async def test_fork_keeps_history(principal: auth.Principal, db_pool: db.Pool):
+    source = await write_artifact(principal.workspace_id, 'Original', body='# one\n')
+    async with workspace.edit(source.id, 'second') as tx:
+        (tx.path / 'main.md').write_text('# two\n')
+        (tx.path / 'dist').mkdir()
+        (tx.path / 'dist' / 'index.html').write_text('built')
+    source = await workspace.get_artifact(source.id) or source
+    async with db_pool.acquire() as conn, conn.transaction():
+        other = await auth.upsert_user(conn, sub='user-b', email='b@example.com', name=None, picture=None)
+    fork = await workspace.fork_artifact(
+        source, other.workspace_id, organization_id=None, visibility='private', org_editable=False
+    )
+    assert fork.forked_from == source.id and fork.workspace_id == other.workspace_id
+    assert (fork.title, fork.type, fork.visibility) == ('Original', 'page', 'private')
+    assert fork.head_sha is not None and fork.head_sha != source.head_sha
+    assert await git_log(fork.id) == [f'fork of {source.id}', 'second', f'new_artifact: {source.id}']
+    async with workspace.open_artifact(fork) as directory:
+        assert (directory / 'main.md').read_text() == '# two\n'
+        assert not (directory / 'dist').exists()
+    # The fork is its own repository: editing it leaves the source alone, and vice versa.
+    async with workspace.edit(fork.id, 'forked edit') as tx:
+        (tx.path / 'main.md').write_text('# three\n')
+    assert await git_log(source.id) == ['second', f'new_artifact: {source.id}']
+    assert await workspace.list_artifacts(other.workspace_id) == [await workspace.get_artifact(fork.id)]
+
+
+async def test_shared_listing_and_set_access(principal: auth.Principal, db_pool: db.Pool):
+    async with db_pool.acquire() as conn, conn.transaction():
+        me = await auth.upsert_user(conn, sub='user-a', email='a@example.com', name=None, picture=None, hd='x.test')
+        colleague = await auth.upsert_user(
+            conn, sub='user-c', email='c@example.com', name=None, picture=None, hd='x.test'
+        )
+        stranger = await auth.upsert_user(conn, sub='user-s', email='s@example.com', name=None, picture=None)
+    assert me.organization_id is not None and me.org_ids == colleague.org_ids == {me.organization_id}
+    assert stranger.org_ids == frozenset() and stranger.organization_id is None
+    org = await workspace.get_organization(me.organization_id)
+    assert org is not None and (org.domain, org.name) == ('x.test', 'x.test')
+
+    mine = uuid.uuid4()
+    create = workspace.NewArtifact(me.workspace_id, 'Shared', 'page', visibility='org', organization_id=org.id)
+    async with workspace.edit(mine, 'new', create=create) as tx:
+        (tx.path / 'main.md').write_text('# shared\n')
+    private = await write_artifact(me.workspace_id, 'Private')
+    shared = await workspace.list_shared_artifacts(colleague.org_ids, colleague.workspace_id)
+    assert [(a.id, email) for a, email in shared] == [(mine, 'a@example.com')]
+    assert await workspace.list_shared_artifacts(me.org_ids, me.workspace_id) == []
+    assert private.visibility == 'private'
+
+    changed = await workspace.set_access(mine, visibility='public', org_editable=True)
+    assert (changed.visibility, changed.org_editable) == ('public', True)
+    with pytest.raises(Exception, match='artifacts_org_access'):
+        await workspace.set_access(mine, visibility='private', org_editable=False)
+    with pytest.raises(LookupError):
+        await workspace.set_access(uuid.uuid4(), visibility='public', org_editable=False)

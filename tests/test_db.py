@@ -55,7 +55,7 @@ async def test_schema_and_idempotent_migrate(db_pool: db.Pool):
             'schema_migrations',
         }
         versions = await conn.fetch('SELECT version, name FROM schema_migrations ORDER BY version')
-        assert [(row['version'], row['name']) for row in versions] == [(1, 'initial'), (2, 'artifact_repositories')]
+        assert [(row['version'], row['name']) for row in versions] == [(v, n) for v, n, _ in db.migration_files()]
 
 
 async def test_migrate_applies_new_files_once(db_pool: db.Pool, tmp_path: Path):

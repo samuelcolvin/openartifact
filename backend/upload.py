@@ -8,14 +8,12 @@ URL stays valid until it expires, which only lets its holder write the same path
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import time
 import uuid
 
-import config
+import signing
 
+# The key purpose: a session or print token never verifies as an upload token.
+PURPOSE = b'openartifact upload url'
 # One URL is good for an hour: agents are slow between asking for a URL and uploading to it.
 TOKEN_TTL = 3600
 # Per-file cap; the body is held in memory before it is written.
@@ -60,26 +58,23 @@ def validate_size(path: str, size: int) -> int:
 
 
 def signature(artifact_id: uuid.UUID, path: str, size: int, expires: int) -> str:
-    """URL-safe HMAC-SHA256 of the four values, keyed by a key derived from the server secret for this purpose."""
-    key = hmac.new(config.secret_key(), b'openartifact upload url', hashlib.sha256).digest()
-    message = f'{artifact_id}\n{path}\n{size}\n{expires}'.encode()
-    digest = hmac.new(key, message, hashlib.sha256).digest()
-    return base64.urlsafe_b64encode(digest).rstrip(b'=').decode()
+    """URL-safe HMAC-SHA256 of the four values, keyed for this purpose (`signing.py`)."""
+    return signing.sign(PURPOSE, str(artifact_id), path, str(size), str(expires))
 
 
 def make_token(artifact_id: uuid.UUID, path: str, size: int, expires: int) -> str:
     """The `token` query parameter: the expiry (unix seconds) and the signature, dot separated."""
-    return f'{expires}.{signature(artifact_id, path, size, expires)}'
+    return signing.token(PURPOSE, str(artifact_id), path, str(size), expires=expires)
 
 
 def verify_token(token: str, artifact_id: uuid.UUID, path: str, size: int, now: float | None = None) -> None:
     """Raise `UploadError` unless `token` signs exactly these values and has not expired."""
-    expires_text, _, given = token.partition('.')
     try:
-        expires = int(expires_text)
-    except ValueError:
-        raise UploadError('malformed upload token') from None
-    if not hmac.compare_digest(given, signature(artifact_id, path, size, expires)):
-        raise UploadError('the upload token does not match this artifact, path and size')
-    if expires < (time.time() if now is None else now):
-        raise UploadError('the upload URL has expired; ask for a new one with `upload_url`')
+        signing.verify(PURPOSE, token, str(artifact_id), path, str(size), now=now)
+    except signing.SignatureError as exc:
+        reason = str(exc)
+        if 'malformed' in reason:
+            raise UploadError('malformed upload token') from None
+        if 'expired' in reason:
+            raise UploadError('the upload URL has expired; ask for a new one with `upload_url`') from None
+        raise UploadError('the upload token does not match this artifact, path and size') from None

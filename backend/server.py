@@ -68,8 +68,10 @@ SOURCE_MEDIA_TYPES = {
 }
 
 
-# `path='/'` inside the mount makes the endpoint `/mcp/`.
-mcp_app = mcp_server.mcp.http_app(path='/')
+# The MCP endpoint is `/mcp/`; the app is mounted at the root (last, below) so the OAuth routes FastMCP registers
+# beside it (`/authorize`, `/token`, `/consent`, `/auth/callback`, `/.well-known/*`) sit where the metadata built
+# from `base_url()` says they are. Mounted under `/mcp` they would be advertised at paths nothing serves.
+mcp_app = mcp_server.mcp.http_app(path='/mcp/')
 
 
 @contextlib.asynccontextmanager
@@ -89,7 +91,6 @@ app = FastAPI(
     lifespan=lifespan,
     telemetry={'auto_configure': False, 'exclude': lambda scope: scope['path'] == '/health/'},
 )
-app.mount('/mcp', mcp_app)
 
 
 async def load_artifact(artifact_id: str) -> workspace.Artifact:
@@ -434,3 +435,7 @@ async def artifact_upload(artifact_id: str, path: str, request: Request, token: 
     except workspace.ArtifactBusy as exc:
         raise HTTPException(409, str(exc)) from exc
     return {'path': path, 'size': size, 'sha256': hashlib.sha256(body).hexdigest()}
+
+
+# Last: the MCP app answers everything no route above matched (the endpoint, the OAuth routes, and 404s).
+app.mount('/', mcp_app)

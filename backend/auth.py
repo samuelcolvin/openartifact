@@ -5,8 +5,10 @@ that issues its own tokens and keeps its state (client registrations, Google ref
 Postgres. Each Google identity becomes a row in `users` with its own workspace on first sight. Without Google
 credentials, `OPENARTIFACT_DEV_TOKEN` names one static bearer token for a development user.
 
-Tools call `current_principal()`; it reads the verified token's claims. Code that is not inside an MCP request
-(tests, scripts) wraps calls in `as_principal()`.
+Tools call `current_principal()`; it reads the verified token's claims. Browser sessions (`login.py`) resolve to
+the same `Principal` through `load_principal()`. Code that is not inside an MCP request (tests, scripts) wraps
+calls in `as_principal()`. Organisations come from Google Workspace accounts: `hosted_domain()` reads the `hd`
+claim and `upsert_user()` records the membership.
 """
 
 from __future__ import annotations
@@ -15,8 +17,9 @@ import contextlib
 import logging
 import os
 import uuid
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 from dataclasses import dataclass
+from typing import cast
 
 import logfire
 from fastmcp.exceptions import ToolError
@@ -81,23 +84,25 @@ def make_auth_provider() -> AuthProvider:
 
 @dataclass(frozen=True)
 class Principal:
-    """The authenticated user and the workspace their tools act on."""
+    """The authenticated user: what the tools act as, and what a browser session resolves to.
+
+    `org_ids` are the organisations the user belongs to (`access.py` checks artifacts against them);
+    `organization_id` is the one new artifacts are placed in, the single organisation a user has today and a
+    choice once a user can be in several.
+    """
 
     user_id: uuid.UUID
     workspace_id: uuid.UUID
     email: str | None
+    name: str | None = None
+    picture: str | None = None
+    org_ids: frozenset[uuid.UUID] = frozenset()
+    organization_id: uuid.UUID | None = None
 
 
 # Set by `as_principal()` for code running outside an MCP request (tests, scripts). A plain global rather than a
 # ContextVar: it is process-wide by design, and a ContextVar would not reach a test task from a sync fixture.
 _override: Principal | None = None
-# sub -> Principal, so a tool call after the first is a dictionary lookup rather than an upsert.
-_cache: dict[str, Principal] = {}
-
-
-def reset_cache() -> None:
-    """Forget resolved principals; for tests that empty the database between runs."""
-    _cache.clear()
 
 
 @contextlib.contextmanager
@@ -112,11 +117,69 @@ def as_principal(principal: Principal) -> Generator[None]:
         _override = previous
 
 
+def hosted_domain(claims: Mapping[str, object]) -> str | None:
+    """The Google Workspace domain of a verified account, from the `hd` claim; None for personal accounts.
+
+    Google sets `hd` only for accounts an organisation administers, so it is what makes someone a member of that
+    organisation here; the email's own domain is never used. The verifier's claims carry `email_verified` as a
+    bool (userinfo) or the string `"true"` (tokeninfo), and `hd` either at the top level or inside
+    `google_user_data`.
+    """
+    verified = claims.get('email_verified')
+    if verified not in (True, 'true'):
+        return None
+    hd = claims.get('hd')
+    if hd is None:
+        extra = claims.get('google_user_data')
+        if isinstance(extra, Mapping):
+            hd = cast('Mapping[str, object]', extra).get('hd')
+    return hd.strip().lower() or None if isinstance(hd, str) else None
+
+
+async def organizations_of(conn: db.Connection, user_id: uuid.UUID) -> list[uuid.UUID]:
+    """The organisations a user belongs to, oldest membership first."""
+    rows = await conn.fetch(
+        'SELECT organization_id FROM organization_members WHERE user_id = $1 ORDER BY created_at, organization_id',
+        user_id,
+    )
+    return [row['organization_id'] for row in rows]
+
+
+async def principal_for(
+    conn: db.Connection, user_id: uuid.UUID, email: str | None, name: str | None, picture: str | None
+) -> Principal:
+    """Assemble the principal for a user row: their workspace (created on first sight) and organisations."""
+    workspace_id: uuid.UUID | None = await conn.fetchval(
+        'SELECT id FROM workspaces WHERE owner_user_id = $1 ORDER BY created_at LIMIT 1', user_id
+    )
+    if workspace_id is None:
+        workspace_id = uuid.uuid4()
+        await conn.execute('INSERT INTO workspaces (id, owner_user_id) VALUES ($1, $2)', workspace_id, user_id)
+    org_ids = await organizations_of(conn, user_id)
+    return Principal(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        email=email,
+        name=name,
+        picture=picture,
+        org_ids=frozenset(org_ids),
+        organization_id=org_ids[0] if org_ids else None,
+    )
+
+
 @logfire.instrument
 async def upsert_user(
-    conn: db.Connection, *, sub: str, email: str | None, name: str | None, picture: str | None
+    conn: db.Connection,
+    *,
+    sub: str,
+    email: str | None,
+    name: str | None,
+    picture: str | None,
+    hd: str | None = None,
 ) -> Principal:
-    """Create or refresh the user for an identity, create their workspace on first sight, return the principal."""
+    """Create or refresh the user for an identity, create their workspace on first sight, and when `hd` names a
+    Google Workspace domain make them a member of that organisation (created on first sight too); return the
+    principal. Called at every sign-in, through either door."""
     user_id: uuid.UUID = await conn.fetchval(
         'INSERT INTO users (id, google_sub, email, name, picture) VALUES ($1, $2, $3, $4, $5) '
         'ON CONFLICT (google_sub) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, '
@@ -127,17 +190,35 @@ async def upsert_user(
         name,
         picture,
     )
-    workspace_id: uuid.UUID | None = await conn.fetchval(
-        'SELECT id FROM workspaces WHERE owner_user_id = $1 ORDER BY created_at LIMIT 1', user_id
-    )
-    if workspace_id is None:
-        workspace_id = uuid.uuid4()
-        await conn.execute('INSERT INTO workspaces (id, owner_user_id) VALUES ($1, $2)', workspace_id, user_id)
-    return Principal(user_id=user_id, workspace_id=workspace_id, email=email)
+    if hd:
+        organization_id: uuid.UUID = await conn.fetchval(
+            'INSERT INTO organizations (id, domain, name) VALUES ($1, $2, $2) '
+            'ON CONFLICT (domain) DO UPDATE SET domain = EXCLUDED.domain RETURNING id',
+            uuid.uuid4(),
+            hd,
+        )
+        await conn.execute(
+            'INSERT INTO organization_members (organization_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            organization_id,
+            user_id,
+        )
+    return await principal_for(conn, user_id, email, name, picture)
+
+
+async def load_principal(conn: db.Connection, user_id: uuid.UUID) -> Principal | None:
+    """The principal for a user id (a browser session names one); None when the user no longer exists."""
+    row = await conn.fetchrow('SELECT email, name, picture FROM users WHERE id = $1', user_id)
+    if row is None:
+        return None
+    return await principal_for(conn, user_id, row['email'], row['name'], row['picture'])
 
 
 async def current_principal() -> Principal:
-    """The caller of the current tool, from the verified access token; `ToolError` when there is none."""
+    """The caller of the current tool, from the verified access token; `ToolError` when there is none.
+
+    Not cached: organisation membership is settled at sign-in and may change between calls, and the upsert is one
+    short transaction next to the upstream verification FastMCP already does per request.
+    """
     if _override is not None:
         return _override
     token = get_access_token()
@@ -145,12 +226,12 @@ async def current_principal() -> Principal:
         raise ToolError('not authenticated')
     claims = token.claims
     sub = str(claims.get('sub') or token.client_id)
-    cached = _cache.get(sub)
-    if cached is not None:
-        return cached
     async with db.pool().acquire() as conn, conn.transaction():
-        principal = await upsert_user(
-            conn, sub=sub, email=claims.get('email'), name=claims.get('name'), picture=claims.get('picture')
+        return await upsert_user(
+            conn,
+            sub=sub,
+            email=cast('str | None', claims.get('email')),
+            name=cast('str | None', claims.get('name')),
+            picture=cast('str | None', claims.get('picture')),
+            hd=hosted_domain(claims),
         )
-    _cache[sub] = principal
-    return principal
