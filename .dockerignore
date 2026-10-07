@@ -1,5 +1,6 @@
 # Only backend/, chrome/, skills/, pyproject.toml, uv.lock and the frontend sources go into the images (Dockerfile
-# and chrome/Dockerfile, both built from the repository root).
+# and chrome/Dockerfile, both built from the repository root). The node stage builds frontend/dist itself, so the
+# local dist/ and node_modules/ are never sent; keep this list in step with the COPY lines in the Dockerfile.
 *
 !backend/
 !chrome/
@@ -7,7 +8,10 @@
 !frontend/package.json
 !frontend/pnpm-lock.yaml
 !frontend/tsconfig.json
+!frontend/tsconfig.app.json
+!frontend/vite.config.ts
 !frontend/src/
+!frontend/app/
 !pyproject.toml
 !uv.lock
 **/__pycache__/
