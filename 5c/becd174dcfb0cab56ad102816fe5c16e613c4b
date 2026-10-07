@@ -1,0 +1,50 @@
+backend/server.py
+  s_d9c84d24ba8b7a::t_d66661751f179a 125-133,136,146
+  s_d9c84d24ba8b7a::t_13bd0578ad1736 14-25,42,50,52-54,56,81-84,112-124,134-135,137-145,147-152,154,157-161,167-188,206-207,289,291-331,409,415,422,430-442,444,448-452,454,461,469,500,511,520-547,571,601
+backend/auth.py
+  s_d9c84d24ba8b7a::t_13bd0578ad1736 67,86-96
+  s_d9c84d24ba8b7a::t_8f136b0188bef5 97
+backend/pages.py
+  s_d9c84d24ba8b7a::t_d26f94b0431c1e 1-171
+examples/create_examples.py
+  s_d9c84d24ba8b7a::t_e2bd94d5c29520 7,50,61,63,67
+tests/test_mcp_server.py
+  s_d9c84d24ba8b7a::t_6d5dc5113d2308 10,45-49,51,68,79,97,106,114,127,132,259-261,263-265,267-268,276,281-285,289-346,385-394,396-397,399-400,403-405,409-411,437-439
+  s_d9c84d24ba8b7a::t_a711578ad40892 20,286-288
+tests/test_server.py
+  s_d9c84d24ba8b7a::t_d66661751f179a 779-783
+  s_d9c84d24ba8b7a::t_375c84dd2be8f8 752
+  s_d9c84d24ba8b7a::t_3573bfd68723d5 7,235,242,343-347,350-357,624-751,753-778,786-818
+  s_d9c84d24ba8b7a::t_6d5dc5113d2308 19,46-47,49-59,69-72,76,560-572,582,607
+  s_d9c84d24ba8b7a::t_8f136b0188bef5 784-785
+skills/openartifact/SKILL.md
+  s_d9c84d24ba8b7a::t_e2bd94d5c29520 20
+backend/login.py
+  s_d9c84d24ba8b7a::t_d26f94b0431c1e 1-24,26-28,31-99,101-137,139-140,142-210,214-295
+  s_d9c84d24ba8b7a::t_4ec11ca8e6b3ef 25,138,141
+  s_d9c84d24ba8b7a::t_13bd0578ad1736 29-30,100,211-213
+tests/test_login.py
+  s_d9c84d24ba8b7a::t_e114ab5770ae73 1-4,6-151,154-173,175-176,182-191
+  s_d9c84d24ba8b7a::t_375c84dd2be8f8 5,174
+  s_d9c84d24ba8b7a::t_6115a5f6e385f2 152-153,177-181
+backend/mcp_server.py
+  s_d9c84d24ba8b7a::t_e2bd94d5c29520 11-14,42,94-95,99-104,106-107,109-110,112-113,172-222,224,226-229,235-236,245-361,373,378,413,436,440,461-462,464-478,482-483
+backend/instructions.md
+  s_d9c84d24ba8b7a::t_e2bd94d5c29520 7-14,23-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5cbecd174dcfb0cab56ad102816fe5c16e613c4b",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
