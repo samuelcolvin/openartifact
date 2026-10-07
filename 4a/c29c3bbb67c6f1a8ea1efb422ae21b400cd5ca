@@ -1,0 +1,113 @@
+frontend/package.json
+  s_d9c84d24ba8b7a::t_37f255bb0b8060 26-27,29-33,37,39-41,43-45
+  s_d9c84d24ba8b7a::t_b46bf0dd752477 5,16-18,20-21
+frontend/app/src/components/ui.tsx
+  s_d9c84d24ba8b7a::t_7d9ad2c5a97f7d 70-71,73-74,76
+  s_d9c84d24ba8b7a::t_c4f01fdb2b6d80 149-151
+  s_d9c84d24ba8b7a::t_3dac587aed975c 1-69,72,75,77-148,152-179
+tests/test_login.py
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 18
+frontend/app/src/chat/Message.tsx
+  s_d9c84d24ba8b7a::t_c4f01fdb2b6d80 30-32
+  s_d9c84d24ba8b7a::t_b0c229dba97447 1-29,33-47
+frontend/biome.jsonc
+  s_d9c84d24ba8b7a::t_b46bf0dd752477 54-56
+  s_d9c84d24ba8b7a::t_7d9ad2c5a97f7d 40
+frontend/vite.config.ts
+  s_d9c84d24ba8b7a::t_b46bf0dd752477 1-19,21
+  s_d9c84d24ba8b7a::t_6e417b8fd94b7c 20
+tests/test_signing.py
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 6
+backend/chats.py
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 1-43
+frontend/app/src/api.ts
+  s_d9c84d24ba8b7a::t_c4f01fdb2b6d80 1-119
+pyproject.toml
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 66
+  s_d9c84d24ba8b7a::t_a3c50a2c828e8b 21
+backend/server.py
+  s_d9c84d24ba8b7a::t_daf431bb3bea25 19-20,54,57,71-73,210-218,220-228,623-624
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 56,61,63-64
+backend/agent.py
+  s_d9c84d24ba8b7a::t_30ab653fdbf739 53-54
+  s_d9c84d24ba8b7a::t_daf431bb3bea25 18,135
+  s_d9c84d24ba8b7a::t_6e417b8fd94b7c 95
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 1-17,19-52,55-94,96-134,136-160
+backend/mcp_server.py
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 55,190-195,212-216,253,263,304,314
+Dockerfile
+  s_d9c84d24ba8b7a::t_b46bf0dd752477 3,13,19,21
+docker-compose.yml
+  s_d9c84d24ba8b7a::t_5cda539ae341cb 17-20
+frontend/app/src/chat/Chat.tsx
+  s_d9c84d24ba8b7a::t_c4f01fdb2b6d80 88-90,127-129,137-141,151-155,188-194
+  s_d9c84d24ba8b7a::t_b0c229dba97447 1-87,91-126,130-136,142-150,156-187,195-203
+README.md
+  s_d9c84d24ba8b7a::t_5cda539ae341cb 12-15,49,176
+tests/conftest.py
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 30
+backend/migrations/0004_chats.sql
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 1-11
+backend/auth.py
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 9-10,22,97,126-139,256-258
+CLAUDE.md
+  s_d9c84d24ba8b7a::t_7a12fa935d0cf3 18-19,33,54-56,75,105,168-175,187
+frontend/app/src/chat/ToolCard.tsx
+  s_d9c84d24ba8b7a::t_c4f01fdb2b6d80 6,12,22-26,29,57-60,67,87-91
+  s_d9c84d24ba8b7a::t_b0c229dba97447 1-5,7-11,13-21,27-28,30-56,61-66,68-86,92-108
+frontend/app/src/Preview.tsx
+  s_d9c84d24ba8b7a::t_b0c229dba97447 1-13
+frontend/app/src/pages/Editor.tsx
+  s_d9c84d24ba8b7a::t_b0c229dba97447 1-4,6-19,29,32-99,103-117,123-142
+  s_d9c84d24ba8b7a::t_c4f01fdb2b6d80 5,20-28,30-31,100-102,118-122
+backend/login.py
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 34-35
+tests/test_api.py
+  s_d9c84d24ba8b7a::t_c2b1627617e95f 1-119
+tests/test_access.py
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 10
+frontend/app/src/pages/ArtifactList.tsx
+  s_d9c84d24ba8b7a::t_7d9ad2c5a97f7d 97,99,109-114,122-127
+  s_d9c84d24ba8b7a::t_3dac587aed975c 1-4,14-96,98,100-108,115-121,128-148,152-159,165-242
+  s_d9c84d24ba8b7a::t_c4f01fdb2b6d80 5-13,149-151,160-164
+tests/test_chat.py
+  s_d9c84d24ba8b7a::t_c2b1627617e95f 1-68,78-98,100-128,131-161,163-172,174-206
+  s_d9c84d24ba8b7a::t_6e417b8fd94b7c 69-77,99,162,173
+  s_d9c84d24ba8b7a::t_ce3f9b33d33bb9 129-130
+backend/main.py
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 18-19
+frontend/tsconfig.app.json
+  s_d9c84d24ba8b7a::t_b46bf0dd752477 1-8
+frontend/app/src/components/Header.tsx
+  s_d9c84d24ba8b7a::t_3dac587aed975c 1-37
+frontend/src/toolbar.ts
+  s_d9c84d24ba8b7a::t_717dbc599f43fa 10-12,44,170-172
+frontend/app/src/index.css
+  s_d9c84d24ba8b7a::t_b0c229dba97447 1-108
+frontend/app/src/App.tsx
+  s_d9c84d24ba8b7a::t_b0c229dba97447 1-22
+tests/test_server.py
+  s_d9c84d24ba8b7a::t_8c0f7342425ba8 605,614
+  s_d9c84d24ba8b7a::t_daf431bb3bea25 76
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 30,782,795
+backend/api.py
+  s_d9c84d24ba8b7a::t_457ef1676c862c 27,203-220,227
+  s_d9c84d24ba8b7a::t_daf431bb3bea25 255
+  s_d9c84d24ba8b7a::t_f091af6b72bf2e 1-26,28-202,221-226,228-254,256-284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4ac29c3bbb67c6f1a8ea1efb422ae21b400cd5ca",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
