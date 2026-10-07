@@ -83,6 +83,66 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   return <select className={INPUT} {...props} />
 }
 
+/** One option of a `RadioCards` group: the value, its name, an optional one-line hint and an icon or swatch. */
+export interface CardOption<T extends string> {
+  value: T
+  label: string
+  hint?: string
+  icon: ReactNode
+}
+
+/**
+ * A radio group drawn as a row of cards, for a handful of choices that deserve a hint or a preview rather than a
+ * `<select>`. The radios are real inputs, visually hidden, so arrow keys, focus and form semantics are the browser's.
+ */
+export function RadioCards<T extends string>({
+  label,
+  name,
+  value,
+  onChange,
+  options,
+  columns,
+}: {
+  label: string
+  name: string
+  value: T
+  onChange: (value: T) => void
+  options: CardOption<T>[]
+  /** Three cards with the icon beside the label, or four narrower ones with the icon above it. */
+  columns: 3 | 4
+}) {
+  const stacked = columns === 4
+  return (
+    <fieldset className="grid gap-1 text-xs text-muted">
+      <legend className="mb-1">{label}</legend>
+      <div className={`grid gap-2 ${columns === 3 ? 'grid-cols-3' : 'grid-cols-4'}`}>
+        {options.map((option) => (
+          <label
+            key={option.value}
+            className="grid cursor-pointer gap-1.5 rounded-lg border border-line bg-bg p-2.5 text-fg hover:border-faint has-checked:border-accent has-checked:bg-accent/10 has-focus-visible:ring-2 has-focus-visible:ring-accent/60"
+          >
+            <input
+              type="radio"
+              className="sr-only"
+              name={name}
+              value={option.value}
+              checked={value === option.value}
+              onChange={() => onChange(option.value)}
+            />
+            <span
+              className={`flex gap-2 text-sm font-medium ${stacked ? 'flex-col items-center text-center text-xs' : 'items-center'}`}
+            >
+              <span className="text-muted">{option.icon}</span>
+              {option.label}
+            </span>
+            {option.hint ? <span className="text-xs leading-snug text-muted">{option.hint}</span> : null}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
 export function Checkbox({
   label,
   checked,

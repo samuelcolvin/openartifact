@@ -1,7 +1,7 @@
 /** The home page: the viewer's artifacts and the ones their organisation shares, and the New artifact dialog. */
 
-import { ExternalLink, Pencil, Plus } from 'lucide-react'
-import { type FormEvent, useEffect, useState } from 'react'
+import { ExternalLink, FileText, Pencil, Plus, Presentation, ScrollText } from 'lucide-react'
+import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import {
   type Artifact,
   type ArtifactType,
@@ -12,15 +12,49 @@ import {
   type Theme,
 } from '../api.ts'
 import { Header } from '../components/Header.tsx'
-import { Badge, Button, Checkbox, Dialog, Field, INPUT, LinkButton, Select, Spinner } from '../components/ui.tsx'
+import {
+  Badge,
+  Button,
+  Checkbox,
+  Dialog,
+  Field,
+  INPUT,
+  LinkButton,
+  RadioCards,
+  Select,
+  Spinner,
+} from '../components/ui.tsx'
 import { navigate } from '../router.ts'
 
-const TYPES: Array<[ArtifactType, string]> = [
-  ['deck', 'Deck: slides, one 16:9 page at a time'],
-  ['document', 'Document: fixed-width sheets, prints to A4'],
-  ['page', 'Page: a continuous web page'],
+const TYPES: Array<{ value: ArtifactType; label: string; hint: string; icon: ReactNode }> = [
+  { value: 'deck', label: 'Deck', hint: 'Slides, one 16:9 page at a time', icon: <Presentation size={18} /> },
+  { value: 'document', label: 'Document', hint: 'A4 sheets, one per page', icon: <FileText size={18} /> },
+  { value: 'page', label: 'Page', hint: 'One continuous web page', icon: <ScrollText size={18} /> },
 ]
-const THEMES: Theme[] = ['light', 'dark', 'markdown-light', 'markdown-dark']
+
+/** A tiny rendering of a theme's palette: its page colour with a heading in its text colour. */
+function Swatch({ dark, markdown }: { dark: boolean; markdown: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className="flex h-7 w-10 items-center justify-center rounded border text-[11px] font-semibold leading-none"
+      style={
+        dark
+          ? { background: '#1c2026', color: '#f2f2f2', borderColor: 'rgba(255, 255, 255, 0.22)' }
+          : { background: '#ffffff', color: '#1a1d21', borderColor: 'rgba(255, 255, 255, 0.09)' }
+      }
+    >
+      {markdown ? <span className="font-mono"># Aa</span> : 'Aa'}
+    </span>
+  )
+}
+
+const THEMES: Array<{ value: Theme; label: string; icon: ReactNode }> = [
+  { value: 'light', label: 'Light', icon: <Swatch dark={false} markdown={false} /> },
+  { value: 'dark', label: 'Dark', icon: <Swatch dark markdown={false} /> },
+  { value: 'markdown-light', label: 'Markdown light', icon: <Swatch dark={false} markdown /> },
+  { value: 'markdown-dark', label: 'Markdown dark', icon: <Swatch dark markdown /> },
+]
 
 function since(iso: string): string {
   const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
@@ -105,34 +139,22 @@ function NewArtifactDialog({ me, open, onClose }: { me: Me; open: boolean; onClo
             required
           />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field id="new-type" label="Type">
-            <Select
-              id="new-type"
-              value={form.type}
-              onChange={(e) => setForm({ ...form, type: e.target.value as ArtifactType })}
-            >
-              {TYPES.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field id="new-theme" label="Theme">
-            <Select
-              id="new-theme"
-              value={form.theme}
-              onChange={(e) => setForm({ ...form, theme: e.target.value as Theme })}
-            >
-              {THEMES.map((theme) => (
-                <option key={theme} value={theme}>
-                  {theme}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
+        <RadioCards
+          label="Type"
+          name="new-type"
+          columns={3}
+          value={form.type}
+          onChange={(type) => setForm({ ...form, type })}
+          options={TYPES}
+        />
+        <RadioCards
+          label="Theme"
+          name="new-theme"
+          columns={4}
+          value={form.theme}
+          onChange={(theme) => setForm({ ...form, theme })}
+          options={THEMES}
+        />
         <fieldset className="grid gap-2 rounded-lg border border-line p-3">
           <legend className="px-1 text-xs text-muted">Who can see it</legend>
           {hasOrg ? (
