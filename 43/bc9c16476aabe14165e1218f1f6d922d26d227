@@ -1,0 +1,35 @@
+backend/instructions.md
+  s_d9c84d24ba8b7a::t_ab253050935be2 22
+README.md
+  s_d9c84d24ba8b7a::t_ab253050935be2 131
+backend/workspace.py
+  s_d9c84d24ba8b7a::t_616e1db386260d 116-120,123-128,140,142,318-376
+backend/server.py
+  s_d9c84d24ba8b7a::t_616e1db386260d 12,34,239-240,243,248-252,291-296,298-303
+  s_d9c84d24ba8b7a::t_ab253050935be2 304-314
+tests/test_server.py
+  s_d9c84d24ba8b7a::t_616e1db386260d 246,248-249,261-270,272,276-281
+  s_d9c84d24ba8b7a::t_19d76496c6ddeb 271,273-275
+CLAUDE.md
+  s_d9c84d24ba8b7a::t_ab253050935be2 134,155
+frontend/src/toolbar.ts
+  s_d9c84d24ba8b7a::t_ab253050935be2 51
+skills/openartifact/SKILL.md
+  s_d9c84d24ba8b7a::t_ab253050935be2 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "43bc9c16476aabe14165e1218f1f6d922d26d227",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
