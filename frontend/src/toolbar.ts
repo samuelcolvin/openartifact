@@ -48,7 +48,7 @@ const ICONS = {
 const EXPORTS: Array<{ ext: string; label: string; hint?: string; view?: boolean }> = [
   { ext: '.pdf', label: 'PDF', hint: 'printed on request, takes a moment' },
   { ext: '.md', label: 'Markdown', hint: 'the source, behind a summary' },
-  { ext: '.zip', label: 'Source (zip)', hint: 'every file of the artifact' },
+  { ext: '.zip', label: 'Source (zip)', hint: 'every file, as a git repo with history' },
   { ext: '.md', label: 'View markdown', hint: 'open the source in a new tab', view: true },
 ]
 

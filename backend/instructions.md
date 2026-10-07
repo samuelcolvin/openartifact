@@ -19,7 +19,7 @@ Tools
 - list_artifacts(): the artifacts you already have.
 
 Beside each page at /artifacts/<id>/ the server serves /artifacts/<id>.md (the markdown source behind a
-frontmatter summary; read this rather than the page), /artifacts/<id>.zip (every source file) and
+frontmatter summary; read this rather than the page), /artifacts/<id>.zip (every source file plus a .git with the artifact's history) and
 /artifacts/<id>.pdf (the page printed to PDF). The page URL itself answers with that markdown when fetched
 with `Accept: text/markdown` or `text/plain`.
 

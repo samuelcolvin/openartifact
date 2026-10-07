@@ -243,8 +243,10 @@ def test_prefers_text():
     assert server.prefers_text('TEXT/PLAIN ; q=0.5')
 
 
-def test_artifact_zip_packs_the_sources(client: TestClient):
+def test_artifact_zip_is_a_repository_with_the_sources_and_history(client: TestClient, tmp_path: Path):
     artifact = starter(client)
+    # A second commit, through the upload route, so there is a history to carry.
+    assert client.put(upload_to(artifact, 'main.md', 6), content=b'# new\n').status_code == 200
     # Build first, so there is a dist/ to leave out.
     assert client.get(f'/artifacts/{artifact.id}/').status_code == 200
     response = client.get(f'/artifacts/{artifact.id}.zip')
@@ -256,8 +258,27 @@ def test_artifact_zip_packs_the_sources(client: TestClient):
         f'attachment; filename="OpenArtifact Starter {sha}.zip"; filename*=UTF-8\'\'OpenArtifact%20Starter%20{sha}.zip'
     )
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-        assert archive.namelist() == [f'{artifact.id}/{path}' for path in starter_sources()]
-        assert archive.read(f'{artifact.id}/main.md') == (STARTER / 'main.md').read_bytes()
+        names = archive.namelist()
+        sources = [n for n in names if not n.startswith(f'{artifact.id}/.git/')]
+        assert sources == [f'{artifact.id}/{path}' for path in starter_sources()]
+        assert archive.read(f'{artifact.id}/main.md') == b'# new\n'
+        assert f'{artifact.id}/.git/HEAD' in names
+        archive.extractall(tmp_path)
+    # The folder is a working clone of the artifact alone: its history, with the original messages and dates,
+    # and the artifact's files at the root, with nothing to commit.
+    repo = tmp_path / str(artifact.id)
+    log = in_app(client, lambda: workspace.git('log', '--format=%s', cwd=repo))
+    assert log.splitlines() == ['upload: main.md', f'import: {artifact.id}']
+    assert in_app(client, lambda: workspace.git('status', '--porcelain', cwd=repo)) == ''
+    assert (
+        in_app(client, lambda: workspace.git('show', 'HEAD~1:main.md', cwd=repo)) == (STARTER / 'main.md').read_text()
+    )
+    assert in_app(client, lambda: workspace.git('ls-tree', '--name-only', 'HEAD', cwd=repo)).split() == sorted(
+        {p.split('/')[0] for p in starter_sources()}
+    )
+    # The history is the artifact's own: no workspace prefix, no other artifact, no alternates left behind.
+    assert not (repo / '.git' / 'objects' / 'info' / 'alternates').exists()
+    assert (repo / '.git' / 'info' / 'exclude').read_text() == 'dist/\n'
 
 
 def test_download_names_survive_awkward_titles(client: TestClient):

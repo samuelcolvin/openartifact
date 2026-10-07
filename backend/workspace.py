@@ -113,11 +113,19 @@ def reset_state() -> None:
     _synced.clear()
 
 
-async def run_git(*args: str, cwd: Path) -> tuple[int, str, str]:
-    """Run git in `cwd` and return `(exit code, stdout, stderr)`; raises `GitError` only on a timeout."""
+async def run_git(*args: str, cwd: Path, env: dict[str, str] | None = None) -> tuple[int, str, str]:
+    """Run git in `cwd` and return `(exit code, stdout, stderr)`; raises `GitError` only on a timeout.
+
+    `env` adds to the fixed `GIT_ENV` (author and committer identity for `commit-tree`).
+    """
     with logfire.span('git {argv}', argv=' '.join(args)) as span:
         proc = await asyncio.create_subprocess_exec(
-            'git', *args, cwd=cwd, env=GIT_ENV, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            'git',
+            *args,
+            cwd=cwd,
+            env={**GIT_ENV, **(env or {})},
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         try:
             out, err = await asyncio.wait_for(proc.communicate(), GIT_TIMEOUT)
@@ -129,9 +137,9 @@ async def run_git(*args: str, cwd: Path) -> tuple[int, str, str]:
         return code, out.decode('utf-8', 'replace'), err.decode('utf-8', 'replace')
 
 
-async def git(*args: str, cwd: Path) -> str:
+async def git(*args: str, cwd: Path, env: dict[str, str] | None = None) -> str:
     """Run git in `cwd` and return stdout; a non-zero exit is a `GitError`."""
-    code, out, err = await run_git(*args, cwd=cwd)
+    code, out, err = await run_git(*args, cwd=cwd, env=env)
     if code != 0:
         raise GitError(f'git {" ".join(args)} failed with exit code {code}: {err.strip()}')
     return out
@@ -305,6 +313,67 @@ async def open_artifact(artifact: Artifact) -> AsyncGenerator[Path]:
         )
         path = await sync_checkout(artifact.workspace_id, head_sha)
         yield path / ARTIFACTS_DIR / str(artifact.id)
+
+
+# Field and record separators for the `git log` format `export_repository` parses; neither appears in messages.
+LOG_FIELD = '\x1f'
+LOG_RECORD = '\x1e'
+
+
+async def export_repository(workspace_id: uuid.UUID, artifact_id: uuid.UUID, dest: Path) -> int:
+    """Write a standalone git repository of one artifact into `dest`: its files at the head, and its history.
+
+    The workspace history is replayed with the artifact's directory as the root, the way `git subtree split`
+    does: one commit per workspace commit that changed the directory, keeping author, committer, dates and
+    message, built with `commit-tree` against the checkout's object store (an alternates file, removed once the
+    objects are packed into the new repository). `dist/` is excluded locally (`.git/info/exclude`) as it is in the
+    workspace. Call it under the workspace lock with the checkout synced. Returns the number of commits; zero
+    means nothing in the history touched the artifact and `dest` holds an empty repository.
+    """
+    root = checkout_path(workspace_id)
+    prefix = f'{ARTIFACTS_DIR}/{artifact_id}'
+    fields = LOG_FIELD.join(['%H', '%an', '%ae', '%aI', '%cn', '%ce', '%cI', '%B'])
+    log = await git('log', '--reverse', '--first-parent', f'--format={fields}{LOG_RECORD}', '--', prefix, cwd=root)
+
+    await git('init', '-q', '-b', 'main', cwd=dest)
+    alternates = dest / '.git' / 'objects' / 'info' / 'alternates'
+    alternates.write_text(f'{(root / ".git" / "objects").resolve()}\n')
+    parent: str | None = None
+    previous_tree: str | None = None
+    count = 0
+    for record in log.split(LOG_RECORD):
+        if not record.strip():
+            continue
+        sha, author, email, authored, committer, cemail, committed, message = record.lstrip('\n').split(LOG_FIELD, 7)
+        code, tree, _ = await run_git('rev-parse', '--verify', '-q', f'{sha}:{prefix}', cwd=root)
+        if code != 0:
+            # The directory did not exist at this commit (a deletion; it may come back later).
+            continue
+        tree = tree.strip()
+        if tree == previous_tree:
+            continue
+        env = {
+            'GIT_AUTHOR_NAME': author,
+            'GIT_AUTHOR_EMAIL': email,
+            'GIT_AUTHOR_DATE': authored,
+            'GIT_COMMITTER_NAME': committer,
+            'GIT_COMMITTER_EMAIL': cemail,
+            'GIT_COMMITTER_DATE': committed,
+        }
+        parents = ['-p', parent] if parent else []
+        parent = (await git('commit-tree', tree, *parents, '-m', message.rstrip('\n'), cwd=dest, env=env)).strip()
+        previous_tree = tree
+        count += 1
+
+    if count:
+        await git('update-ref', 'refs/heads/main', parent or '', cwd=dest)
+        # Copy every object the new history needs into the new repository, then cut the tie to the checkout.
+        await git('repack', '-a', '-d', '-q', cwd=dest)
+    alternates.unlink()
+    (dest / '.git' / 'info' / 'exclude').write_text('dist/\n')
+    if count:
+        await git('reset', '-q', '--hard', cwd=dest)
+    return count
 
 
 # ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@ Routes:
     /artifacts/{id}/{path}      an image or font from the artifact directory, referenced relatively by the page
     PUT /artifacts/{id}/{path}  an upload to the artifact directory, with a token from the `upload_url` tool
     /artifacts/{id}.md          the markdown source behind a frontmatter summary of the artifact
-    /artifacts/{id}.zip         every source file of the artifact as a zip
+    /artifacts/{id}.zip         the artifact as a git repository (its files and history) in a zip
     /artifacts/{id}.pdf         the page printed to PDF by the chrome service (`chrome/`)
     /                           JSON index of the above
 
@@ -31,6 +31,7 @@ import io
 import json
 import mimetypes
 import re
+import tempfile
 import tomllib
 import uuid
 import zipfile
@@ -235,13 +236,18 @@ def prefers_text(accept: str | None) -> bool:
     return text > html
 
 
-def zip_directory(directory: Path, prefix: str) -> bytes:
-    """A zip of the artifact's source files under `prefix/`, built in memory."""
+def zip_files(directory: Path, files: list[Path], prefix: str) -> bytes:
+    """A zip of `files` (relative to `directory`) under `prefix/`, built in memory."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for relative in source_files(directory):
+        for relative in files:
             archive.write(directory / relative, f'{prefix}/{relative.as_posix()}')
     return buffer.getvalue()
+
+
+def all_files(directory: Path) -> list[Path]:
+    """Every file under `directory`, relative, sorted; for an exported repository, `.git` included."""
+    return [p.relative_to(directory) for p in sorted(directory.rglob('*')) if p.is_file()]
 
 
 def config_title(directory: Path, fallback: str) -> str:
@@ -282,11 +288,30 @@ def attachment(filename: str) -> dict[str, str]:
 
 @app.get('/artifacts/{artifact_id}.zip')
 async def artifact_zip(artifact_id: str) -> Response:
-    """Every source file of the artifact (not `dist/`) as a zip, inside a folder named by the artifact id."""
+    """The artifact as a git repository in a zip, inside a folder named by the artifact id.
+
+    The folder is a clone to work in: the source files (not `dist/`) checked out at the head, and `.git` holding
+    the artifact's own history, replayed from the workspace by `workspace.export_repository`. An artifact that
+    somehow has no history falls back to its files alone.
+    """
     found = await load_artifact(artifact_id)
-    async with workspace.open_artifact(found) as directory:
-        data = await asyncio.to_thread(zip_directory, directory, str(found.id))
-        filename = await export_filename(found, directory, 'zip')
+    with tempfile.TemporaryDirectory(prefix='openartifact-zip-') as tmp:
+        exported = Path(tmp) / str(found.id)
+        exported.mkdir()
+        async with workspace.open_artifact(found) as directory:
+            commits = await workspace.export_repository(found.workspace_id, found.id, exported)
+            filename = await export_filename(found, directory, 'zip')
+            # The fallback reads the checkout, so it happens under the lock; the export is ours to read after.
+            fallback = (
+                None
+                if commits
+                else await asyncio.to_thread(zip_files, directory, source_files(directory), str(found.id))
+            )
+        data = (
+            fallback
+            if fallback is not None
+            else await asyncio.to_thread(zip_files, exported, all_files(exported), str(found.id))
+        )
     return Response(data, media_type='application/zip', headers=attachment(filename))
 
 
