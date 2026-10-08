@@ -9,6 +9,11 @@
 # --- Python dependencies ----------------------------------------------------
 FROM python:3.14-slim AS deps
 COPY --from=ghcr.io/astral-sh/uv:0.12.16 /uv /usr/local/bin/uv
+# git: uv fetches the dependencies that pyproject.toml sources from git (see [tool.uv.sources]) with it.
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 COPY pyproject.toml uv.lock ./
