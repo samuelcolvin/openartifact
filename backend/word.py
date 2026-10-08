@@ -1,12 +1,13 @@
-"""The Word export: a document artifact as a `.docx` of ordinary Word paragraphs, built from the outline the page
-rendered.
+"""The Word export: a document or page artifact as a `.docx` of ordinary Word paragraphs, built from the outline
+the page rendered.
 
-A document's text flows, so the export is structure rather than geometry (compare `powerpoint.py`): the runtime's
-outline mode (`frontend/src/outline.ts`, a document opened with `?scene`) writes the pages as headings,
+Their text flows, so the export is structure rather than geometry (compare `powerpoint.py`): the runtime's
+outline mode (`frontend/src/outline.ts`, a document or page opened with `?scene`) writes the pages as headings,
 paragraphs, lists, code blocks, quotes, tables, images and rules into the page, the chrome service reads it out
 of the DOM (`POST /scene/`), and python-docx turns each block into its Word counterpart with the built-in styles
-(Heading 1 to 6, List Bullet and List Number at three levels, Quote, Table Grid), one page break between the
-artifact's pages. Nothing of the theme is carried over: no page or text colour, Word's defaults throughout, so
+(Heading 1 to 6, List Bullet and List Number at three levels, Quote, Table Grid). A document's pages are its
+sheets, so a page break goes between them; a page artifact's pages are sections of one column and follow one
+another, as they do in its PDF. Nothing of the theme is carried over: no page or text colour, Word's defaults throughout, so
 the file is a plain document to go on editing. Images are read from the artifact's directory, except SVGs, which
 Word cannot show: the runtime numbers each (inline or an `<img>` of a `.svg` file) and, opened with `&svg=N`,
 shows that one alone at its rendered size, which the chrome service photographs at 2x (`svg_pictures`). Every
@@ -140,14 +141,14 @@ class Page(BaseModel):
 
 
 class Outline(BaseModel):
-    """What the runtime wrote: the pages of the document as blocks. Mirrors `Outline` in outline.ts."""
+    """What the runtime wrote: the artifact's pages as blocks, `kind` its type. Mirrors `Outline` in outline.ts."""
 
-    kind: Literal['document']
+    kind: Literal['document', 'page']
     pages: list[Page]
 
 
 async def export(found: workspace.Artifact) -> bytes:
-    """The document as a `.docx`: its outline from the chrome service, its images from the checkout, assembled in a thread.
+    """The artifact as a `.docx`: its outline from the chrome service, its images from the checkout, assembled in a thread.
 
     The page is built first, so a broken artifact fails as a build error; the chrome service's failures are
     `render.RenderError`s.
@@ -226,12 +227,12 @@ def walk(blocks: list[Block]) -> list[Image]:
 
 
 def build_docx(outline: Outline, images: dict[str, bytes], title: str = '') -> bytes:
-    """Assemble the document: the blocks of each page in order, a page break between pages."""
+    """Assemble the document: the blocks of each page in order, a page break between a document's pages."""
     document = Document()
     document.core_properties.title = title
     writer = Writer(document, images)
     for n, page in enumerate(outline.pages):
-        if n:
+        if n and outline.kind == 'document':
             document.add_page_break()
         writer.blocks(page.blocks)
     out = io.BytesIO()

@@ -98,6 +98,9 @@ function Starters() {
   )
 }
 
+/** Where the footer's link leads. */
+const REPO_URL = 'https://github.com/samuelcolvin/openartifact'
+
 export function ArtifactList() {
   const [me, setMe] = useState<Me | null>(null)
   const [listing, setListing] = useState<Listing | null>(null)
@@ -163,6 +166,13 @@ export function ArtifactList() {
           </>
         )}
       </main>
+      <footer className="flex h-9 shrink-0 items-center justify-center gap-3 border-t border-line bg-panel px-4 text-xs text-faint">
+        <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="hover:text-muted">
+          github.com/samuelcolvin/openartifact
+        </a>
+        <span aria-hidden="true">·</span>
+        <span>&copy; Samuel Colvin 2026</span>
+      </footer>
     </div>
   )
 }

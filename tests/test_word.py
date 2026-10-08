@@ -76,6 +76,22 @@ OUTLINE = {
 }
 
 
+def page_breaks(data: bytes) -> int:
+    """How many page breaks the file holds."""
+    document = Document(io.BytesIO(data))
+    return len(document.element.body.xpath('.//w:br[@w:type="page"]'))
+
+
+def test_build_docx_breaks_pages_of_a_document_only():
+    """A document's pages are sheets, so Word gets a page break between them; a page artifact's flow on."""
+    pages = [{'index': n, 'blocks': [{'type': 'paragraph', 'runs': [run('p')]}]} for n in (1, 2, 3)]
+    as_document = word.Outline.model_validate({'kind': 'document', 'pages': pages})
+    as_page = word.Outline.model_validate({'kind': 'page', 'pages': pages})
+    assert page_breaks(word.build_docx(as_document, {})) == 2
+    assert page_breaks(word.build_docx(as_page, {})) == 0
+    assert [p.text for p in Document(io.BytesIO(word.build_docx(as_page, {}))).paragraphs] == ['p', 'p', 'p']
+
+
 def test_build_docx_writes_word_paragraphs(tmp_path: Path):
     outline = word.Outline.model_validate(OUTLINE)
     (tmp_path / 'assets').mkdir()

@@ -1,13 +1,14 @@
 /**
  * Outline mode, the measurement pass behind the Word export (`backend/word.py`): the counterpart of scene.ts for a
- * document artifact.
+ * document or page artifact.
  *
- * A document opened with `?scene` in the URL writes a semantic outline of its pages into a
+ * A document or page opened with `?scene` in the URL writes a semantic outline of its pages into a
  * `<script type="application/json" id="artifact-scene">` block (the same block the chrome service reads for a
- * deck's scene; what it holds is told apart by `kind`). Where a deck's scene is geometry, a document's outline is
- * structure: headings, paragraphs, lists, code blocks, quotes, tables, images and rules, each with its text as
- * runs that keep bold, italic, code, underline, strike-through and links. Nothing is measured: Word lays the
- * text out again on its own pages, and a page of the artifact becomes a page break.
+ * deck's scene; what it holds is told apart by `kind`, the artifact's type). Where a deck's scene is geometry, an
+ * outline is structure: headings, paragraphs, lists, code blocks, quotes, tables, images and rules, each with its
+ * text as runs that keep bold, italic, code, underline, strike-through and links. Nothing is measured: Word lays
+ * the text out again on its own pages; a page of a document becomes a page break, the pages of a page artifact
+ * follow one another as they do in its one column.
  *
  * Only the rendered markdown, `.page-body`, is walked: a page component's header or footer is the page's chrome,
  * which Word has its own idea of. A component's HTML inside the body is walked like any other: its containers
@@ -69,9 +70,9 @@ export interface OutlinePage {
   blocks: OutlineBlock[]
 }
 
-/** What the `#artifact-scene` block holds for a document. */
+/** What the `#artifact-scene` block holds for a document or page artifact; `kind` is the artifact's type. */
 export interface Outline {
-  kind: 'document'
+  kind: 'document' | 'page'
   pages: OutlinePage[]
 }
 
@@ -388,25 +389,25 @@ function container(el: Element, out: OutlineBlock[]): void {
 }
 
 /**
- * Outline every page of a document and write it into the page as `#artifact-scene`, then call `then` (the SVG
- * isolation). Images have a size only once they have loaded, so this waits for `load` when the page is still
- * loading: the chrome service dumps or photographs the page after that event, in whose handlers this runs. The
- * one place the runtime defers work, and only on this render pass.
+ * Outline every page of a document or page artifact (`kind`) and write it into the page as `#artifact-scene`,
+ * then call `then` (the SVG isolation). Images have a size only once they have loaded, so this waits for `load`
+ * when the page is still loading: the chrome service dumps or photographs the page after that event, in whose
+ * handlers this runs. The one place the runtime defers work, and only on this render pass.
  */
-export function outlineAtLoad(pages: HTMLElement[], then: () => void): void {
+export function outlineAtLoad(pages: HTMLElement[], kind: Outline['kind'], then: () => void): void {
   const run = () => {
-    writeOutline(pages)
+    writeOutline(pages, kind)
     then()
   }
   if (document.readyState === 'complete') run()
   else window.addEventListener('load', run)
 }
 
-/** Outline every page of a document and write it into the page as `#artifact-scene`. */
-export function writeOutline(pages: HTMLElement[]): Outline {
+/** Outline every page of a document or page artifact (`kind`) and write it into the page as `#artifact-scene`. */
+export function writeOutline(pages: HTMLElement[], kind: Outline['kind']): Outline {
   svgCount = 0
   const outline: Outline = {
-    kind: 'document',
+    kind,
     pages: pages.map((page, i) => {
       const body = page.querySelector('.page-body') ?? page
       const blocks: OutlineBlock[] = []

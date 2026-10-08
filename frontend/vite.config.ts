@@ -10,7 +10,17 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
 const BACKEND = 'http://127.0.0.1:8765'
-const PROXIED = ['/api', '/artifacts', '/login', '/logout', '/openartifact.js', '/health', '/print']
+const PROXIED = [
+  '/api',
+  '/artifacts',
+  '/login',
+  '/logout',
+  '/openartifact.js',
+  '/favicon.svg',
+  '/favicon.ico',
+  '/health',
+  '/print',
+]
 
 export default defineConfig({
   root: 'app',

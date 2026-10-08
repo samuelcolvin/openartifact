@@ -4,9 +4,9 @@
  * everything lives in its shadow root, so the artifact's styles.css cannot restyle it and toolbar.css
  * cannot leak out.
  *
- * It holds the artifact title, for a deck the previous / next buttons, a counter and a full-screen
- * toggle, a Download menu for the `.pdf`, `.pptx` (decks), `.docx` (documents), `.md` and `.zip` exports served beside the page, and the
- * brand. Once the page is up it fetches `<page>.json` (who may see the artifact, and who is looking)
+ * It holds the brand (at the far left, a link back to the artifact list), the artifact title, for a deck the
+ * previous / next buttons, a counter and a full-screen toggle, and a Download menu for the `.pdf`, `.pptx` (decks),
+ * `.docx` (documents and pages), `.md` and `.zip` exports served beside the page. Once the page is up it fetches `<page>.json` (who may see the artifact, and who is looking)
  * and adds a visibility badge, Edit (the web app's editor) for someone who may change it, Fork for a
  * signed-in viewer, and a sign-in link or an account menu with sign-out. That fetch is the one asynchronous thing here: it is viewer chrome, not page
  * content, and the print sheet hides the host anyway.
@@ -30,8 +30,8 @@ export interface ToolbarOptions {
   deck: DeckController | null
 }
 
-/** Where the brand in the bar leads. */
-const REPO_URL = 'https://github.com/samuelcolvin/openartifact'
+/** Where the brand in the bar leads: the artifact list, the platform's index page. */
+const INDEX_URL = '/'
 /** Pointer this close to the top edge (px) shows the bar. */
 const NEAR_TOP = 96
 /** How long the bar lingers after the pointer leaves that area (ms). */
@@ -57,16 +57,21 @@ const ICONS = {
   enterFullscreen: '<svg viewBox="0 0 16 16"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>',
   exitFullscreen: '<svg viewBox="0 0 16 16"><path d="M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4"/></svg>',
   chevron: '<svg viewBox="0 0 12 12"><path d="m3 4.5 3 3 3-3"/></svg>',
+  // The brand mark: the star of the Penrose kite-and-dart tiling, the same path as the favicon and the app's header.
+  star:
+    '<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M 50.00 5.78 L 67.76 30.22 L 96.50 39.56 L 78.74 64.01 ' +
+    'L 78.74 94.22 L 50.00 84.89 L 21.26 94.22 L 21.26 64.01 L 3.50 39.56 L 32.24 30.22 Z M 50 54.67 L 50.00 5.78 ' +
+    'M 50 54.67 L 96.50 39.56 M 50 54.67 L 78.74 94.22 M 50 54.67 L 21.26 94.22 M 50 54.67 L 3.50 39.56"/></svg>',
 }
 
 /**
- * The menu's entries; one with `only` is offered for that artifact type alone; `view` opens in a new tab instead of
- * downloading, below a separator.
+ * The menu's entries; one with `only` is offered for those artifact types alone; `view` opens in a new tab instead
+ * of downloading, below a separator.
  */
-const EXPORTS: Array<{ ext: string; label: string; hint?: string; only?: ArtifactType; view?: boolean }> = [
+const EXPORTS: Array<{ ext: string; label: string; hint?: string; only?: ArtifactType[]; view?: boolean }> = [
   { ext: '.pdf', label: 'PDF', hint: 'printed on request, takes a moment' },
-  { ext: '.pptx', label: 'PowerPoint', hint: 'editable text over a picture of each slide', only: 'deck' },
-  { ext: '.docx', label: 'Word', hint: 'headings, text, lists, tables, code and images', only: 'document' },
+  { ext: '.pptx', label: 'PowerPoint', hint: 'editable text over a picture of each slide', only: ['deck'] },
+  { ext: '.docx', label: 'Word', hint: 'headings, text, lists, tables, code and images', only: ['document', 'page'] },
   { ext: '.md', label: 'Markdown', hint: 'the source, behind a summary' },
   { ext: '.zip', label: 'Source (zip)', hint: 'every file, as a git repo with history' },
   { ext: '.md', label: 'View markdown', hint: 'open the source in a new tab', view: true },
@@ -123,6 +128,9 @@ export function initToolbar(options: ToolbarOptions): HTMLElement {
   shadow.append(el('style', {}, toolbarCss))
 
   const start = el('div', { class: 'group start' })
+  const brand = el('a', { class: 'brand', href: INDEX_URL, title: 'Your artifacts' }, 'OpenArtifact')
+  brand.insertAdjacentHTML('afterbegin', ICONS.star)
+  start.append(brand)
   if (options.title) start.append(el('span', { class: 'title', title: options.title }, options.title))
 
   const center = el('div', { class: 'group center' })
@@ -132,7 +140,6 @@ export function initToolbar(options: ToolbarOptions): HTMLElement {
   const base = exportBase(window.location.pathname)
   const menus: Menu[] = []
   if (base !== null) menus.push(buildDownloadMenu(end, base, options.type))
-  end.append(el('a', { class: 'brand', href: REPO_URL, target: '_blank', rel: 'noopener noreferrer' }, 'OpenArtifact'))
 
   shadow.append(el('div', { class: 'bar', role: 'toolbar', 'aria-label': 'OpenArtifact viewer' }, start, center, end))
 
@@ -274,7 +281,7 @@ function buildDownloadMenu(group: HTMLElement, base: string, type: ArtifactType)
     'Download',
   )
   button.insertAdjacentHTML('beforeend', ICONS.chevron)
-  const exports = EXPORTS.filter((entry) => !entry.only || entry.only === type)
+  const exports = EXPORTS.filter((entry) => !entry.only || entry.only.includes(type))
   const items = exports.map(({ ext, label, hint, view }) => {
     const attrs: Record<string, string> = view ? { target: '_blank', rel: 'noopener' } : { download: '' }
     const link = el('a', { role: 'menuitem', href: base + ext, ...attrs }, label)

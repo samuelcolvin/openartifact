@@ -181,7 +181,8 @@ body {
   transform-origin: top center;
 }
 
-.small-code pre {
+/* Scoped under .page so it outranks the .page pre rule below, which has the same specificity otherwise. */
+.page .small-code pre {
   font-size: 0.8rem;
 }
 

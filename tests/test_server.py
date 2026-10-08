@@ -94,6 +94,15 @@ def test_runtime_js(client: TestClient):
     assert response.content == server.RUNTIME_JS_PATH.read_bytes()
 
 
+def test_favicon(client: TestClient):
+    """The platform's mark at the root, under both names a browser asks for."""
+    for path in '/favicon.svg', '/favicon.ico':
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.headers['content-type'].startswith('image/svg+xml')
+        assert response.content == server.FAVICON_PATH.read_bytes()
+
+
 def test_unknown_artifacts_are_404(client: TestClient):
     assert client.get(f'/artifacts/{uuid.uuid4()}/').status_code == 404
     assert client.get(f'/artifacts/{uuid.uuid4()}/assets/logo.svg').status_code == 404
@@ -589,10 +598,19 @@ def test_artifact_docx_is_assembled_from_the_chrome_services_outline(
     assert re.fullmatch(rf'http://app:8765/print/[^/]+/artifacts/{document.id}/\?scene', outline_url)
     [heading] = Document(io.BytesIO(response.content)).paragraphs
     assert (heading.style.name, heading.text) == ('Heading 1', 'A document')  # pyright: ignore
-    # Documents only, and a visitor is sent away.
+    # A page artifact exports the same way; a deck does not, and a visitor is sent away.
+    page = in_app(
+        client, lambda: workspace.import_directory(principal.workspace_id, 'Page', 'page', ROOT / 'examples' / 'page')
+    )
+    asked = stub_chrome(monkeypatch, 200, b'', json.dumps({**OUTLINE, 'kind': 'page'}))
+    response = client.get(f'/artifacts/{page.id}.docx')
+    assert response.status_code == 200, response.text
+    assert response.headers['content-type'] == word.MEDIA_TYPE
+    [outline_url] = asked
+    assert re.fullmatch(rf'http://app:8765/print/[^/]+/artifacts/{page.id}/\?scene', outline_url)
     deck = starter(client)
     response = client.get(f'/artifacts/{deck.id}.docx')
-    assert response.status_code == 422 and 'only a document' in response.json()['detail']
+    assert response.status_code == 422 and 'only a document or page' in response.json()['detail']
     sign_out(client)
     assert client.get(f'/artifacts/{document.id}.docx').status_code == 401
 

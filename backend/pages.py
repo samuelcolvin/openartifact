@@ -85,7 +85,7 @@ def render_page(title: str, body: str, *, csp: str | None = CSP) -> str:
     return (
         '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        '<link rel="icon" href="/app/favicon.svg" type="image/svg+xml">\n'
+        '<link rel="icon" href="/favicon.svg" type="image/svg+xml">\n'
         f'{meta}<title>{_e(title)} - OpenArtifact</title>\n<style>{STYLES}</style>\n</head>\n<body>\n'
         f'<a class="brand" href="/">{MARK}OpenArtifact</a>\n'
         f'<main class="card">\n{body}\n</main>\n</body>\n</html>\n'

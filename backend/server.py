@@ -4,6 +4,7 @@ Routes:
 
     /mcp/                       the MCP endpoint (streamable HTTP) from `mcp_server.py`, behind Google login
     /openartifact.js            the browser runtime, `frontend/dist/openartifact.js`, which every built page links
+    /favicon.svg, /favicon.ico  the platform's mark, the tab icon of every page here (`frontend/app/public/`)
     /artifacts/{id}/            an artifact's page, built on demand from its checkout; the markdown
                                 export instead when the Accept header prefers text/markdown or text/plain
     /artifacts/{id}/{path}      an image or font from the artifact directory, referenced relatively by the page
@@ -13,7 +14,7 @@ Routes:
     /artifacts/{id}.pdf         the page printed to PDF by the chrome service (`chrome/`)
     /artifacts/{id}.png?page=N  one page of the artifact as a PNG, by the same service (`render.py`)
     /artifacts/{id}.pptx        a deck as an editable PowerPoint file (`powerpoint.py`), by the same service
-    /artifacts/{id}.docx        a document as a Word file (`word.py`), by the same service
+    /artifacts/{id}.docx        a document or page as a Word file (`word.py`), by the same service
     /artifacts/{id}.json        the artifact's placement, permissions and the viewer's rights, for the toolbar
     POST /artifacts/{id}/fork   copy the artifact into the signed-in viewer's own space
     /print/{token}/artifacts/{id}/...   the page and its media for the chrome service, by a short-lived pass
@@ -76,6 +77,10 @@ RUNTIME_JS_PATH = config.ROOT / 'frontend' / 'dist' / 'openartifact.js'
 # The web app (`frontend/app/`, built by Vite): its shell is served at `/` and `/edit/{id}`, its assets under `/app/`.
 APP_DIR = config.ROOT / 'frontend' / 'dist' / 'app'
 APP_INDEX = APP_DIR / 'index.html'
+# The brand mark, the tab icon of every page on the platform: the app shell and the server's own pages link it, and
+# `build.py` writes it into every artifact page that names no favicon of its own. Served at the root so that a
+# browser looking for `/favicon.ico` on its own (a markdown export, a JSON answer, a 404) finds it too.
+FAVICON_PATH = APP_DIR / 'favicon.svg'
 # What `/artifacts/{id}/{path}` will hand out from the artifact directory: images the build checked, fonts that
 # `styles.css` may declare with `@font-face`, and the source files themselves (`main.md`, `artifact.toml`,
 # `styles.css`, `components/*`), so a reader can fetch the markdown instead of parsing the page. The build output
@@ -243,6 +248,15 @@ def runtime_js() -> FileResponse:
     if not RUNTIME_JS_PATH.is_file():
         raise HTTPException(404, f'{RUNTIME_JS_PATH} is missing: run `pnpm -C frontend build`')
     return FileResponse(RUNTIME_JS_PATH, media_type='text/javascript')
+
+
+@app.get('/favicon.svg')
+@app.get('/favicon.ico')
+def favicon() -> FileResponse:
+    """The platform's mark, for every tab on it; the `.ico` route answers browsers' own lookup with the same SVG."""
+    if not FAVICON_PATH.is_file():
+        raise HTTPException(404, f'{FAVICON_PATH} is missing: run `pnpm -C frontend build`')
+    return FileResponse(FAVICON_PATH, media_type='image/svg+xml')
 
 
 def source_files(directory: Path) -> list[Path]:
@@ -486,11 +500,11 @@ async def artifact_pptx(artifact_id: str, request: Request) -> Response:
 
 @app.get('/artifacts/{artifact_id}.docx')
 async def artifact_docx(artifact_id: str, request: Request) -> Response:
-    """A document as a Word file: the chrome service reads the outline of the page and `word.export` writes it as
-    Word paragraphs. Documents only; a deck or page artifact is a 422."""
+    """A document or page as a Word file: the chrome service reads the outline of the page and `word.export` writes
+    it as Word paragraphs. A deck, whose text is laid out, exports to PowerPoint instead and is a 422 here."""
     found = await load_artifact(artifact_id, request)
-    if found.type != 'document':
-        raise HTTPException(422, f'only a document exports to Word; this artifact is a {found.type}')
+    if found.type == 'deck':
+        raise HTTPException(422, 'only a document or page exports to Word; this artifact is a deck')
     async with workspace.open_artifact(found) as directory:
         await build_if_missing(found, directory)
         filename = await export_filename(found, directory, 'docx')

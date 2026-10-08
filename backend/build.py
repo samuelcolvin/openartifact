@@ -34,6 +34,9 @@ from typing import cast
 
 # Where the page loads the runtime from; `server.py` serves it there.
 DEFAULT_RUNTIME_URL = '/openartifact.js'
+# The browser-tab icon of a page whose `artifact.toml` names no `favicon`: the platform's mark, which `server.py`
+# serves at the root, so every page on the platform carries it.
+DEFAULT_FAVICON_URL = '/favicon.svg'
 
 # The overall form of the artifact; mirrors `ArtifactType` in frontend/src/types.ts. `deck` is slides, `document` a
 # fixed-width sheet that prints to pages, `page` a continuous fluid page.
@@ -829,18 +832,25 @@ def build_html(
     output: Path | None = None,
     runtime_url: str = DEFAULT_RUNTIME_URL,
     markdown_url: str | None = None,
+    favicon_url: str | None = DEFAULT_FAVICON_URL,
 ) -> Path:
     """Build `cwd` into one HTML file (default `cwd/dist/index.html`) that loads the runtime from `runtime_url`.
 
     The page must be served with the deck's images reachable relative to it; `server.py` does that at
     `/artifacts/<id>/`, and passes `markdown_url`, the `.md` export beside the page, which the head then advertises
-    (with a note for agents) instead of the bare `main.md`. Returns the path written.
+    (with a note for agents) instead of the bare `main.md`. The tab icon is the artifact's own `favicon` when
+    `artifact.toml` names one, else `favicon_url` (the platform's mark; `None` for no icon). Returns the path written.
     """
     cfg = load_config(cwd)
     data = build_page_data(cfg)
     markdown_href = markdown_url or cfg.markdown_path.relative_to(cfg.cwd).as_posix()
     page = render_page(
-        cfg.title or cfg.markdown_path.stem, cfg.favicon, data, runtime_url, markdown_href, markdown_url is not None
+        cfg.title or cfg.markdown_path.stem,
+        cfg.favicon or favicon_url,
+        data,
+        runtime_url,
+        markdown_href,
+        markdown_url is not None,
     )
     out = (output or cwd / 'dist' / 'index.html').resolve()
     out.parent.mkdir(parents=True, exist_ok=True)

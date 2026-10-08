@@ -55,7 +55,7 @@ Then start Postgres and the server, and let an agent drive it over MCP:
 uv sync
 make pg-start                                 # Postgres 18 in Docker
 make dev                                      # http://127.0.0.1:8765, MCP at /mcp/ with bearer token `dev`
-make docker-up                                # or build the Docker image and run server and database together
+make up                                       # or build the Docker image and run server and database together
 ```
 
 Each artifact is a git repository, bundled into an object store under `data/store/` locally or an `s3://` URL in production, with Postgres holding users and artifact metadata. In production set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `OPENARTIFACT_SECRET_KEY` instead of the dev token: the MCP endpoint is then behind Google login, and so are artifact pages. Register two redirect URIs on the Google OAuth client, `<base URL>/auth/callback` for MCP clients and `<base URL>/login/callback` for browsers.
@@ -146,7 +146,7 @@ The zip, the PDF, the PowerPoint and the Word file download as `<title> <commit>
 
 The page itself carries a viewer toolbar, added by `openartifact.js` and hidden in print: the artifact's title, a Download menu with the three exports, the OpenArtifact brand, and for a deck previous / next, the page counter and a full-screen toggle. It shows when the pointer nears the top of the window and slides away a second after it leaves.
 
-PDF printing and screenshots happen in the chrome service, `chrome/`, which runs in its own image with Chromium and renders whatever page URL it is given; the app calls it at `OPENARTIFACT_CHROME_URL` and tells it to fetch the page at `OPENARTIFACT_INTERNAL_URL` (the app as seen from the chrome container). `make docker-up` runs both; on the host, `make chrome-dev` serves it on :8766 with the local Chrome and `make dev` points at it. Without a chrome service the `.pdf`, `.png`, `.pptx` and `.docx` URLs answer 503, and the editing agent cannot look at a page.
+PDF printing and screenshots happen in the chrome service, `chrome/`, which runs in its own image with Chromium and renders whatever page URL it is given; the app calls it at `OPENARTIFACT_CHROME_URL` and tells it to fetch the page at `OPENARTIFACT_INTERNAL_URL` (the app as seen from the chrome container). `make up` runs both; on the host, `make chrome-dev` serves it on :8766 with the local Chrome and `make dev` points at it. Without a chrome service the `.pdf`, `.png`, `.pptx` and `.docx` URLs answer 503, and the editing agent cannot look at a page.
 
 `render.yaml` deploys the whole thing to [Render](https://render.com) as a Blueprint: the server with a persistent disk for its artifacts, the chrome service on the private network, and a managed Postgres; the Google OAuth client, the signing key and the API keys are entered in the dashboard when the instance is created.
 

@@ -129,10 +129,10 @@ function main(): void {
     // screenshot of one page relies on.
     const wanted = Number.parseInt(window.location.hash.replace('#', ''), 10)
     if (wanted >= 1 && wanted <= pages.length) pages[wanted - 1].scrollIntoView()
-    if (config.type === 'document' && sceneRequested()) {
+    if (sceneRequested()) {
       // The outline pass of the Word export (outline.ts): a render for the chrome service, not a viewer; with
       // `svg=N` as well, the page shows that one SVG alone for the service to photograph.
-      outlineAtLoad(pages, () => {
+      outlineAtLoad(pages, config.type, () => {
         const svg = svgRequested()
         if (svg !== null) isolateSvg(svg)
       })

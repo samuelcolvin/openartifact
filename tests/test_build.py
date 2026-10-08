@@ -490,6 +490,20 @@ def test_build_uses_given_runtime_url(tmp_path: Path):
     assert '<script src="/static/openartifact.js"></script>' in page
 
 
+def test_build_html_favicon(tmp_path: Path):
+    """The platform's mark unless the artifact names a favicon of its own; `None` leaves the tab without one."""
+    write(tmp_path / 'main.md', '# hi\n')
+    assert '<link rel="icon" href="/favicon.svg">' in build.build_html(tmp_path).read_text()
+    assert (
+        '<link rel="icon" href="/static/fav.svg">'
+        in build.build_html(tmp_path, favicon_url='/static/fav.svg').read_text()
+    )
+    assert '<link rel="icon"' not in build.build_html(tmp_path, favicon_url=None).read_text()
+    write(tmp_path / 'assets' / 'fav.svg', '<svg/>')
+    write(tmp_path / 'artifact.toml', 'favicon = "assets/fav.svg"\n')
+    assert '<link rel="icon" href="assets/fav.svg">' in build.build_html(tmp_path).read_text()
+
+
 def test_build_html_markdown_url(tmp_path: Path):
     """The server passes the `.md` export: the head links it and tells agents to read it, not the HTML."""
     (tmp_path / 'main.md').write_text('# a\n')
