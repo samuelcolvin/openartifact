@@ -1,0 +1,40 @@
+frontend/app/src/api.ts
+  s_d9c84d24ba8b7a::t_8bdcbc0835ca3d 61-67,69
+frontend/app/src/components/ui.tsx
+  s_d9c84d24ba8b7a::t_8bdcbc0835ca3d 202-203,209,215,232
+backend/auth.py
+  s_d9c84d24ba8b7a::t_3e8c3a2e7b3246 88-99
+frontend/app/src/components/McpDialog.tsx
+  s_d9c84d24ba8b7a::t_726fdb28d604d5 1-54,56-148,150-222,229-249,252-267
+  s_d9c84d24ba8b7a::t_0c22225fa68ec4 55,223-228,250-251
+tests/test_api.py
+  s_d9c84d24ba8b7a::t_e54ab5cd7ce00b 72-73
+  s_d9c84d24ba8b7a::t_3e8c3a2e7b3246 56,60-67
+  s_d9c84d24ba8b7a::t_ecca3976723f15 10,14
+frontend/app/src/pages/ArtifactList.tsx
+  s_d9c84d24ba8b7a::t_0c22225fa68ec4 3,7,105,121-129,131
+backend/api.py
+  s_d9c84d24ba8b7a::t_3e8c3a2e7b3246 39,123-127,129,131
+CLAUDE.md
+  s_d9c84d24ba8b7a::t_ca88e148a5f2a8 172,176
+README.md
+  s_d9c84d24ba8b7a::t_ca88e148a5f2a8 14
+frontend/app/src/pages/Editor.tsx
+  s_d9c84d24ba8b7a::t_0c22225fa68ec4 13-23,29,334,403-409,414
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "7e71414f54276c9c89b96858932f7267e3bd2018",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
