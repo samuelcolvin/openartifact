@@ -1,0 +1,21 @@
+CLAUDE.md
+  s_a80043ac29fba4::t_3610032f7f4ba3 177
+frontend/app/src/pages/ArtifactList.tsx
+  s_a80043ac29fba4::t_3610032f7f4ba3 121,135,169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "29b03bc46ce85c8681afe8b1489a9344af123637",
+  "prompts": {},
+  "sessions": {
+    "s_a80043ac29fba4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21153836-0568-4e86-bcd8-134ca13ce211",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
