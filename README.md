@@ -11,7 +11,7 @@ Why?
 
 ## The web app
 
-Signed in, `/` lists your artifacts and the ones your organisation shares with you, and `/edit/<id>` opens the editor: a chat with an agent on the left, the live page on the right. The agent is a pydantic-ai agent whose tools are this server's own MCP tools (`run_code` and `build`), run in-process as you, so its edits are commits in the artifact's history like any other. It can also search the web through the model's own search tool, for current facts and sources. Each turn streams over the Vercel AI SDK protocol; the conversation is kept per artifact and per user. The model picker offers the models configured on the server: set `PYDANTIC_AI_GATEWAY_API_KEY` for the built-in list, Claude Opus 5.5 (the default) and Sonnet 5.5 and the three newest OpenAI models, all through the [Pydantic AI Gateway](https://pydantic.dev/docs/ai/overview/gateway/), or `OPENARTIFACT_MODELS="gateway/anthropic:claude-opus-5-5=Opus,openai-responses:gpt-6-astra=GPT-6 Astra"` to name them yourself (a model without the `gateway/` prefix uses that provider's own key).
+Signed in, `/` lists your artifacts and the ones your organisation shares with you, and `/edit/<id>` opens the editor: a chat with an agent on the left, the live page on the right. The agent is a pydantic-ai agent whose tools are this server's own MCP tools (`run_code` and `build`), run in-process as you, so its edits are commits in the artifact's history like any other. It can also search the web through the model's own search tool, for current facts and sources, and look at a page of the artifact as you see it (the `screenshot` tool, through the chrome service); the chat tells it which page you have open, so "this slide" means the one in the preview. Each turn streams over the Vercel AI SDK protocol; the conversation is kept per artifact and per user. The model picker offers the models configured on the server: set `PYDANTIC_AI_GATEWAY_API_KEY` for the built-in list, Claude Opus 5.5 (the default) and Sonnet 5.5 and the three newest OpenAI models, all through the [Pydantic AI Gateway](https://pydantic.dev/docs/ai/overview/gateway/), or `OPENARTIFACT_MODELS="gateway/anthropic:claude-opus-5-5=Opus,openai-responses:gpt-6-astra=GPT-6 Astra"` to name them yourself (a model without the `gateway/` prefix uses that provider's own key).
 
 ## Artifact types
 
@@ -128,6 +128,7 @@ The full authoring guide - page directives, the page component, components and p
 
 - `build.build_html(directory, output=None, runtime_url='/openartifact.js')` - build `directory` to `output` (default `directory/dist/index.html`), loading the runtime from `runtime_url`; returns the output path. Input problems, including a referenced image that does not exist, raise `build.BuildError` with the file and line.
 - `chrome.pdf.print_to_pdf(url, pdf_path)` - print the served page to PDF with Chrome headless at the type's page size; returns the PDF path and Chrome's stderr. A page that fails to load is a `ChromeError` with that stderr, since Chrome itself exits 0 and says why only there.
+- `chrome.pdf.screenshot(url, png_path, width, height)` - the page as a viewer with a window that size sees it; `#3` on the URL shows the third page.
 
 ## Exports
 
@@ -136,12 +137,13 @@ Next to the page at `/artifacts/<id>/`, the server offers:
 - `/artifacts/<id>.md` - the markdown source behind a frontmatter summary (title, type, theme, URL, dates, the list of source files); what an agent should read instead of parsing the page. The page's `<head>` links it as `rel="alternate"` with a comment saying so.
 - `/artifacts/<id>.zip` - the artifact as a git repository: every source file at the head, plus `.git` with the artifact's own history (one commit per change, with the original messages and dates). Unzip it and `git log`.
 - `/artifacts/<id>.pdf` - the page printed to PDF.
+- `/artifacts/<id>.png?page=N` - one page as a PNG, the way a viewer sees it: a deck's slide, or a document scrolled to that page.
 
 The zip and the PDF download as `<title> <commit>.zip` / `.pdf`, the title from `artifact.toml` and the short sha of the artifact's last change.
 
 The page itself carries a viewer toolbar, added by `openartifact.js` and hidden in print: the artifact's title, a Download menu with the three exports, the OpenArtifact brand, and for a deck previous / next, the page counter and a full-screen toggle. It shows when the pointer nears the top of the window and slides away a second after it leaves.
 
-PDF printing happens in the chrome service, `chrome/`, which runs in its own image with Chromium and prints whatever page URL it is given; the app calls it at `OPENARTIFACT_CHROME_URL` and tells it to fetch the page at `OPENARTIFACT_INTERNAL_URL` (the app as seen from the chrome container). `make docker-up` runs both; on the host, `make chrome-dev` serves it on :8766 with the local Chrome and `make dev` points at it. Without a chrome service the `.pdf` URL answers 503.
+PDF printing and screenshots happen in the chrome service, `chrome/`, which runs in its own image with Chromium and renders whatever page URL it is given; the app calls it at `OPENARTIFACT_CHROME_URL` and tells it to fetch the page at `OPENARTIFACT_INTERNAL_URL` (the app as seen from the chrome container). `make docker-up` runs both; on the host, `make chrome-dev` serves it on :8766 with the local Chrome and `make dev` points at it. Without a chrome service the `.pdf` and `.png` URLs answer 503, and the editing agent cannot look at a page.
 
 To print by hand, with the server running:
 

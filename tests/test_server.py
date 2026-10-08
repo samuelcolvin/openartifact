@@ -17,6 +17,7 @@ from typing import TypeVar
 import httpx2
 import logfire
 import pytest
+import render
 import uvicorn
 from conftest import DEV_TOKEN
 from fastapi import FastAPI, Request
@@ -325,9 +326,15 @@ def stub_chrome(monkeypatch: pytest.MonkeyPatch, status: int, body: bytes) -> li
         asked.append((await request.json())['url'])
         return Response(body, status_code=status, media_type='application/pdf' if status == 200 else 'text/plain')
 
+    @stub.post('/screenshot/')
+    async def take_screenshot(request: Request) -> Response:
+        sent = await request.json()
+        asked.append(f'{sent["url"]} {sent["width"]}x{sent["height"]}')
+        return Response(body, status_code=status, media_type='image/png' if status == 200 else 'text/plain')
+
     monkeypatch.setenv('OPENARTIFACT_CHROME_URL', 'http://chrome:8766/')
     monkeypatch.setenv('OPENARTIFACT_INTERNAL_URL', 'http://app:8765')
-    monkeypatch.setattr(server, 'chrome_client', lambda: httpx2.AsyncClient(transport=httpx2.ASGITransport(app=stub)))
+    monkeypatch.setattr(render, 'chrome_client', lambda: httpx2.AsyncClient(transport=httpx2.ASGITransport(app=stub)))
     return asked
 
 
@@ -396,7 +403,7 @@ def test_artifact_pdf_request_carries_the_trace(
         return http
 
     monkeypatch.setenv('OPENARTIFACT_CHROME_URL', 'http://chrome:8766')
-    monkeypatch.setattr(server, 'chrome_client', instrumented)
+    monkeypatch.setattr(render, 'chrome_client', instrumented)
     assert client.get(f'/artifacts/{artifact.id}.pdf').status_code == 200
     [headers] = seen
     assert 'traceparent' in headers
@@ -414,9 +421,36 @@ def test_artifact_pdf_request_carries_the_trace(
     assert headers['traceparent'].split('-')[1] == format(trace_id, '032x')
 
 
+def test_artifact_png_is_one_page_by_the_chrome_service(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    artifact = starter(client)
+    asked = stub_chrome(monkeypatch, 200, b'\x89PNG stub')
+    response = client.get(f'/artifacts/{artifact.id}.png?page=3')
+    assert response.status_code == 200, response.text
+    assert response.headers['content-type'] == 'image/png' and response.content == b'\x89PNG stub'
+    assert 'content-disposition' not in response.headers  # shown inline
+    assert response.headers['cache-control'] == 'private'
+    # The chrome service got the print pass with the page as the hash, at the deck's window size.
+    [page_url] = asked
+    assert re.fullmatch(rf'http://app:8765/print/[^/]+/artifacts/{artifact.id}/#3 1600x900', page_url)
+    # Page 1 by default; pages are 1-based.
+    assert client.get(f'/artifacts/{artifact.id}.png').status_code == 200
+    assert asked[-1].endswith('/#1 1600x900')
+    assert client.get(f'/artifacts/{artifact.id}.png?page=0').status_code == 422
+    # The same access rules as the page: the starter is private, so a colleague is refused and a visitor sent away.
+    colleague, _ = org_members(client)
+    sign_in(client, colleague)
+    assert client.get(f'/artifacts/{artifact.id}.png').status_code == 403
+    sign_out(client)
+    assert client.get(f'/artifacts/{artifact.id}.png').status_code == 401
+    # No chrome service, no image.
+    sign_in(client, in_app(client, seed_starter)[0])  # upserts the same seed user again
+    monkeypatch.delenv('OPENARTIFACT_CHROME_URL')
+    assert client.get(f'/artifacts/{artifact.id}.png').status_code == 503
+
+
 def test_exports_of_unknown_artifacts_are_404(client: TestClient):
     missing = uuid.uuid4()
-    for suffix in ('.md', '.zip', '.pdf'):
+    for suffix in ('.md', '.zip', '.pdf', '.png'):
         assert client.get(f'/artifacts/{missing}{suffix}').status_code == 404, suffix
         assert client.get(f'/artifacts/not-a-uuid{suffix}').status_code == 404, suffix
 
@@ -562,6 +596,7 @@ async def test_mcp_over_http(live_server: str):
             'new_org_artifact',
             'run_code',
             'build',
+            'screenshot',
             'upload_url',
             'set_access',
             'fork',

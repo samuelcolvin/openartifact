@@ -1,4 +1,5 @@
-"""Tests for `chrome/`: `pdf.py`'s command assembly and error paths, and the `/pdf/` endpoint. Chrome is stubbed."""
+"""Tests for `chrome/`: `pdf.py`'s command assembly and error paths, and the `/pdf/` and `/screenshot/` endpoints.
+Chrome is stubbed."""
 
 from __future__ import annotations
 
@@ -15,6 +16,11 @@ URL = 'http://127.0.0.1:8765/artifacts/demo-abc123/'
 WRITES_PDF = r"""echo 'dbus: no bus' >&2; for a in "$@"; do case "$a" in --print-to-pdf=*) printf '%%PDF-1.4 fake' > "${a#--print-to-pdf=}";; esac; done"""
 # What Chrome does when the page fails to load: says so on stderr and exits 0 without a file.
 LOAD_FAILS = "echo 'Page load failed: net::ERR_SSL_PROTOCOL_ERROR' >&2; exit 0"
+# A fake Chrome that writes a PNG-looking file where `--screenshot=` points and records its arguments beside it.
+WRITES_PNG = (
+    'for a in "$@"; do case "$a" in --screenshot=*) out="${a#--screenshot=}";; esac; done; '
+    'printf "%s\\n" "$@" > "$out.args"; printf "\\211PNG fake" > "$out"'
+)
 
 
 def fake_chrome(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str) -> Path:
@@ -78,6 +84,24 @@ def test_success_returns_path_and_stderr_and_creates_parent(tmp_path: Path, monk
     assert printed.stderr == 'dbus: no bus'
 
 
+def test_screenshot_sizes_the_window_and_keeps_the_hash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fake_chrome(tmp_path, monkeypatch, WRITES_PNG)
+    out = tmp_path / 'shots' / 'page.png'
+    printed = pdf.screenshot(f'{URL}#3', out, 1600, 900)
+    assert printed.path == out.resolve() and out.read_bytes().startswith(b'\x89PNG')
+    args = (tmp_path / 'shots' / 'page.png.args').read_text().splitlines()
+    assert '--window-size=1600,900' in args and '--hide-scrollbars' in args and f'--screenshot={out.resolve()}' in args
+    # The page itself turns the hash into a page: it must reach Chrome untouched. No PDF flags.
+    assert args[-1] == f'{URL}#3' and not any(a.startswith('--print-to-pdf') for a in args)
+
+
+def test_screenshot_writing_nothing_is_an_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fake_chrome(tmp_path, monkeypatch, LOAD_FAILS)
+    with pytest.raises(pdf.ChromeError, match='without writing a screenshot') as exc_info:
+        pdf.screenshot(URL, tmp_path / 'page.png', 800, 600)
+    assert 'Page load failed' in exc_info.value.stderr
+
+
 def test_shell_quote():
     assert pdf.shell_quote('--headless=new') == '--headless=new'
     assert pdf.shell_quote("it's here") == "'it'\\''s here'"
@@ -125,6 +149,24 @@ def test_pdf_endpoint_when_the_page_fails_to_load(client: TestClient, tmp_path: 
     detail = response.json()['detail']
     assert detail.startswith('Chrome exited without writing a PDF:')
     assert detail.endswith('Page load failed: net::ERR_SSL_PROTOCOL_ERROR')
+
+
+def test_screenshot_endpoint_returns_the_png(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fake_chrome(tmp_path, monkeypatch, WRITES_PNG)
+    response = client.post('/screenshot/', json={'url': f'{URL}#2', 'width': 1240, 'height': 1754})
+    assert response.status_code == 200, response.text
+    assert response.headers['content-type'] == 'image/png' and response.content.startswith(b'\x89PNG')
+    # The size is bounded, and only http(s) pages are captured.
+    assert client.post('/screenshot/', json={'url': URL, 'width': 10, 'height': 900}).status_code == 422
+    assert client.post('/screenshot/', json={'url': 'file:///etc/passwd'}).status_code == 422
+
+
+def test_screenshot_endpoint_reports_chrome_failure(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    fake_chrome(tmp_path, monkeypatch, LOAD_FAILS)
+    response = client.post('/screenshot/', json={'url': URL})
+    assert response.status_code == 502 and 'Page load failed' in response.json()['detail']
 
 
 def test_stderr_tail():

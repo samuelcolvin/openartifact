@@ -39,9 +39,11 @@ from pathlib import Path
 from typing import Any, Literal, get_args
 from urllib.parse import quote
 
+import render
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.providers.skills import SkillProvider
+from fastmcp.utilities.types import Image
 from pydantic_monty import (
     AsyncMonty,
     CollectStreams,
@@ -431,6 +433,29 @@ async def build_artifact(artifact: str) -> str:
     return f'wrote dist/index.html ({size:,} bytes)\npage: {artifact_url(found.id)}\n'
 
 
+async def screenshot(artifact: str, page: int = 1) -> Image:
+    """See one page of an artifact as a viewer sees it: a PNG of the built page, 1-based.
+
+    For a deck this is the slide itself at 16:9; for a document or page artifact the window scrolled to that
+    page. Use it to check layout after a build, or when the user talks about how something looks. The page is
+    built first if needed, so a broken artifact fails as a build error.
+
+    Args:
+        artifact: The identifier returned when the artifact was created, or one from `list_artifacts`.
+        page: Which page, counting from 1.
+    """
+    if page < 1:
+        raise ToolError('page is 1-based')
+    found = await resolve(artifact)
+    try:
+        data = await render.screenshot(found, page)
+    except build.BuildError as exc:
+        raise ToolError(f'error: {exc}') from exc
+    except render.RenderError as exc:
+        raise ToolError(str(exc)) from exc
+    return Image(data=data, format='png')
+
+
 async def upload_url(artifact: str, files: list[tuple[str, int]]) -> list[str]:
     """Get URLs to upload local files into an artifact, one per file, so their bytes never pass through a tool call.
 
@@ -486,6 +511,7 @@ mcp.tool(new_personal_artifact)
 mcp.tool(new_org_artifact)
 mcp.tool(run_code)
 mcp.tool(build_artifact, name='build')
+mcp.tool(screenshot)
 mcp.tool(upload_url)
 mcp.tool(set_access)
 mcp.tool(fork)

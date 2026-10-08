@@ -23,7 +23,7 @@ function Reasoning({ text }: { text: string }) {
   )
 }
 
-export function Message({ message }: { message: UIMessage }) {
+export function Message({ message, artifactId }: { message: UIMessage; artifactId: string }) {
   if (message.role === 'user') {
     const text = message.parts
       .filter((p): p is Extract<typeof p, { type: 'text' }> => p.type === 'text')
@@ -54,7 +54,7 @@ export function Message({ message }: { message: UIMessage }) {
     flush()
     if (part.type === 'text') nodes.push(<Streamdown key={key}>{part.text}</Streamdown>)
     else if (part.type === 'reasoning') nodes.push(<Reasoning key={key} text={part.text} />)
-    else if (isToolUIPart(part)) nodes.push(<ToolCard key={part.toolCallId} part={part} />)
+    else if (isToolUIPart(part)) nodes.push(<ToolCard key={part.toolCallId} part={part} artifactId={artifactId} />)
   })
   flush()
   return <div className="chat-prose">{nodes}</div>

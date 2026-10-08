@@ -47,7 +47,7 @@ REQUEST_LIMIT = 40
 # work through the gateway): enough to check a few facts, not enough to research a book.
 WEB_SEARCH_USES = 5
 # The tools the agent may call; the rest of the MCP server (creating, forking, sharing, listing) stays with the user.
-AGENT_TOOLS = frozenset({'run_code', 'build'})
+AGENT_TOOLS = frozenset({'run_code', 'build', 'screenshot'})
 
 PREAMBLE = """\
 You are the OpenArtifact editing assistant. You help a user change one artifact: a deck, document or page built
@@ -62,6 +62,9 @@ How to work:
   embedding it in the code. The sandbox runs a subset of Python: `Path.read_text()` and `Path.write_text()` take
   no keyword arguments, and there is no network.
 - After every change, call `build`. A build error names the file and line: fix it and build again.
+- `screenshot` shows you a page as the user sees it. Look when layout matters: after building a change to how
+  a page is arranged, when the user says something looks wrong, or when they ask about "this slide", which is
+  the page they are looking at.
 - You can search the web. Do so when the user asks for current information, when a figure, date or name needs
   checking, or when they point you at a page. Put the sources the content relies on into the artifact, as links
   or a short sources list, so the reader can check them too; keep quotations short.
@@ -86,6 +89,8 @@ class ChatDeps:
 
     artifact: workspace.Artifact
     viewer: auth.Principal
+    """The page the user has open in the preview, 1-based, when the browser said."""
+    page: int | None = None
 
 
 @dataclass(frozen=True)
@@ -162,8 +167,14 @@ def about_this_run(ctx: RunContext[ChatDeps]) -> str:
     """What this conversation is about: the one artifact to edit, and who is asking."""
     artifact = ctx.deps.artifact
     who = ctx.deps.viewer.name or ctx.deps.viewer.email or 'the user'
-    return (
+    about = (
         f'You are editing the artifact with id `{artifact.id}` (pass exactly this as the `artifact` argument of '
         f'every tool call): "{artifact.title}", a {artifact.type}. You are helping {who}. Work only on this '
         'artifact.'
     )
+    if ctx.deps.page is not None:
+        about += (
+            f' The user is looking at page {ctx.deps.page} right now: "this slide" or "this page" means that one, '
+            'unless they say otherwise.'
+        )
+    return about

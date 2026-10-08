@@ -1,15 +1,17 @@
 /**
  * One tool call in an assistant turn, folded by default: `run_code` shows the code it ran and the inputs it was
- * given, `web_search` (the model's own search, run by the provider) its query and the pages it found, every other
- * tool its output or error. The left border says how it went. `ProviderToolGroup` folds a run of provider-executed
- * calls (a web search and the scaffolding some providers run it through) into one card.
+ * given, `screenshot` the page the agent looked at (fetched again from the server: the image bytes went to the
+ * model, not through the stream), `web_search` (the model's own search, run by the provider) its query and the
+ * pages it found, every other tool its output or error. The left border says how it went. `ProviderToolGroup`
+ * folds a run of provider-executed calls (a web search and the scaffolding some providers run it through) into
+ * one card.
  */
 
 import type { DynamicToolUIPart, ToolUIPart } from 'ai'
-import { ChevronRight, Code2, Globe, Hammer, Wrench } from 'lucide-react'
+import { Camera, ChevronRight, Code2, Globe, Hammer, Wrench } from 'lucide-react'
 import { useState } from 'react'
 
-const ICONS = { run_code: Code2, build: Hammer, web_search: Globe }
+const ICONS = { run_code: Code2, build: Hammer, web_search: Globe, screenshot: Camera }
 
 const ACCENT: Record<AnyToolPart['state'], string> = {
   'input-streaming': 'border-l-accent',
@@ -34,7 +36,9 @@ function summary(part: AnyToolPart, name: string): string {
     case 'input-available':
       return name === 'web_search' ? 'searching' : 'running'
     case 'output-available':
-      return name === 'web_search' ? 'searched' : 'done'
+      if (name === 'web_search') return 'searched'
+      if (name === 'screenshot') return `page ${screenshotPage(part.input)}`
+      return 'done'
     case 'output-error':
       return 'failed'
     default:
@@ -149,7 +153,13 @@ export function ProviderToolGroup({ parts }: { parts: AnyToolPart[] }) {
   )
 }
 
-export function ToolCard({ part }: { part: AnyToolPart }) {
+/** The page a `screenshot` call asked for; the tool's default is 1. */
+function screenshotPage(input: unknown): number {
+  const page = input && typeof input === 'object' ? (input as { page?: unknown }).page : undefined
+  return typeof page === 'number' && page >= 1 ? page : 1
+}
+
+export function ToolCard({ part, artifactId }: { part: AnyToolPart; artifactId: string }) {
   const [open, setOpen] = useState(false)
   const name = toolName(part)
   const Icon = (ICONS as Record<string, typeof Wrench>)[name] ?? Wrench
@@ -173,10 +183,16 @@ export function ToolCard({ part }: { part: AnyToolPart }) {
             <RunCodeInput input={part.input} />
           ) : name === 'web_search' ? (
             <WebSearchDetail part={part} />
+          ) : name === 'screenshot' && part.state === 'output-available' ? (
+            <img
+              src={`/artifacts/${artifactId}.png?page=${screenshotPage(part.input)}`}
+              alt={`Page ${screenshotPage(part.input)} as the agent saw it`}
+              className="w-full rounded border border-line"
+            />
           ) : (
             <pre className="chat-code">{asText(part.input)}</pre>
           )}
-          {part.state === 'output-available' && name !== 'web_search' ? (
+          {part.state === 'output-available' && name !== 'web_search' && name !== 'screenshot' ? (
             <>
               <p className="mt-2 mb-1 text-[11px] uppercase tracking-wide text-faint">Output</p>
               <pre className="chat-code">{asText(part.output) || '(no output)'}</pre>

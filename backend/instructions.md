@@ -16,6 +16,8 @@ Tools
   also mounted at {VIRTUAL_PATH}. Use pathlib or open() to read and write files there. Pass large text through
   `inputs`, which are bound as global variables, rather than escaping it inside `code`.
 - build(artifact): validates the files and refreshes the page; errors name the file and line.
+- screenshot(artifact, page=1): one page of the built artifact as an image, as a viewer sees it. Look at a page
+  after building it when layout matters.
 - upload_url(artifact, files): for files you already have locally (images, fonts, components, a long main.md),
   pass `[(path, size), ...]` with each file's path inside the artifact and exact size in bytes, and get one URL
   per file back. Then `curl -T local/file "<url>"` (quote the URL). Each upload is committed and answered with
@@ -29,7 +31,7 @@ Artifacts shared with you read-only can be read and built but not edited: fork t
 
 Beside each page at /artifacts/<id>/ the server serves /artifacts/<id>.md (the markdown source behind a
 frontmatter summary; read this rather than the page), /artifacts/<id>.zip (every source file plus a .git with the artifact's history) and
-/artifacts/<id>.pdf (the page printed to PDF). The page URL itself answers with that markdown when fetched
+/artifacts/<id>.pdf (the page printed to PDF) and /artifacts/<id>.png?page=N (one page as an image). The page URL itself answers with that markdown when fetched
 with `Accept: text/markdown` or `text/plain`.
 
 The format

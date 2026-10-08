@@ -16,6 +16,8 @@ import { Message } from './Message.tsx'
 
 interface ChatProps {
   artifactId: string
+  /** The page the preview shows, 1-based, sent with each message so the agent knows what "this slide" means. */
+  page: number | null
   /** Called when the artifact may have changed: a `build` finished, or a turn ended. */
   onChanged: () => void
 }
@@ -54,11 +56,14 @@ export function Chat(props: ChatProps) {
   return <Conversation {...props} loaded={loaded} />
 }
 
-function Conversation({ artifactId, onChanged, loaded }: ChatProps & { loaded: Loaded }) {
+function Conversation({ artifactId, page, onChanged, loaded }: ChatProps & { loaded: Loaded }) {
   const configured = loaded.models.some((m) => m.id === loaded.model) ? loaded.model : loaded.defaultModel
   const [model, setModel] = useState<string | null>(configured)
+  // Refs, so the transport (created once) reads the current choice and page when a message is sent.
   const modelRef = useRef(model)
   modelRef.current = model
+  const pageRef = useRef(page)
+  pageRef.current = page
   const [draft, setDraft] = useState('')
   const bottom = useRef<HTMLDivElement>(null)
 
@@ -67,7 +72,7 @@ function Conversation({ artifactId, onChanged, loaded }: ChatProps & { loaded: L
       new DefaultChatTransport({
         api: `/api/artifacts/${artifactId}/chat`,
         credentials: 'same-origin',
-        body: () => ({ model: modelRef.current }),
+        body: () => ({ model: modelRef.current, page: pageRef.current }),
         // Only the new message: the server holds the history and appends what it is sent.
         prepareSendMessagesRequest: ({ id, messages, trigger, messageId, body }) => ({
           body: { id, trigger, messageId, messages: messages.slice(-1), ...body },
@@ -131,7 +136,7 @@ function Conversation({ artifactId, onChanged, loaded }: ChatProps & { loaded: L
           </div>
         ) : null}
         {messages.map((message) => (
-          <Message key={message.id} message={message} />
+          <Message key={message.id} message={message} artifactId={artifactId} />
         ))}
         {status === 'submitted' ? <Spinner label="Thinking" /> : null}
         {error ? (

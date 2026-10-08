@@ -9,7 +9,11 @@ from collections.abc import AsyncGenerator, Iterator
 from pathlib import Path
 from typing import Any
 
+import httpx2
 import pytest
+import render
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
@@ -203,6 +207,34 @@ async def test_run_code_without_pool(me: auth.Principal, demo: str):
         await mcp_server.run_code(demo, 'pass')
 
 
+# --- screenshot ----------------------------------------------------------------
+
+
+async def test_screenshot_returns_the_page_as_an_image(me: auth.Principal, demo: str, monkeypatch: pytest.MonkeyPatch):
+    asked: list[dict[str, Any]] = []
+    stub = FastAPI()
+
+    @stub.post('/screenshot/')
+    async def take_screenshot(request: Request) -> Response:
+        asked.append(await request.json())
+        return Response(b'\x89PNG stub', media_type='image/png')
+
+    monkeypatch.setenv('OPENARTIFACT_CHROME_URL', 'http://chrome:8766')
+    monkeypatch.setattr(render, 'chrome_client', lambda: httpx2.AsyncClient(transport=httpx2.ASGITransport(app=stub)))
+    image = await mcp_server.screenshot(demo, page=2)
+    assert image.data == b'\x89PNG stub' and image._mime_type == 'image/png'  # pyright: ignore[reportPrivateUsage]
+    # The page was built for Chrome to fetch, by print pass, with the page as the hash, at the deck's window size.
+    assert (files_of(me, demo) / 'dist' / 'index.html').is_file()
+    [sent] = asked
+    assert re.fullmatch(rf'http://127.0.0.1:8765/print/[^/]+/artifacts/{demo}/#2', sent['url'])
+    assert (sent['width'], sent['height']) == (1600, 900)
+    with pytest.raises(ToolError, match='1-based'):
+        await mcp_server.screenshot(demo, page=0)
+    monkeypatch.delenv('OPENARTIFACT_CHROME_URL')
+    with pytest.raises(ToolError, match='OPENARTIFACT_CHROME_URL'):
+        await mcp_server.screenshot(demo)
+
+
 # --- upload_url ----------------------------------------------------------------
 
 
@@ -387,6 +419,7 @@ async def test_tools_over_mcp(me: auth.Principal, pool: None):
             'new_org_artifact',
             'run_code',
             'build',
+            'screenshot',
             'upload_url',
             'set_access',
             'fork',

@@ -255,6 +255,9 @@ async def chat(artifact_id: str, request: Request) -> Response:
     adapter = await VercelAIAdapter[agent.ChatDeps, str].from_request(request, agent=agent.agent, sdk_version=7)
     extra: dict[str, Any] = adapter.run_input.__pydantic_extra__ or {}
     model_id = extra.get('model')
+    # The page the preview shows, so the agent knows what "this slide" means; anything but a positive int is None.
+    page = extra.get('page')
+    page = page if isinstance(page, int) and not isinstance(page, bool) and page >= 1 else None
     try:
         chosen = agent.check_model(model_id if isinstance(model_id, str) else None)
     except ValueError as exc:
@@ -272,7 +275,7 @@ async def chat(artifact_id: str, request: Request) -> Response:
             async for event in adapter.run_stream(
                 message_history=history,
                 model=agent.resolve_model(chosen),
-                deps=agent.ChatDeps(artifact=found, viewer=viewer),
+                deps=agent.ChatDeps(artifact=found, viewer=viewer, page=page),
                 conversation_id=f'{found.id}:{viewer.user_id}',
                 usage_limits=UsageLimits(request_limit=agent.REQUEST_LIMIT),
                 on_complete=save,

@@ -167,6 +167,30 @@ def test_chat_tool_errors_are_reported_and_the_run_continues(client: TestClient,
     assert (workspace.checkout_path(artifact.id) / 'main.md').read_bytes() == (STARTER / 'main.md').read_bytes()
 
 
+def test_chat_tells_the_agent_which_page_the_user_sees(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    artifact = starter(client)
+    seen: list[str | None] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        seen.append(info.instructions)
+        yield 'ok'
+
+    use_model(monkeypatch, FunctionModel(stream_function=stream))
+    body: dict[str, Any] = {
+        'id': 'c',
+        'trigger': 'submit-message',
+        'messages': [{'id': 'u', 'role': 'user', 'parts': [{'type': 'text', 'text': 'hi'}]}],
+        'model': 'test',
+    }
+    assert client.post(f'/api/artifacts/{artifact.id}/chat', json={**body, 'page': 3}).status_code == 200
+    assert client.post(f'/api/artifacts/{artifact.id}/chat', json=body).status_code == 200
+    assert client.post(f'/api/artifacts/{artifact.id}/chat', json={**body, 'page': 'x'}).status_code == 200
+    with_page, without, junk = seen
+    assert with_page and 'The user is looking at page 3 right now' in with_page
+    assert without and 'looking at page' not in without
+    assert junk and 'looking at page' not in junk
+
+
 def test_chat_access_and_model_checks(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     artifact = starter(client)
     colleague, outsider = org_members(client)

@@ -68,6 +68,20 @@ export function Editor({ id }: { id: string }) {
   const [artifact, setArtifact] = useState<Artifact | null | undefined>(undefined)
   const [version, setVersion] = useState(1)
   const reload = useCallback(() => setVersion((v) => v + 1), [])
+  // Which page the preview shows, reported by the runtime inside the iframe (see `reportPosition` in main.ts).
+  const [page, setPage] = useState<number | null>(null)
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return
+      const data: unknown = event.data
+      if (data && typeof data === 'object' && (data as { type?: unknown }).type === 'openartifact:page') {
+        const reported = (data as { page?: unknown }).page
+        if (typeof reported === 'number' && reported >= 1) setPage(reported)
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
 
   useEffect(() => {
     api.me().then(setMe, () => setMe(null))
@@ -123,10 +137,10 @@ export function Editor({ id }: { id: string }) {
       </Header>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <aside className="flex h-[45vh] w-full shrink-0 flex-col border-b border-line bg-panel md:h-auto md:w-[420px] md:border-r md:border-b-0">
-          <Chat artifactId={id} onChanged={reload} />
+          <Chat artifactId={id} page={page} onChanged={reload} />
         </aside>
         <main className="min-h-0 flex-1">
-          <Preview artifactId={id} version={version} />
+          <Preview artifactId={id} version={version} page={page} />
         </main>
       </div>
     </div>

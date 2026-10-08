@@ -24,3 +24,6 @@ __pycache__/
 
 # local MCP client walkthrough
 /mcp_demo.py
+
+# git worktrees checked out beside the main tree (git worktree add worktrees/<name>)
+worktrees/

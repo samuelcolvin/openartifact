@@ -115,12 +115,34 @@ function main(): void {
     root.replaceChildren(wrapper)
     const title = config.title || pages[0].dataset.pageTitle
     if (title) document.title = title
+    // `#3` scrolls the third page into view, the way it shows the third slide of a deck: what the server's
+    // screenshot of one page relies on.
+    const wanted = Number.parseInt(window.location.hash.replace('#', ''), 10)
+    if (wanted >= 1 && wanted <= pages.length) pages[wanted - 1].scrollIntoView()
   }
 
   // Viewer chrome belongs to the top-level viewer: inside a frame (the editor's live preview, an embedding page)
-  // the surrounding page is the viewer and the toolbar stays out.
+  // the surrounding page is the viewer and the toolbar stays out; it is told which page is showing instead.
   if (window.self === window.top) {
     initToolbar({ title: config.title, type: config.type, theme: config.theme, deck })
+  } else {
+    reportPosition(deck, pages.length)
+  }
+}
+
+/**
+ * Tell the framing page which page is showing, now and after every navigation, as a `postMessage` of
+ * `{ type: 'openartifact:page', page, total }` (1-based) to the parent on the same origin. The editor's preview
+ * listens so the chat can say what the user is looking at. A document or page artifact reports page 1 once.
+ */
+function reportPosition(deck: DeckController | null, total: number): void {
+  const post = (page: number) =>
+    window.parent.postMessage({ type: 'openartifact:page', page, total }, window.location.origin)
+  if (deck) {
+    post(deck.position().index + 1)
+    deck.onChange((position) => post(position.index + 1))
+  } else {
+    post(1)
   }
 }
 

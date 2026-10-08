@@ -11,6 +11,7 @@ Routes:
     /artifacts/{id}.md          the markdown source behind a frontmatter summary of the artifact
     /artifacts/{id}.zip         the artifact as a git repository (its files and history) in a zip
     /artifacts/{id}.pdf         the page printed to PDF by the chrome service (`chrome/`)
+    /artifacts/{id}.png?page=N  one page of the artifact as a PNG, by the same service (`render.py`)
     /artifacts/{id}.json        the artifact's placement, permissions and the viewer's rights, for the toolbar
     POST /artifacts/{id}/fork   copy the artifact into the signed-in viewer's own space
     /print/{token}/artifacts/{id}/...   the page and its media for the chrome service, by a short-lived pass
@@ -40,15 +41,15 @@ import json
 import mimetypes
 import re
 import tempfile
-import time
 import tomllib
 import uuid
 import zipfile
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Coroutine
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
-import httpx2
+import render
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -86,8 +87,6 @@ SOURCE_MEDIA_TYPES = {
 }
 # The print pass the chrome service uses to fetch a page that may be private: a token over the artifact id that
 # lives for five minutes, minted by the `.pdf` route for a viewer who may see the artifact.
-PRINT_PURPOSE = b'openartifact print url'
-PRINT_TTL = 300
 
 
 # The MCP endpoint is `/mcp/`; the app is mounted at the root (last, below) so the OAuth routes FastMCP registers
@@ -443,51 +442,51 @@ async def artifact_zip(artifact_id: str, request: Request) -> Response:
     return private(Response(data, media_type='application/zip', headers=attachment(filename)))
 
 
-def chrome_client() -> httpx2.AsyncClient:
-    """The HTTP client for the chrome service; tests swap it for one wired to a stub app."""
-    return httpx2.AsyncClient(timeout=60)
-
-
-def print_token(artifact_id: uuid.UUID) -> str:
-    """A pass for the chrome service to fetch one artifact's page for the next few minutes."""
-    return signing.token(PRINT_PURPOSE, str(artifact_id), expires=int(time.time()) + PRINT_TTL)
-
-
 def verify_print_token(token: str, artifact_id: uuid.UUID) -> None:
     """403 unless `token` is a live pass for this artifact."""
     try:
-        signing.verify(PRINT_PURPOSE, token, str(artifact_id))
+        render.verify_print_token(token, artifact_id)
     except signing.SignatureError as exc:
         raise HTTPException(403, f'invalid print pass: {exc}') from exc
 
 
 @app.get('/artifacts/{artifact_id}.pdf')
 async def artifact_pdf(artifact_id: str, request: Request) -> Response:
-    """The page printed to PDF by the chrome service, which fetches it from this server.
+    """The page printed to PDF by the chrome service, which fetches it from this server by print pass.
 
-    The page is built first, so a broken artifact is a 422 here rather than a PDF of an error page; and the
-    artifact lock is released before the chrome service is called, because it fetches the page from this
-    process, which would wait on the same lock. Chrome carries no session, so it is sent to the print pass URL
-    (`/print/{token}/artifacts/{id}/`), which serves the page and its media to whoever holds a live pass; the
-    pass is minted here for a viewer who may see the artifact, and it lands in the error text of a failed print,
+    `render.pdf` builds the page first, so a broken artifact is a 422 here rather than a PDF of an error page.
+    The pass is minted for a viewer who may see the artifact, and lands in the error text of a failed print,
     which that same viewer reads.
     """
     found = await load_artifact(artifact_id, request)
-    chrome_url = config.chrome_url()
-    if chrome_url is None:
-        raise HTTPException(503, 'PDF export is not configured: OPENARTIFACT_CHROME_URL names the chrome service')
     async with workspace.open_artifact(found) as directory:
         await build_if_missing(found, directory)
         filename = await export_filename(found, directory, 'pdf')
-    page_url = f'{config.internal_url()}/print/{print_token(found.id)}/artifacts/{found.id}/'
+    data = await rendered(render.pdf(found))
+    return private(Response(data, media_type='application/pdf', headers=attachment(filename)))
+
+
+@app.get('/artifacts/{artifact_id}.png')
+async def artifact_png(artifact_id: str, request: Request, page: int = 1) -> Response:
+    """One page of the artifact as a PNG, as a viewer sees it: `page` is 1-based, the deck's slide or the
+    document's sheet scrolled into view. Rendered by the chrome service like the PDF; shown inline, not downloaded."""
+    if page < 1:
+        raise HTTPException(422, 'page is 1-based')
+    found = await load_artifact(artifact_id, request)
+    async with workspace.open_artifact(found) as directory:
+        await build_if_missing(found, directory)
+    data = await rendered(render.screenshot(found, page))
+    return private(Response(data, media_type='image/png'))
+
+
+async def rendered(job: Coroutine[Any, Any, bytes]) -> bytes:
+    """Await a `render` job, turning its errors into the HTTP status they name."""
     try:
-        async with chrome_client() as client:
-            response = await client.post(f'{chrome_url}/pdf/', json={'url': page_url})
-    except httpx2.HTTPError as exc:
-        raise HTTPException(502, f'chrome service unreachable: {exc}') from exc
-    if response.status_code != 200:
-        raise HTTPException(502, f'chrome service failed ({response.status_code}): {response.text}')
-    return private(Response(response.content, media_type='application/pdf', headers=attachment(filename)))
+        return await job
+    except build.BuildError as exc:
+        raise HTTPException(422, f'build failed: {exc}') from exc
+    except render.RenderError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
 
 
 @app.get('/artifacts/{artifact_id}')
@@ -497,17 +496,11 @@ def artifact_redirect(artifact_id: str) -> RedirectResponse:
 
 
 async def build_if_missing(found: workspace.Artifact, directory: Path) -> Path:
-    """`dist/index.html`, built now if this process has not built the current version yet; a failure is a 422.
-
-    The page is served at `/artifacts/<id>/`, so the `.md` export it advertises is `../<id>.md`.
-    """
-    page = directory / 'dist' / 'index.html'
-    if not page.is_file():
-        try:
-            await asyncio.to_thread(build.build_html, directory, markdown_url=f'../{found.id}.md')
-        except build.BuildError as exc:
-            raise HTTPException(422, f'build failed: {exc}') from exc
-    return page
+    """`dist/index.html`, built now if this process has not built the current version yet; a failure is a 422."""
+    try:
+        return await render.ensure_built(found, directory)
+    except build.BuildError as exc:
+        raise HTTPException(422, f'build failed: {exc}') from exc
 
 
 async def built_page(found: workspace.Artifact) -> str:
