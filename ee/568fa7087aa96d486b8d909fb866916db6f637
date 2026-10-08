@@ -1,0 +1,29 @@
+backend/agent.py
+  s_d9c84d24ba8b7a::t_7164292540bf49 45-46,53,55,59,65,67,70,72-118
+backend/api.py
+  s_d9c84d24ba8b7a::t_7164292540bf49 160,162,181
+backend/mcp_server.py
+  s_d9c84d24ba8b7a::t_7164292540bf49 192,194-195,216-217
+tests/test_api.py
+  s_d9c84d24ba8b7a::t_7164292540bf49 89,91,132-133
+CLAUDE.md
+  s_d9c84d24ba8b7a::t_7164292540bf49 170
+tests/test_chat.py
+  s_d9c84d24ba8b7a::t_7164292540bf49 209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ee568fa7087aa96d486b8d909fb866916db6f637",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
