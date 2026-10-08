@@ -270,14 +270,18 @@ export function Wordmark() {
   )
 }
 
-/** The "star" vertex of the Penrose kite-and-dart tiling, five darts meeting at their apexes with the edges
- * between them showing, in Pydantic magenta: the same path as the favicon. */
+/** The "star" vertex of the Penrose kite-and-dart tiling, five darts meeting at their apexes, drawn as lines
+ * in Pydantic magenta the way the Pydantic logo is: the same path as the favicon. */
 export function Star({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 100 100" className={className} aria-hidden="true">
       <path
-        d="M 50.00 50.31 L 29.25 21.74 L 50.00 28.49 L 70.75 21.74 Z M 53.88 53.13 L 74.64 24.56 L 74.64 46.39 L 87.47 64.04 Z M 52.40 57.70 L 85.98 68.61 L 65.23 75.35 L 52.40 93.01 Z M 47.60 57.70 L 47.60 93.01 L 34.77 75.35 L 14.02 68.61 Z M 46.12 53.13 L 12.53 64.04 L 25.36 46.39 L 25.36 24.56 Z"
-        fill="#e620e9"
+        d="M 50.00 5.78 L 67.76 30.22 L 96.50 39.56 L 78.74 64.01 L 78.74 94.22 L 50.00 84.89 L 21.26 94.22 L 21.26 64.01 L 3.50 39.56 L 32.24 30.22 Z M 50 54.67 L 50.00 5.78 M 50 54.67 L 96.50 39.56 M 50 54.67 L 78.74 94.22 M 50 54.67 L 21.26 94.22 M 50 54.67 L 3.50 39.56"
+        fill="none"
+        stroke="#e620e9"
+        strokeWidth={7}
+        strokeLinejoin="round"
+        strokeLinecap="round"
       />
     </svg>
   )

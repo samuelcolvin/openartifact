@@ -16,15 +16,18 @@ from urllib.parse import urlencode
 from fastapi.responses import HTMLResponse
 
 # FastMCP's default consent policy, also applied to our own pages: no scripts, inline styles, https images.
-# The brand mark: the "star" vertex of the Penrose kite-and-dart tiling, five darts with the edges between
-# them showing: the same path as the app's favicon.
+# The brand mark: the "star" vertex of the Penrose kite-and-dart tiling, five darts meeting at their apexes,
+# drawn as lines the way the Pydantic logo is: the same path as the app's favicon.
 MARK = (
     '<svg class="mark" viewBox="0 0 100 100" aria-hidden="true">'
-    '<path d="M 50.00 50.31 L 29.25 21.74 L 50.00 28.49 L 70.75 21.74 Z '
-    'M 53.88 53.13 L 74.64 24.56 L 74.64 46.39 L 87.47 64.04 Z '
-    'M 52.40 57.70 L 85.98 68.61 L 65.23 75.35 L 52.40 93.01 Z '
-    'M 47.60 57.70 L 47.60 93.01 L 34.77 75.35 L 14.02 68.61 Z '
-    'M 46.12 53.13 L 12.53 64.04 L 25.36 46.39 L 25.36 24.56 Z" fill="#e620e9"/></svg>'
+    '<path d="M 50.00 5.78 L 67.76 30.22 L 96.50 39.56 L 78.74 64.01 L 78.74 94.22 '
+    'L 50.00 84.89 L 21.26 94.22 L 21.26 64.01 L 3.50 39.56 L 32.24 30.22 Z '
+    'M 50 54.67 L 50.00 5.78 '
+    'M 50 54.67 L 96.50 39.56 '
+    'M 50 54.67 L 78.74 94.22 '
+    'M 50 54.67 L 21.26 94.22 '
+    'M 50 54.67 L 3.50 39.56" '
+    'fill="none" stroke="#e620e9" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/></svg>'
 )
 CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' https: data:; base-uri 'none'"
 
