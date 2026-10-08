@@ -148,6 +148,8 @@ The page itself carries a viewer toolbar, added by `openartifact.js` and hidden 
 
 PDF printing and screenshots happen in the chrome service, `chrome/`, which runs in its own image with Chromium and renders whatever page URL it is given; the app calls it at `OPENARTIFACT_CHROME_URL` and tells it to fetch the page at `OPENARTIFACT_INTERNAL_URL` (the app as seen from the chrome container). `make docker-up` runs both; on the host, `make chrome-dev` serves it on :8766 with the local Chrome and `make dev` points at it. Without a chrome service the `.pdf`, `.png`, `.pptx` and `.docx` URLs answer 503, and the editing agent cannot look at a page.
 
+`render.yaml` deploys the whole thing to [Render](https://render.com) as a Blueprint: the server with a persistent disk for its artifacts, the chrome service on the private network, and a managed Postgres; the Google OAuth client, the signing key and the API keys are entered in the dashboard when the instance is created.
+
 To print by hand, with the server running:
 
 ```bash

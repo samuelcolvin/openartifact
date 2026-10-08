@@ -13,5 +13,6 @@
 !frontend/src/
 !frontend/app/
 !pyproject.toml
+!docker-entrypoint.sh
 !uv.lock
 **/__pycache__/

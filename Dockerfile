@@ -1,7 +1,8 @@
 # The application image: the FastAPI server with the MCP endpoint, openartifact.js and artifact pages.
 #
 # Two build stages feed the final one: node builds frontend/dist/ (openartifact.js and the web app), uv installs the locked Python
-# dependencies into a virtualenv. The final image is python:3.14-slim plus git (artifacts are git repositories).
+# dependencies into a virtualenv. The final image is python:3.14-slim plus git (artifacts are git repositories),
+# running the server as the unprivileged user `app` through docker-entrypoint.sh.
 # Chrome is deliberately not here: PDF export is the chrome image (chrome/Dockerfile), which the app calls over HTTP.
 #
 #   docker build -t openartifact .
@@ -49,7 +50,7 @@ COPY --from=deps /app/.venv ./.venv
 COPY --from=frontend /build/dist ./frontend/dist
 COPY backend ./backend
 COPY skills ./skills
-USER app
+COPY docker-entrypoint.sh /usr/local/bin/
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     HOST=0.0.0.0 \
@@ -58,6 +59,8 @@ ENV PATH=/app/.venv/bin:$PATH \
     OPENARTIFACT_STORE_URL=file:///data/store
 VOLUME /data
 EXPOSE 8765
+# Starts as root, hands /data to `app` and drops to it: a mounted disk is root's until then (see the script).
+ENTRYPOINT ["docker-entrypoint.sh"]
 HEALTHCHECK --interval=30s --timeout=3s --start-period=15s \
     CMD python -c "import os, httpx2; httpx2.get(f'http://127.0.0.1:{os.environ['PORT']}/health/').raise_for_status()" || exit 1
 CMD ["python", "backend/main.py"]

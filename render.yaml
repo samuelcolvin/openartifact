@@ -1,0 +1,85 @@
+# Render blueprint: the application server, the chrome service and Postgres as one Blueprint instance
+# (https://render.com/docs/infrastructure-as-code). The CLI validates it, `render blueprints validate render.yaml`;
+# the instance is created once from the dashboard against this repository, after which every push to main deploys.
+#
+# The app keeps its checkout cache and the local object store on one persistent disk at /data (the image's
+# default for OPENARTIFACT_CACHE_DIR and OPENARTIFACT_STORE_URL), so it runs as a single instance: a disk allows
+# no more, and the cache is per process anyway. The chrome service is private: it renders any URL it is given.
+# The two services reach each other over the private network by the `host:port` Render fills in below.
+#
+# Values marked `sync: false` are asked for when the instance is created and kept in the dashboard: the Google
+# OAuth client (with /auth/callback and /login/callback on the public domain as its redirect URIs), the Fernet
+# key OPENARTIFACT_SECRET_KEY (see backend/auth.py), the Pydantic AI Gateway key for the editing agent and the
+# Logfire write token.
+
+services:
+  - type: web
+    name: openartifact
+    runtime: docker
+    rootDir: .
+    dockerfilePath: ./Dockerfile
+    plan: 1c-2g
+    region: oregon
+    numInstances: 1
+    healthCheckPath: /health/
+    domains:
+      - openartifact.dev
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: PORT
+        value: '8765'
+      - key: OPENARTIFACT_BASE_URL
+        value: https://openartifact.dev
+      # The app as the chrome service fetches pages from it: the private address, not the public domain.
+      - key: OPENARTIFACT_INTERNAL_URL
+        fromService:
+          name: openartifact
+          type: web
+          property: hostport
+      - key: OPENARTIFACT_CHROME_URL
+        fromService:
+          name: openartifact-chrome
+          type: pserv
+          property: hostport
+      - key: DATABASE_URL
+        fromDatabase:
+          name: openartifact-postgres
+          property: connectionString
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: OPENARTIFACT_SECRET_KEY
+        sync: false
+      - key: PYDANTIC_AI_GATEWAY_API_KEY
+        sync: false
+      - key: LOGFIRE_TOKEN
+        sync: false
+      - key: LOGFIRE_ENVIRONMENT
+        value: production
+
+  - type: pserv
+    name: openartifact-chrome
+    runtime: docker
+    rootDir: .
+    dockerfilePath: ./chrome/Dockerfile
+    dockerContext: .
+    plan: 1c-2g
+    region: oregon
+    numInstances: 1
+    envVars:
+      - key: PORT
+        value: '8766'
+      - key: LOGFIRE_TOKEN
+        sync: false
+      - key: LOGFIRE_ENVIRONMENT
+        value: production
+
+databases:
+  - name: openartifact-postgres
+    plan: 0.5c-1g
+    postgresMajorVersion: '18'
+    region: oregon

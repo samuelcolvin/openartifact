@@ -19,18 +19,32 @@ def cache_dir() -> Path:
     return Path(os.environ.get('OPENARTIFACT_CACHE_DIR') or ROOT / 'data' / 'cache').resolve()
 
 
+def http_url(value: str) -> str:
+    """`value` as a URL without a trailing slash, taking a bare `host:port` as plain http.
+
+    Render's blueprint hands a service's internal address to another as `host:port` (`fromService` with
+    `property: hostport`), with no scheme; inside the private network that address is http.
+    """
+    value = value.rstrip('/')
+    if '://' not in value:
+        return f'http://{value}'
+    return value
+
+
 def chrome_url() -> str | None:
     """The chrome service (`chrome/`), from `OPENARTIFACT_CHROME_URL`; `None` means PDF export is not set up."""
     url = os.environ.get('OPENARTIFACT_CHROME_URL')
-    return url.rstrip('/') if url else None
+    return http_url(url) if url else None
 
 
 def internal_url() -> str:
     """This server as the chrome service reaches it, from `OPENARTIFACT_INTERNAL_URL`; the public URL by default.
 
-    In compose the chrome container reaches the app at `http://app:8765`, not at the address a browser uses.
+    In compose the chrome container reaches the app at `http://openartifact.internal:8765`, not at the address a
+    browser uses; on Render it is the web service's internal `host:port`.
     """
-    return (os.environ.get('OPENARTIFACT_INTERNAL_URL') or base_url()).rstrip('/')
+    url = os.environ.get('OPENARTIFACT_INTERNAL_URL')
+    return http_url(url) if url else base_url()
 
 
 def secret_key() -> bytes:
