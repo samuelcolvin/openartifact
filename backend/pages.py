@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 from fastapi.responses import HTMLResponse
 
 # FastMCP's default consent policy, also applied to our own pages: no scripts, inline styles, https images.
-CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'"
+CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' https: data:; base-uri 'none'"
 
 STYLES = """
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -73,6 +73,7 @@ def render_page(title: str, body: str, *, csp: str | None = CSP) -> str:
     return (
         '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        '<link rel="icon" href="/app/favicon.svg" type="image/svg+xml">\n'
         f'{meta}<title>{_e(title)} - OpenArtifact</title>\n<style>{STYLES}</style>\n</head>\n<body>\n'
         '<a class="brand" href="/"><span class="mark"></span>OpenArtifact</a>\n'
         f'<main class="card">\n{body}\n</main>\n</body>\n</html>\n'
