@@ -1,0 +1,36 @@
+tests/test_server.py
+  s_f92ac4848c4221::t_5e1edd529f4e6d 7,20,30-31,323-327,331-335,463-515,518-541,544
+  s_f92ac4848c4221::t_0df15f982f65a8 516-517
+README.md
+  s_f92ac4848c4221::t_d395f3359087b3 131-132,141,144,148
+skills/openartifact/references/local.md
+  s_f92ac4848c4221::t_d395f3359087b3 14
+tests/test_chrome.py
+  s_f92ac4848c4221::t_5e1edd529f4e6d 1-2,24-31,106-118,126-142,144-146,214-231
+  s_f92ac4848c4221::t_3c1194b565aac2 143
+tests/test_powerpoint.py
+  s_f92ac4848c4221::t_3c1194b565aac2 11,120-122
+  s_f92ac4848c4221::t_5e1edd529f4e6d 1-2,6-10,12-114,116-119,123-127,129-131,134-136,138-146
+  ai_agent 115,128,137
+  s_f92ac4848c4221::t_0df15f982f65a8 3-5,132-133
+skills/openartifact/SKILL.md
+  s_f92ac4848c4221::t_d395f3359087b3 30
+CLAUDE.md
+  s_f92ac4848c4221::t_d395f3359087b3 15,20,115,134,164,183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ade33511d87407f5089400a40bbb90a456dcb83c",
+  "prompts": {},
+  "sessions": {
+    "s_f92ac4848c4221": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bd27fb1a-c97a-4e8b-8a63-7ca8533e4d6b",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
