@@ -73,7 +73,7 @@ Say what it should cover in the chat, or paste the notes it should be written fr
 """,
 }
 # A stylesheet per type, so a new artifact looks considered before anyone has touched it: a navy deck with a warm
-# accent, a document on paper with serif headings, a page on warm cream with a terracotta accent.
+# accent, a document on paper with a green accent, a page on warm cream with a terracotta accent; the system sans stack throughout.
 STARTER_STYLES: dict[str, str] = {
     'deck': """\
 :root {
@@ -100,7 +100,6 @@ STARTER_STYLES: dict[str, str] = {
   --accent-secondary: #b85c38;
   --accent-tertiary: #4a6fa5;
   --accent-aqua: #1f6f5c;
-  --font-heading: Georgia, 'Times New Roman', serif;
 }
 """,
     'page': """\
@@ -114,7 +113,6 @@ STARTER_STYLES: dict[str, str] = {
   --accent-secondary: #2f6b8f;
   --accent-tertiary: #6b8f2f;
   --accent-aqua: #2f6b8f;
-  --font-heading: Georgia, 'Times New Roman', serif;
 }
 """,
 }
