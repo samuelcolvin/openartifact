@@ -106,3 +106,224 @@ body {
   border-radius: 6px;
   padding: 8px 10px;
 }
+
+/* MDXEditor in the editor pane. Its own sheet is light by default; `dark-theme` flips its Radix scales and the
+ * rest is mapped onto the app's palette here. The content area gets prose styles because Tailwind's reset has
+ * flattened the headings and lists inside it. */
+.oa-mdx.mdxeditor {
+  --basePageBg: var(--color-bg);
+  --baseBg: var(--color-panel);
+  --baseBgSubtle: var(--color-panel);
+  --baseBgHover: var(--color-raised);
+  --baseBgActive: var(--color-raised);
+  --baseBorder: var(--color-line);
+  --baseLine: var(--color-line);
+  --baseText: var(--color-muted);
+  --baseTextContrast: var(--color-fg);
+  --accentText: var(--color-accent);
+  --font-body: var(--font-sans);
+  /* Tailwind's token has the same name as MDXEditor's, so the list is spelled out: a self-reference would be invalid. */
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-fg);
+}
+
+.oa-mdx .mdxeditor-toolbar {
+  border-radius: 0;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-panel);
+  flex: none;
+}
+
+.oa-mdx .mdxeditor-toolbar fieldset[disabled] > * {
+  opacity: 0.4;
+}
+
+.oa-mdx .mdxeditor-diff-source-wrapper,
+.oa-mdx .mdxeditor-rich-text-editor,
+.oa-mdx .mdxeditor-root-contenteditable {
+  min-height: 0;
+  flex: 1;
+}
+
+.oa-mdx .mdxeditor-diff-source-wrapper {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.oa-mdx .mdxeditor-source-editor,
+.oa-mdx .mdxeditor-source-editor .cm-editor {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.oa-mdx .mdxeditor-rich-text-editor {
+  overflow: auto;
+}
+
+.oa-prose {
+  max-width: 52rem;
+  padding: 1.25rem 1.5rem 4rem;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.oa-prose h1,
+.oa-prose h2,
+.oa-prose h3,
+.oa-prose h4,
+.oa-prose h5,
+.oa-prose h6 {
+  font-weight: 650;
+  line-height: 1.25;
+  margin: 1.2em 0 0.4em;
+}
+
+.oa-prose h1 {
+  font-size: 1.9em;
+}
+
+.oa-prose h2 {
+  font-size: 1.5em;
+}
+
+.oa-prose h3 {
+  font-size: 1.2em;
+}
+
+.oa-prose p,
+.oa-prose ul,
+.oa-prose ol,
+.oa-prose blockquote,
+.oa-prose table {
+  margin: 0 0 0.75em;
+}
+
+.oa-prose ul {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+
+.oa-prose ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+}
+
+.oa-prose li[role='checkbox'] {
+  list-style: none;
+}
+
+.oa-prose blockquote {
+  border-left: 3px solid var(--color-line);
+  padding-left: 1em;
+  color: var(--color-muted);
+}
+
+.oa-prose a {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+
+.oa-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: rgba(255, 255, 255, 0.07);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.oa-prose table {
+  border-collapse: collapse;
+}
+
+.oa-prose th,
+.oa-prose td {
+  border: 1px solid var(--color-line);
+  padding: 4px 8px;
+}
+
+.oa-prose img {
+  max-width: 100%;
+}
+
+/* Raw HTML kept verbatim: a chip inline, a dashed box as a block; a click opens it as text. */
+.oa-raw-html-text {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--color-accent-2);
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+
+.oa-raw-html-inline .oa-raw-html-text {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(179, 136, 255, 0.12);
+}
+
+.oa-raw-html-block {
+  margin: 0 0 0.75em;
+}
+
+.oa-raw-html-block .oa-raw-html-text,
+.oa-raw-html-input {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px dashed rgba(179, 136, 255, 0.45);
+  border-radius: 6px;
+  background: rgba(179, 136, 255, 0.07);
+}
+
+.oa-raw-html-input {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-fg);
+  resize: vertical;
+  outline: none;
+  border-style: solid;
+}
+
+.oa-raw-html-inline .oa-raw-html-input {
+  display: inline-block;
+  width: auto;
+  min-width: 12em;
+  padding: 0 4px;
+  resize: none;
+}
+
+/* The `---` between pages. */
+.oa-page-break {
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  margin: 1.5em 0;
+  color: var(--color-accent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.oa-page-break::before,
+.oa-page-break::after {
+  content: '';
+  flex: 1;
+  border-top: 2px dashed var(--color-accent);
+  opacity: 0.6;
+}
+
+.oa-prose hr {
+  border: 0;
+  border-top: 1px solid var(--color-line);
+  margin: 1.25em 0;
+}

@@ -11,6 +11,7 @@
  */
 
 import { type DeckController, initDeck } from './deck.ts'
+import type {} from './embed.ts'
 import hljsCss from './hljs.css'
 import { buildPage } from './page.ts'
 import { splitPages } from './split.ts'
@@ -128,6 +129,8 @@ function main(): void {
   } else {
     reportPosition(deck, pages.length)
   }
+  // What an embedding page may read and drive as well: the editor's preview takes the deck's controller.
+  window.openartifact = { type: config.type, title: config.title, deck }
 }
 
 /**

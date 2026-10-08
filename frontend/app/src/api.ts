@@ -136,6 +136,13 @@ export const api = {
   setAccess: (id: string, body: AccessFields) =>
     request<Artifact>(`/api/artifacts/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   chat: (id: string) => request<{ messages: unknown[]; model: string | null }>(`/api/artifacts/${id}/chat`),
+  source: (id: string) => request<{ content: string }>(`/api/artifacts/${id}/source`),
+  /** Commits `main.md` and rebuilds; a build error comes back as `build_error`, the content is kept either way. */
+  saveSource: (id: string, content: string) =>
+    request<{ build_error: string | null }>(`/api/artifacts/${id}/source`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }),
   clearChat: (id: string) => request<void>(`/api/artifacts/${id}/chat`, { method: 'DELETE' }),
 }
 

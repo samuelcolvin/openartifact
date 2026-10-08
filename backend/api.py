@@ -15,6 +15,7 @@ after the route function has already returned the response.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from collections.abc import AsyncIterator
@@ -33,6 +34,7 @@ from pydantic_ai.usage import UsageLimits
 import access
 import agent
 import auth
+import build
 import chats
 import login
 import mcp_server
@@ -221,6 +223,53 @@ async def set_access(artifact_id: str, body: AccessBody, request: Request) -> di
         found.id, visibility=visibility, org_editable=body.org_editable, organization_id=organization_id
     )
     return artifact_json(changed, viewer, viewer.email)
+
+
+MAIN_MD = 'main.md'
+
+
+@router.get('/artifacts/{artifact_id}/source')
+async def get_source(artifact_id: str, request: Request) -> dict[str, object]:
+    """The artifact's `main.md`, for the editor to start from; anyone who may see the page may read it."""
+    viewer = await viewer_required(request)
+    found = await artifact_for(artifact_id, viewer)
+    async with workspace.open_artifact(found) as directory:
+        path = directory / MAIN_MD
+        if not path.is_file():
+            raise HTTPException(404, f'{MAIN_MD} not found')
+        content = await asyncio.to_thread(path.read_text, encoding='utf-8')
+    return {'content': content}
+
+
+class SourceBody(BaseModel):
+    content: str
+
+
+@router.put('/artifacts/{artifact_id}/source')
+async def put_source(artifact_id: str, body: SourceBody, request: Request) -> dict[str, object]:
+    """Replace `main.md` with what the editor holds, as one commit, then rebuild the page.
+
+    The content is committed even when it does not build, as the agent's edits are: the editor is told the build
+    error in `build_error` (with the checkout's path stripped from it) and keeps the user's work rather than losing
+    it, and the stale page is removed so the preview shows the error rather than the last good build. An unchanged
+    file makes no commit.
+    """
+    mutation(request)
+    viewer = await viewer_required(request)
+    found = await artifact_for(artifact_id, viewer, edit=True)
+    try:
+        async with workspace.edit(found.id, f'edit {MAIN_MD}') as tx:
+            await asyncio.to_thread((tx.path / MAIN_MD).write_text, body.content, encoding='utf-8')
+    except workspace.ArtifactBusy as exc:
+        raise HTTPException(409, str(exc)) from exc
+    build_error: str | None = None
+    async with workspace.open_artifact(found) as directory:
+        try:
+            await asyncio.to_thread(build.build_html, directory, markdown_url=f'../{found.id}.md')
+        except build.BuildError as exc:
+            build_error = str(exc).replace(f'{directory}/', '')
+            (directory / 'dist' / 'index.html').unlink(missing_ok=True)
+    return {'build_error': build_error}
 
 
 def merge_turns(messages: list[UIMessage]) -> list[UIMessage]:

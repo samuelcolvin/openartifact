@@ -164,3 +164,40 @@ def test_list_create_and_access(client: TestClient):
     assert bad.status_code == 400 and 'personal artifact' in bad.json()['detail']
     row = in_app(client, lambda: workspace.get_artifact(workspace.uuid.UUID(team['id'])))
     assert row is not None and row.visibility == 'public'
+
+
+def test_source_read_and_save(client: TestClient):
+    artifact = starter(client)
+    colleague, _ = org_members(client)
+    original = (Path(__file__).parent.parent / 'examples' / 'starter' / 'main.md').read_text(encoding='utf-8')
+    assert client.get(f'/api/artifacts/{artifact.id}/source').json() == {'content': original}
+
+    # A save is one commit, rebuilt on the spot, and the page and the source route show it.
+    saved = client.put(f'/api/artifacts/{artifact.id}/source', json={'content': '# Edited\n\nBy hand.\n'})
+    assert saved.status_code == 200, saved.text
+    assert saved.json() == {'build_error': None}
+    assert client.get(f'/artifacts/{artifact.id}/main.md').text == '# Edited\n\nBy hand.\n'
+    assert client.get(f'/api/artifacts/{artifact.id}/source').json() == {'content': '# Edited\n\nBy hand.\n'}
+    assert 'By hand.' in client.get(f'/artifacts/{artifact.id}/').text
+    log = in_app(client, lambda: workspace.artifact_git(artifact.id, 'log', '--format=%s'))
+    assert log.splitlines()[0] == 'edit main.md'
+
+    # Content that does not build is kept, and the error reported, so nothing typed is lost.
+    broken = client.put(f'/api/artifacts/{artifact.id}/source', json={'content': '# One\n---\n# Two\n'})
+    assert broken.status_code == 200
+    error = broken.json()['build_error']
+    assert error.startswith('main.md:2: put a blank line before ---'), error
+    assert client.get(f'/api/artifacts/{artifact.id}/source').json()['content'] == '# One\n---\n# Two\n'
+    assert client.get(f'/artifacts/{artifact.id}/').status_code == 422
+
+    # Guards: cross-site, not signed in, and a colleague without edit rights (the artifact is private: 404).
+    cross = client.put(
+        f'/api/artifacts/{artifact.id}/source', json={'content': 'x'}, headers={'sec-fetch-site': 'cross-site'}
+    )
+    assert cross.status_code == 403
+    sign_in(client, colleague)
+    assert client.get(f'/api/artifacts/{artifact.id}/source').status_code == 404
+    assert client.put(f'/api/artifacts/{artifact.id}/source', json={'content': 'x'}).status_code == 404
+    sign_out(client)
+    assert client.get(f'/api/artifacts/{artifact.id}/source').status_code == 401
+    assert client.put(f'/api/artifacts/{artifact.id}/source', json={'content': 'x'}).status_code == 401
