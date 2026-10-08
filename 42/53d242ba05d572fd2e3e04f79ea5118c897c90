@@ -1,0 +1,9 @@
+docker-entrypoint.sh
+  ai_agent 11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4253d242ba05d572fd2e3e04f79ea5118c897c90",
+  "prompts": {}
+}
