@@ -11,7 +11,7 @@ git clone https://github.com/samuelcolvin/openartifact
 cd openartifact && pnpm -C frontend install && pnpm -C frontend build     # -> frontend/dist/openartifact.js
 ```
 
-The builder is the module `backend/build.py` in that checkout, with PDF printing in `chrome/pdf.py`. Both need Python 3.11+ and nothing else. Below, `CHECKOUT` stands for the path to that checkout. The server (`make pg-start`, then `make dev`) hosts the MCP endpoint and serves the built pages at `/artifacts/<id>/`, with `/artifacts/<id>.md`, `.zip`, `.pdf` and (decks) `.pptx` beside them; the `.pdf` and `.pptx` ones need the chrome service (`make chrome-dev`, or the container from `make docker-up`).
+The builder is the module `backend/build.py` in that checkout, with PDF printing in `chrome/pdf.py`. Both need Python 3.11+ and nothing else. Below, `CHECKOUT` stands for the path to that checkout. The server (`make pg-start`, then `make dev`) hosts the MCP endpoint and serves the built pages at `/artifacts/<id>/`, with `/artifacts/<id>.md`, `.zip`, `.pdf`, (decks) `.pptx` and (documents) `.docx` beside them; all but the first two need the chrome service (`make chrome-dev`, or the container from `make docker-up`).
 
 ## Building by hand
 

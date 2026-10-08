@@ -13,6 +13,7 @@ Routes:
     /artifacts/{id}.pdf         the page printed to PDF by the chrome service (`chrome/`)
     /artifacts/{id}.png?page=N  one page of the artifact as a PNG, by the same service (`render.py`)
     /artifacts/{id}.pptx        a deck as an editable PowerPoint file (`powerpoint.py`), by the same service
+    /artifacts/{id}.docx        a document as a Word file (`word.py`), by the same service
     /artifacts/{id}.json        the artifact's placement, permissions and the viewer's rights, for the toolbar
     POST /artifacts/{id}/fork   copy the artifact into the signed-in viewer's own space
     /print/{token}/artifacts/{id}/...   the page and its media for the chrome service, by a short-lived pass
@@ -52,6 +53,7 @@ from urllib.parse import quote
 
 import powerpoint
 import render
+import word
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -480,6 +482,20 @@ async def artifact_pptx(artifact_id: str, request: Request) -> Response:
         filename = await export_filename(found, directory, 'pptx')
     data = await rendered(powerpoint.export(found))
     return private(Response(data, media_type=powerpoint.MEDIA_TYPE, headers=attachment(filename)))
+
+
+@app.get('/artifacts/{artifact_id}.docx')
+async def artifact_docx(artifact_id: str, request: Request) -> Response:
+    """A document as a Word file: the chrome service reads the outline of the page and `word.export` writes it as
+    Word paragraphs. Documents only; a deck or page artifact is a 422."""
+    found = await load_artifact(artifact_id, request)
+    if found.type != 'document':
+        raise HTTPException(422, f'only a document exports to Word; this artifact is a {found.type}')
+    async with workspace.open_artifact(found) as directory:
+        await build_if_missing(found, directory)
+        filename = await export_filename(found, directory, 'docx')
+    data = await rendered(word.export(found))
+    return private(Response(data, media_type=word.MEDIA_TYPE, headers=attachment(filename)))
 
 
 @app.get('/artifacts/{artifact_id}.png')

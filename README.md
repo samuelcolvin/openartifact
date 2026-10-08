@@ -129,7 +129,7 @@ The full authoring guide - page directives, the page component, components and p
 - `build.build_html(directory, output=None, runtime_url='/openartifact.js')` - build `directory` to `output` (default `directory/dist/index.html`), loading the runtime from `runtime_url`; returns the output path. Input problems, including a referenced image that does not exist, raise `build.BuildError` with the file and line.
 - `chrome.pdf.print_to_pdf(url, pdf_path)` - print the served page to PDF with Chrome headless at the type's page size; returns the PDF path and Chrome's stderr. A page that fails to load is a `ChromeError` with that stderr, since Chrome itself exits 0 and says why only there.
 - `chrome.pdf.screenshot(url, png_path, width, height, scale=1)` - the page as a viewer with a window that size sees it; `#3` on the URL shows the third page; `scale` is the device pixel ratio.
-- `chrome.pdf.dump_dom(url)` - the page's DOM after the runtime has run, which is how the PowerPoint export reads the scene a deck opened with `?scene` measures.
+- `chrome.pdf.dump_dom(url)` - the page's DOM after the runtime has run, which is how the PowerPoint and Word exports read what a deck or document opened with `?scene` writes into itself.
 
 ## Exports
 
@@ -139,13 +139,14 @@ Next to the page at `/artifacts/<id>/`, the server offers:
 - `/artifacts/<id>.zip` - the artifact as a git repository: every source file at the head, plus `.git` with the artifact's own history (one commit per change, with the original messages and dates). Unzip it and `git log`.
 - `/artifacts/<id>.pdf` - the page printed to PDF.
 - `/artifacts/<id>.pptx` - a deck as a PowerPoint file: a picture of each slide as its background, with every block of text laid over it as an editable text box at the browser's position, font, size and colour. Retyping works; moving a text box leaves its background behind.
+- `/artifacts/<id>.docx` - a document as a Word file: headings, paragraphs, lists, code, quotes, tables and images as ordinary Word paragraphs in Word's own styles, with none of the theme's colours, one page break per page of the artifact.
 - `/artifacts/<id>.png?page=N` - one page as a PNG, the way a viewer sees it: a deck's slide, or a document scrolled to that page.
 
-The zip, the PDF and the PowerPoint file download as `<title> <commit>.zip` / `.pdf` / `.pptx`, the title from `artifact.toml` and the short sha of the artifact's last change.
+The zip, the PDF, the PowerPoint and the Word file download as `<title> <commit>.zip` / `.pdf` / `.pptx` / `.docx`, the title from `artifact.toml` and the short sha of the artifact's last change.
 
 The page itself carries a viewer toolbar, added by `openartifact.js` and hidden in print: the artifact's title, a Download menu with the three exports, the OpenArtifact brand, and for a deck previous / next, the page counter and a full-screen toggle. It shows when the pointer nears the top of the window and slides away a second after it leaves.
 
-PDF printing and screenshots happen in the chrome service, `chrome/`, which runs in its own image with Chromium and renders whatever page URL it is given; the app calls it at `OPENARTIFACT_CHROME_URL` and tells it to fetch the page at `OPENARTIFACT_INTERNAL_URL` (the app as seen from the chrome container). `make docker-up` runs both; on the host, `make chrome-dev` serves it on :8766 with the local Chrome and `make dev` points at it. Without a chrome service the `.pdf`, `.png` and `.pptx` URLs answer 503, and the editing agent cannot look at a page.
+PDF printing and screenshots happen in the chrome service, `chrome/`, which runs in its own image with Chromium and renders whatever page URL it is given; the app calls it at `OPENARTIFACT_CHROME_URL` and tells it to fetch the page at `OPENARTIFACT_INTERNAL_URL` (the app as seen from the chrome container). `make docker-up` runs both; on the host, `make chrome-dev` serves it on :8766 with the local Chrome and `make dev` points at it. Without a chrome service the `.pdf`, `.png`, `.pptx` and `.docx` URLs answer 503, and the editing agent cannot look at a page.
 
 To print by hand, with the server running:
 

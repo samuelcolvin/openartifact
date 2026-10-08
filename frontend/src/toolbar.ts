@@ -5,7 +5,7 @@
  * cannot leak out.
  *
  * It holds the artifact title, for a deck the previous / next buttons, a counter and a full-screen
- * toggle, a Download menu for the `.pdf`, `.pptx` (decks), `.md` and `.zip` exports served beside the page, and the
+ * toggle, a Download menu for the `.pdf`, `.pptx` (decks), `.docx` (documents), `.md` and `.zip` exports served beside the page, and the
  * brand. Once the page is up it fetches `<page>.json` (who may see the artifact, and who is looking)
  * and adds a visibility badge, Edit (the web app's editor) for someone who may change it, Fork for a
  * signed-in viewer, and a sign-in link or an account menu with sign-out. That fetch is the one asynchronous thing here: it is viewer chrome, not page
@@ -59,10 +59,14 @@ const ICONS = {
   chevron: '<svg viewBox="0 0 12 12"><path d="m3 4.5 3 3 3-3"/></svg>',
 }
 
-/** The menu's entries; `deck` ones are offered for a deck only; `view` opens in a new tab instead of downloading, below a separator. */
-const EXPORTS: Array<{ ext: string; label: string; hint?: string; deck?: boolean; view?: boolean }> = [
+/**
+ * The menu's entries; one with `only` is offered for that artifact type alone; `view` opens in a new tab instead of
+ * downloading, below a separator.
+ */
+const EXPORTS: Array<{ ext: string; label: string; hint?: string; only?: ArtifactType; view?: boolean }> = [
   { ext: '.pdf', label: 'PDF', hint: 'printed on request, takes a moment' },
-  { ext: '.pptx', label: 'PowerPoint', hint: 'editable text over a picture of each slide', deck: true },
+  { ext: '.pptx', label: 'PowerPoint', hint: 'editable text over a picture of each slide', only: 'deck' },
+  { ext: '.docx', label: 'Word', hint: 'headings, text, lists, tables, code and images', only: 'document' },
   { ext: '.md', label: 'Markdown', hint: 'the source, behind a summary' },
   { ext: '.zip', label: 'Source (zip)', hint: 'every file, as a git repo with history' },
   { ext: '.md', label: 'View markdown', hint: 'open the source in a new tab', view: true },
@@ -270,7 +274,7 @@ function buildDownloadMenu(group: HTMLElement, base: string, type: ArtifactType)
     'Download',
   )
   button.insertAdjacentHTML('beforeend', ICONS.chevron)
-  const exports = EXPORTS.filter((entry) => !entry.deck || type === 'deck')
+  const exports = EXPORTS.filter((entry) => !entry.only || entry.only === type)
   const items = exports.map(({ ext, label, hint, view }) => {
     const attrs: Record<string, string> = view ? { target: '_blank', rel: 'noopener' } : { download: '' }
     const link = el('a', { role: 'menuitem', href: base + ext, ...attrs }, label)

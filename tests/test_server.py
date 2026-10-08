@@ -21,7 +21,9 @@ import powerpoint
 import pytest
 import render
 import uvicorn
+import word
 from conftest import DEV_TOKEN
+from docx import Document
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from fastapi.testclient import TestClient
@@ -539,9 +541,65 @@ def test_artifact_pptx_is_for_decks_only(client: TestClient, monkeypatch: pytest
     assert client.get(f'/artifacts/{artifact.id}.pptx').status_code == 503
 
 
+OUTLINE = {
+    'kind': 'document',
+    'pages': [
+        {
+            'index': 1,
+            'blocks': [
+                {
+                    'type': 'heading',
+                    'level': 1,
+                    'runs': [
+                        {
+                            'text': 'A document',
+                            'bold': False,
+                            'italic': False,
+                            'code': False,
+                            'underline': False,
+                            'strike': False,
+                        }
+                    ],
+                }
+            ],
+        }
+    ],
+}
+
+
+def test_artifact_docx_is_assembled_from_the_chrome_services_outline(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    principal, _ = in_app(client, seed_starter)
+    document = in_app(
+        client,
+        lambda: workspace.import_directory(principal.workspace_id, 'Doc', 'document', ROOT / 'examples' / 'document'),
+    )
+    sign_in(client, principal)
+    asked = stub_chrome(monkeypatch, 200, b'', json.dumps(OUTLINE))
+    response = client.get(f'/artifacts/{document.id}.docx')
+    assert response.status_code == 200, response.text
+    assert response.headers['content-type'] == word.MEDIA_TYPE
+    sha = last_commit(client, document)
+    assert response.headers['content-disposition'].startswith(
+        f'attachment; filename="OpenArtifact Document {sha}.docx"'
+    )
+    # The outline was read from the print pass in scene mode; nothing was photographed.
+    [outline_url] = asked
+    assert re.fullmatch(rf'http://app:8765/print/[^/]+/artifacts/{document.id}/\?scene', outline_url)
+    [heading] = Document(io.BytesIO(response.content)).paragraphs
+    assert (heading.style.name, heading.text) == ('Heading 1', 'A document')  # pyright: ignore
+    # Documents only, and a visitor is sent away.
+    deck = starter(client)
+    response = client.get(f'/artifacts/{deck.id}.docx')
+    assert response.status_code == 422 and 'only a document' in response.json()['detail']
+    sign_out(client)
+    assert client.get(f'/artifacts/{document.id}.docx').status_code == 401
+
+
 def test_exports_of_unknown_artifacts_are_404(client: TestClient):
     missing = uuid.uuid4()
-    for suffix in ('.md', '.zip', '.pdf', '.png', '.pptx'):
+    for suffix in ('.md', '.zip', '.pdf', '.png', '.pptx', '.docx'):
         assert client.get(f'/artifacts/{missing}{suffix}').status_code == 404, suffix
         assert client.get(f'/artifacts/not-a-uuid{suffix}').status_code == 404, suffix
 

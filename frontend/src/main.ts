@@ -13,6 +13,7 @@
 import { type DeckController, initDeck } from './deck.ts'
 import type {} from './embed.ts'
 import hljsCss from './hljs.css'
+import { writeOutline } from './outline.ts'
 import { buildPage } from './page.ts'
 import { hideText, measureScene, prepareScene, sceneRequested } from './scene.ts'
 import { splitPages } from './split.ts'
@@ -128,6 +129,11 @@ function main(): void {
     // screenshot of one page relies on.
     const wanted = Number.parseInt(window.location.hash.replace('#', ''), 10)
     if (wanted >= 1 && wanted <= pages.length) pages[wanted - 1].scrollIntoView()
+    if (config.type === 'document' && sceneRequested()) {
+      // The outline pass of the Word export (outline.ts): a render for the chrome service, not a viewer.
+      writeOutline(pages)
+      return
+    }
   }
 
   // Viewer chrome belongs to the top-level viewer: inside a frame (the editor's live preview, an embedding page)
