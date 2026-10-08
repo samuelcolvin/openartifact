@@ -1,0 +1,31 @@
+frontend/src/main.ts
+  s_f92ac4848c4221::t_05f8e8e1fc086d 133-134
+  s_f92ac4848c4221::t_9e8d2883fd56a2 16,135-138
+frontend/src/outline.ts
+  s_f92ac4848c4221::t_9e8d2883fd56a2 390-404,443-444
+  s_f92ac4848c4221::t_05f8e8e1fc086d 14-20,52,55-66,79-82,194-197,226-245,274-275,349-350,377-378,407,424-442,445-452
+backend/word.py
+  s_f92ac4848c4221::t_69236d1d3b4886 10-13,23,37,47-48,50,52-56,114-116,120-127,162,166-199,206,328,330,333-334
+README.md
+  s_f92ac4848c4221::t_c993485550834a 142
+CLAUDE.md
+  s_f92ac4848c4221::t_c993485550834a 116,165
+tests/test_word.py
+  s_f92ac4848c4221::t_69236d1d3b4886 14,68-70,86-89,105,126-128,135,155-163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1fdb2650e114c7c81a2d24cb084cc6bd3caf9a4c",
+  "prompts": {},
+  "sessions": {
+    "s_f92ac4848c4221": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bd27fb1a-c97a-4e8b-8a63-7ca8533e4d6b",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
