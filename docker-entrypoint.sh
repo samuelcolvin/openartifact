@@ -8,6 +8,7 @@ if [ "$(id -u)" = 0 ]; then
     # Only the directories themselves: everything below is created by `app`.
     mkdir -p /data/store /data/cache
     chown app:app /data /data/store /data/cache
-    exec setpriv --reuid=app --regid=app --init-groups "$@"
+    # setpriv keeps the environment, so give `app` its own home too: libraries look under ~ for config.
+    exec env HOME=/home/app USER=app LOGNAME=app setpriv --reuid=app --regid=app --init-groups "$@"
 fi
 exec "$@"
