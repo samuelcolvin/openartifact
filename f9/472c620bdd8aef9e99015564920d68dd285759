@@ -1,0 +1,62 @@
+backend/api.py
+  s_603a3445c6209f::t_67e4b3abd838eb 18,37,228-252,256-269,272
+  s_603a3445c6209f::t_140b42f510b6af 253-255,270-271
+CLAUDE.md
+  s_603a3445c6209f::t_d538864d87a78f 19,187
+frontend/app/src/editor/plugin.tsx
+  s_603a3445c6209f::t_62ac3206820750 1-12
+  s_603a3445c6209f::t_813d85a7de996e 13-20,22-238,240-278,282-291
+  s_603a3445c6209f::t_2dc184276f97a3 21,239
+  s_603a3445c6209f::t_aceb5304f56178 279-281
+frontend/app/src/editor/sourceTheme.ts
+  s_603a3445c6209f::t_6e467629f1cf48 1-15,17-69
+  s_603a3445c6209f::t_3f44ccf5f1e8d9 16
+frontend/app/src/Preview.tsx
+  s_603a3445c6209f::t_d1643eb17e2903 8,10-13,15-18,20-21,28
+  s_603a3445c6209f::t_6021b39627018a 9
+frontend/app/src/editor/MarkdownEditor.tsx
+  s_603a3445c6209f::t_49676d84b7e4f5 1-14,16-23,26-40,42-116,119-124,126-130,138-142,144-151,154-159,164-168
+  s_603a3445c6209f::t_2dc184276f97a3 15,24-25,152-153,160-163
+  s_603a3445c6209f::t_aceb5304f56178 41,117-118,125,132-136,143
+  s_603a3445c6209f::t_756abbadcdf324 131,137
+frontend/app/src/pages/Editor.tsx
+  s_603a3445c6209f::t_1cc25dc3a92c0a 1-2,5,11,14,20,76-86,88-91,93-105,144-156,165-168,170-184,186,200,203-216,221-222,224-235,238,256,258,287,316-318
+  s_603a3445c6209f::t_b49c542014291a 3,6,239,259-260,262-286,288-295,297-315
+  s_603a3445c6209f::t_3d3ef63d5eafcb 4,7-10,13,15,87,106-143,157-164,169,236-237,253-255,257
+  s_603a3445c6209f::t_d3edde9b5aac98 92
+  s_603a3445c6209f::t_a82a049caf5a39 185,187-199,201-202,223
+  s_603a3445c6209f::t_756abbadcdf324 217-220
+frontend/src/embed.ts
+  s_603a3445c6209f::t_6021b39627018a 1-20
+frontend/package.json
+  s_603a3445c6209f::t_b0023074d164fe 27-30,34,45
+  s_603a3445c6209f::t_35145b082ae7fc 31
+frontend/app/src/index.css
+  s_603a3445c6209f::t_a82a049caf5a39 109-124,127-329
+  s_603a3445c6209f::t_5d5f44ba770840 125-126
+frontend/src/main.ts
+  s_603a3445c6209f::t_6021b39627018a 14
+  s_603a3445c6209f::t_a273efd46e8930 133
+frontend/app/src/api.ts
+  s_603a3445c6209f::t_15e72942c26bf4 139-145
+tests/test_api.py
+  s_603a3445c6209f::t_9d1aa7e608ba6c 167-187,190,192-193,197-203
+  s_603a3445c6209f::t_140b42f510b6af 188-189,191
+  s_603a3445c6209f::t_88b2a1869cb8f4 194-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f9472c620bdd8aef9e99015564920d68dd285759",
+  "prompts": {},
+  "sessions": {
+    "s_603a3445c6209f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be03ef1b-e5c7-469a-89bd-6c156197b7f7",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
