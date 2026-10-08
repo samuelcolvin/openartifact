@@ -206,7 +206,7 @@ def test_first_turn_names_an_untitled_artifact(client: TestClient, monkeypatch: 
         assert info.instructions and info.instructions.startswith('You name documents')
         prompt = messages[-1].parts[-1]
         assert isinstance(prompt, UserPromptPart) and isinstance(prompt.content, str)
-        assert 'make a deck about pricing' in prompt.content and '# A new deck' in prompt.content
+        assert 'make a deck about pricing' in prompt.content and '# Your deck' in prompt.content
         naming_calls.append(prompt.content)
         return ModelResponse(parts=[TextPart('  "Pricing plans for 2026."  ')])
 

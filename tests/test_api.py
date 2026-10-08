@@ -86,8 +86,9 @@ def test_create_with_defaults_and_move_between_spaces(client: TestClient):
         False,
     )
     directory = workspace.checkout_path(uuid.UUID(doc['id']))
-    assert (directory / 'main.md').read_text().startswith('# A new document\n')
+    assert (directory / 'main.md').read_text().startswith('# Your document\n')
     assert 'theme = "light"' in (directory / 'artifact.toml').read_text()
+    assert (directory / 'styles.css').read_text().startswith(':root {')
     deck = client.post('/api/artifacts', json={'type': 'deck'}).json()
     assert deck['title'] == 'Untitled deck'
     assert 'theme = "dark"' in (workspace.checkout_path(uuid.UUID(deck['id'])) / 'artifact.toml').read_text()
@@ -128,7 +129,8 @@ def test_list_create_and_access(client: TestClient):
     notes = created.json()
     assert (notes['title'], notes['type'], notes['visibility']) == ('Notes', 'page', 'public')
     page = client.get(f'/artifacts/{notes["id"]}/main.md')
-    assert page.text.startswith('# A new page\n')  # the type's starter content, with no content given
+    assert page.text.startswith('# Your page\n')  # the type's starter content, with no content given
+    assert client.get(f'/artifacts/{notes["id"]}/styles.css').status_code == 200
     team = client.post(
         '/api/artifacts',
         json={'title': 'Team', 'placement': 'org', 'org_editable': True, 'content': '# Team\n\nHello.\n'},

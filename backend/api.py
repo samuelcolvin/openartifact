@@ -157,7 +157,9 @@ async def create_artifact(body: NewArtifactBody, request: Request) -> dict[str, 
     viewer = await viewer_required(request)
     title = (body.title or '').strip() or agent.DEFAULT_TITLES[body.type]
     theme = body.theme or agent.DEFAULT_THEMES[body.type]
+    # The type's placeholder pages and stylesheet when no content is given; given content gets no stylesheet.
     content = body.content if body.content is not None else agent.STARTER_CONTENT[body.type]
+    styles = None if body.content is not None else agent.STARTER_STYLES[body.type]
     if body.placement == 'org':
         if viewer.organization_id is None:
             raise HTTPException(400, 'your account is not in an organisation')
@@ -176,6 +178,7 @@ async def create_artifact(body: NewArtifactBody, request: Request) -> dict[str, 
             visibility=visibility,
             org_editable=body.org_editable if body.placement == 'org' else False,
             organization_id=organization_id,
+            styles=styles,
         )
     except ToolError as exc:
         raise HTTPException(400, str(exc)) from exc

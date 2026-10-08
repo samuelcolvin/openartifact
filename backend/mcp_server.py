@@ -189,8 +189,10 @@ async def create_artifact(
     visibility: str,
     org_editable: bool,
     organization_id: uuid.UUID | None,
+    styles: str | None = None,
 ) -> uuid.UUID:
-    """What the two creation tools and the web app share: write `artifact.toml` and `main.md` in one edit.
+    """What the two creation tools and the web app share: write `artifact.toml`, `main.md` and, when given,
+    `styles.css` in one edit.
 
     Returns the new id; the caller builds (or not) and formats its answer. A bad combination of placement and
     permissions is a `ToolError` before anything is written.
@@ -211,6 +213,8 @@ async def create_artifact(
     async with editing(artifact_id, f'new_artifact: {artifact_id}', create=create) as tx:
         (tx.path / 'artifact.toml').write_text(render_toml(config), encoding='utf-8')
         (tx.path / 'main.md').write_text(content, encoding='utf-8')
+        if styles is not None:
+            (tx.path / 'styles.css').write_text(styles, encoding='utf-8')
     return artifact_id
 
 

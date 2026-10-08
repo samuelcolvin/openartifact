@@ -42,40 +42,80 @@ BUILTIN_MODELS: list[tuple[str, str]] = [
     ('gateway/openai:gpt-6-luna', 'GPT-6 Luna'),
 ]
 # What the web app creates when the user picks a type and nothing else: a placeholder title the first turn of the
-# chat replaces (see `is_untitled` and `suggest_title`), a theme that suits the type, and a page or two to start from.
+# chat replaces (see `is_untitled` and `suggest_title`), a theme and a stylesheet that suit the type, and a page or two
+# of placeholder content, kept to a few lines because the chat is about to replace them.
 DEFAULT_TITLES: dict[str, str] = {'deck': 'Untitled deck', 'document': 'Untitled document', 'page': 'Untitled page'}
 DEFAULT_THEMES: dict[str, str] = {'deck': 'dark', 'document': 'light', 'page': 'light'}
 STARTER_CONTENT: dict[str, str] = {
     'deck': """\
 <!-- class: cover -->
 
-# A new deck
+# Your deck
 
-## Describe what it is about in the chat, and the first slides will appear here
+## Say what it is about in the chat
 
 ---
 
-# First point
+# First slide
 
 - One idea per slide
 - A few words per line
-- The chat can turn notes into slides, add charts, and restyle everything
 """,
     'document': """\
-# A new document
+# Your document
 
-Describe what this document is for in the chat. It can be a report, a memo, a proposal or a guide; pages break
-on `---`, and the chat can write, restructure and style it.
-
-## Getting started
-
-Say what you want in a sentence or two, or paste the notes it should be built from.
+Say what it should cover in the chat, or paste the notes it should be written from.
 """,
     'page': """\
-# A new page
+# Your page
 
-Describe what this page is for in the chat: a landing page, a wiki entry, a README, a long read. It scrolls as one
-column and the chat can write, restructure and style it.
+Say what it should cover in the chat, or paste the notes it should be written from.
+""",
+}
+# A stylesheet per type, so a new artifact looks considered before anyone has touched it: a navy deck with a warm
+# accent, a document on paper with serif headings, a page on warm cream with a terracotta accent.
+STARTER_STYLES: dict[str, str] = {
+    'deck': """\
+:root {
+  --bg-deck: #0b1020;
+  --bg-slide: #121a33;
+  --surface: #1c2648;
+  --color-text: rgba(236, 232, 224, 0.88);
+  --color-heading: #f6f1e7;
+  --color-muted: #8c93ad;
+  --accent: #f2b544;
+  --accent-secondary: #ff8a65;
+  --accent-tertiary: #9fb7ff;
+  --accent-aqua: #7fd6c2;
+}
+""",
+    'document': """\
+:root {
+  --bg-light: #fdfcf9;
+  --color-text-light: #2b2b2b;
+  --color-heading-light: #141414;
+  --color-muted: #7a7a72;
+  --surface: #f0ede6;
+  --accent: #1f6f5c;
+  --accent-secondary: #b85c38;
+  --accent-tertiary: #4a6fa5;
+  --accent-aqua: #1f6f5c;
+  --font-heading: Georgia, 'Times New Roman', serif;
+}
+""",
+    'page': """\
+:root {
+  --bg-light: #faf6ef;
+  --color-text-light: #35302a;
+  --color-heading-light: #1d1a16;
+  --color-muted: #8a8278;
+  --surface: #f0e9dd;
+  --accent: #c2572b;
+  --accent-secondary: #2f6b8f;
+  --accent-tertiary: #6b8f2f;
+  --accent-aqua: #2f6b8f;
+  --font-heading: Georgia, 'Times New Roman', serif;
+}
 """,
 }
 # Tool calls per turn before the run stops: an agent that cannot converge should not loop for ever.
