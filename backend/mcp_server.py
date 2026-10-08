@@ -339,7 +339,9 @@ async def set_access(artifact: str, public: bool, org_editable: bool = False) ->
     problem = access.check_access(visibility, org_editable, found.organization_id)
     if problem is not None:
         raise ToolError(problem)
-    changed = await workspace.set_access(found.id, visibility=visibility, org_editable=org_editable)
+    changed = await workspace.set_access(
+        found.id, visibility=visibility, org_editable=org_editable, organization_id=found.organization_id
+    )
     return f'artifact: {changed.id}\naccess: {access_summary(changed)}\n'
 
 

@@ -63,13 +63,30 @@ export interface Configure {
   default: string | null
 }
 
+/** What creates an artifact: the type, and whatever else the server should not default (`agent.py` has the defaults). */
 export interface NewArtifact {
-  title: string
   type: ArtifactType
-  theme: Theme
+  title?: string
+  theme?: Theme
+  content?: string
+  placement?: 'personal' | 'org'
+  public?: boolean
+  org_editable?: boolean
+}
+
+/** The placement and permissions an `AccessChoice` stands for; `placement` is org for every choice but private. */
+export interface AccessFields {
   placement: 'personal' | 'org'
   public: boolean
   org_editable: boolean
+}
+
+export function accessFields(choice: AccessChoice): AccessFields {
+  return {
+    placement: choice === 'private' ? 'personal' : 'org',
+    public: choice.startsWith('public'),
+    org_editable: choice.endsWith('editable'),
+  }
 }
 
 export class ApiError extends Error {
@@ -116,7 +133,7 @@ export const api = {
   configure: () => request<Configure>('/api/configure'),
   artifacts: () => request<ArtifactList>('/api/artifacts'),
   create: (body: NewArtifact) => request<Artifact>('/api/artifacts', { method: 'POST', body: JSON.stringify(body) }),
-  setAccess: (id: string, body: { public: boolean; org_editable: boolean }) =>
+  setAccess: (id: string, body: AccessFields) =>
     request<Artifact>(`/api/artifacts/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   chat: (id: string) => request<{ messages: unknown[]; model: string | null }>(`/api/artifacts/${id}/chat`),
   clearChat: (id: string) => request<void>(`/api/artifacts/${id}/chat`, { method: 'DELETE' }),

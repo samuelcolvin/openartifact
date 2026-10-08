@@ -4,12 +4,13 @@ tools are the in-process MCP server acting as the signed-in user."""
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from test_server import STARTER, in_app, org_members, sign_in, starter
 
@@ -191,6 +192,41 @@ def test_chat_tells_the_agent_which_page_the_user_sees(client: TestClient, monke
     assert junk and 'looking at page' not in junk
 
 
+def test_first_turn_names_an_untitled_artifact(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    starter(client)  # signs in
+    created = client.post('/api/artifacts', json={'type': 'deck'}).json()
+    assert created['title'] == 'Untitled deck'
+    naming_calls: list[str] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        yield 'Sure.'
+
+    async def name(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        # The naming agent runs unstreamed: it sees the request and the markdown, and answers a title to tidy.
+        assert info.instructions and info.instructions.startswith('You name documents')
+        prompt = messages[-1].parts[-1]
+        assert isinstance(prompt, UserPromptPart) and isinstance(prompt.content, str)
+        assert 'make a deck about pricing' in prompt.content and '# A new deck' in prompt.content
+        naming_calls.append(prompt.content)
+        return ModelResponse(parts=[TextPart('  "Pricing plans for 2026."  ')])
+
+    use_model(monkeypatch, FunctionModel(function=name, stream_function=stream))
+    assert send(client, created['id'], 'make a deck about pricing')[-1]['type'] == 'finish'
+    mine = {a['id']: a['title'] for a in client.get('/api/artifacts').json()['mine']}
+    assert mine[created['id']] == 'Pricing plans for 2026'
+    directory = workspace.checkout_path(uuid.UUID(created['id']))
+    assert (directory / 'artifact.toml').read_text().startswith('title = "Pricing plans for 2026"\n')
+    log = in_app(client, lambda: workspace.artifact_git(uuid.UUID(created['id']), 'log', '--format=%s')).splitlines()
+    assert log[0] == 'rename: Pricing plans for 2026'
+    # Only the first turn names it, and only an artifact still carrying its placeholder title.
+    assert send(client, created['id'], 'now add a slide')[-1]['type'] == 'finish'
+    assert len(naming_calls) == 1
+    titled = client.post('/api/artifacts', json={'type': 'page', 'title': 'Roadmap'}).json()
+    assert send(client, titled['id'], 'hello')[-1]['type'] == 'finish'
+    assert len(naming_calls) == 1
+    assert {a['id']: a['title'] for a in client.get('/api/artifacts').json()['mine']}[titled['id']] == 'Roadmap'
+
+
 def test_chat_access_and_model_checks(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     artifact = starter(client)
     colleague, outsider = org_members(client)
@@ -222,7 +258,10 @@ def test_chat_access_and_model_checks(client: TestClient, monkeypatch: pytest.Mo
     sign_in(client, colleague)
     assert client.post(f'/api/artifacts/{artifact.id}/chat', json=body).status_code == 404
     assert client.get(f'/api/artifacts/{artifact.id}/chat').status_code == 404
-    in_app(client, lambda: workspace.set_access(artifact.id, visibility='public', org_editable=False))
+    in_app(
+        client,
+        lambda: workspace.set_access(artifact.id, visibility='public', org_editable=False, organization_id=None),
+    )
     assert client.get(f'/api/artifacts/{artifact.id}/chat').json()['messages'] == []
     assert client.post(f'/api/artifacts/{artifact.id}/chat', json=body).status_code == 403
     assert client.delete(f'/api/artifacts/{artifact.id}/chat').status_code == 403

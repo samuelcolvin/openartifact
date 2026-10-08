@@ -30,6 +30,7 @@ export function LinkButton({
   className?: string
   target?: string
   rel?: string
+  title?: string
 }) {
   return (
     <a href={href} className={`${BUTTON_BASE} ${BUTTON_VARIANTS.ghost} ${className}`} {...rest}>

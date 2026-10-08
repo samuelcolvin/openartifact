@@ -41,6 +41,43 @@ BUILTIN_MODELS: list[tuple[str, str]] = [
     ('gateway/openai:gpt-6.1-sol', 'GPT-6.1 Sol'),
     ('gateway/openai:gpt-6-luna', 'GPT-6 Luna'),
 ]
+# What the web app creates when the user picks a type and nothing else: a placeholder title the first turn of the
+# chat replaces (see `is_untitled` and `suggest_title`), a theme that suits the type, and a page or two to start from.
+DEFAULT_TITLES: dict[str, str] = {'deck': 'Untitled deck', 'document': 'Untitled document', 'page': 'Untitled page'}
+DEFAULT_THEMES: dict[str, str] = {'deck': 'dark', 'document': 'light', 'page': 'light'}
+STARTER_CONTENT: dict[str, str] = {
+    'deck': """\
+<!-- class: cover -->
+
+# A new deck
+
+## Describe what it is about in the chat, and the first slides will appear here
+
+---
+
+# First point
+
+- One idea per slide
+- A few words per line
+- The chat can turn notes into slides, add charts, and restyle everything
+""",
+    'document': """\
+# A new document
+
+Describe what this document is for in the chat. It can be a report, a memo, a proposal or a guide; pages break
+on `---`, and the chat can write, restructure and style it.
+
+## Getting started
+
+Say what you want in a sentence or two, or paste the notes it should be built from.
+""",
+    'page': """\
+# A new page
+
+Describe what this page is for in the chat: a landing page, a wiki entry, a README, a long read. It scrolls as one
+column and the chat can write, restructure and style it.
+""",
+}
 # Tool calls per turn before the run stops: an agent that cannot converge should not loop for ever.
 REQUEST_LIMIT = 40
 # Web searches the model may run per turn, through its provider's own search tool (Anthropic's and OpenAI's both
@@ -73,6 +110,34 @@ How to work:
 
 The authoring guide follows.
 """
+
+
+def is_untitled(title: str) -> bool:
+    """Whether a title is one of the placeholders the web app creates with, so the first chat turn may replace it."""
+    return title in DEFAULT_TITLES.values()
+
+
+TITLE_PROMPT = """\
+You name documents. Given what a user asked for and the markdown of the deck, document or page that resulted, answer
+with a title for it: short (two to six words), specific to the content, in the language of the content, in sentence
+case, with no quotation marks, no trailing punctuation and no words like "deck", "document" or "presentation" unless
+they are part of the subject. Answer with the title alone.
+"""
+
+# A second, tool-less agent that names an artifact after its first chat turn; `suggest_title` runs it.
+title_agent: Agent[None, str] = Agent(model=None, instructions=TITLE_PROMPT, name='openartifact-title')
+# How much of the artifact's markdown the naming agent is shown: the opening says what it is about.
+TITLE_CONTEXT_CHARS = 4000
+
+
+async def suggest_title(model: Model | str, request: str, markdown: str) -> str | None:
+    """A title for an artifact from the user's first request and the markdown it produced; None when the model's
+    answer is unusable (empty, or far too long to be a title)."""
+    prompt = f'The user asked:\n\n{request.strip()}\n\nThe markdown now reads:\n\n{markdown[:TITLE_CONTEXT_CHARS]}'
+    result = await title_agent.run(prompt, model=model)
+    title = ' '.join(result.output.strip().strip('"\'`').split())
+    title = title.rstrip('.。!')
+    return title if 0 < len(title) <= 80 else None
 
 
 def skill_text() -> str:

@@ -2,13 +2,15 @@
 
 import { ArrowLeft, ExternalLink, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { type AccessChoice, type Artifact, accessOf, api, findArtifact, type Me } from '../api.ts'
+import { type AccessChoice, type Artifact, accessFields, accessOf, api, findArtifact, type Me } from '../api.ts'
 import { Chat } from '../chat/Chat.tsx'
 import { Header } from '../components/Header.tsx'
 import { Badge, Button, LinkButton, Select, Spinner } from '../components/ui.tsx'
 import { Preview } from '../Preview.tsx'
 import { navigate } from '../router.ts'
 
+/** The owner's control over who sees the artifact: the two personal choices, or all five when they are in an
+ * organisation, since an artifact can move between their own space and the organisation's. */
 function AccessSelect({
   artifact,
   domain,
@@ -19,29 +21,23 @@ function AccessSelect({
   onChange: (a: Artifact) => void
 }) {
   const [busy, setBusy] = useState(false)
-  const personal =
-    artifact.visibility !== 'org' && artifact.org_editable === false && !artifact.forked_from && domain === null
   const choices: Array<[AccessChoice, string]> =
-    artifact.visibility === 'private' || personal
+    domain === null
       ? [
-          ['private', 'Private: only me'],
-          ['public', 'Public: anyone with the link'],
+          ['private', 'Only me'],
+          ['public', 'Anyone with the link'],
         ]
       : [
-          ['org', `Visible to ${domain ?? 'the organisation'}`],
-          ['org-editable', `Editable by ${domain ?? 'the organisation'}`],
-          ['public', 'Public, read-only for others'],
-          ['public-editable', `Public, editable by ${domain ?? 'the organisation'}`],
+          ['private', 'Only me'],
+          ['org', `Everyone at ${domain}`],
+          ['org-editable', `Everyone at ${domain} can edit`],
+          ['public', `Anyone with the link, listed for ${domain}`],
+          ['public-editable', `Anyone with the link, ${domain} can edit`],
         ]
   const change = async (choice: AccessChoice) => {
     setBusy(true)
     try {
-      onChange(
-        await api.setAccess(artifact.id, {
-          public: choice.startsWith('public'),
-          org_editable: choice.endsWith('editable'),
-        }),
-      )
+      onChange(await api.setAccess(artifact.id, accessFields(choice)))
     } finally {
       setBusy(false)
     }
@@ -67,7 +63,14 @@ export function Editor({ id }: { id: string }) {
   const [me, setMe] = useState<Me | null>(null)
   const [artifact, setArtifact] = useState<Artifact | null | undefined>(undefined)
   const [version, setVersion] = useState(1)
-  const reload = useCallback(() => setVersion((v) => v + 1), [])
+  // After a turn the artifact may have changed beyond its page: the first turn names it.
+  const reload = useCallback(() => {
+    setVersion((v) => v + 1)
+    findArtifact(id).then(
+      (found) => found && setArtifact(found),
+      () => undefined,
+    )
+  }, [id])
   // Which page the preview shows, reported by the runtime inside the iframe (see `reportPosition` in main.ts).
   const [page, setPage] = useState<number | null>(null)
   useEffect(() => {

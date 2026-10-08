@@ -1,60 +1,16 @@
-/** The home page: the viewer's artifacts and the ones their organisation shares, and the New artifact dialog. */
+/** The home page: three ways to start an artifact, the viewer's own, and the ones their organisation shares. */
 
-import { ExternalLink, FileText, Pencil, Plus, Presentation, ScrollText } from 'lucide-react'
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
-import {
-  type AccessChoice,
-  type Artifact,
-  type ArtifactType,
-  api,
-  type ArtifactList as Listing,
-  type Me,
-  type NewArtifact,
-  type Theme,
-} from '../api.ts'
+import { Eye, FileText, Pencil, Presentation, ScrollText } from 'lucide-react'
+import { type ReactNode, useEffect, useState } from 'react'
+import { type Artifact, type ArtifactType, api, type ArtifactList as Listing, type Me } from '../api.ts'
 import { Header } from '../components/Header.tsx'
-import {
-  Badge,
-  Button,
-  Dialog,
-  Field,
-  INPUT,
-  LinkButton,
-  type ListOption,
-  RadioCards,
-  RadioList,
-  Spinner,
-} from '../components/ui.tsx'
+import { Badge, Button, LinkButton, Spinner } from '../components/ui.tsx'
 import { navigate } from '../router.ts'
 
 const TYPES: Array<{ value: ArtifactType; label: string; hint: string; icon: ReactNode }> = [
   { value: 'deck', label: 'Deck', hint: 'Slides, one 16:9 page at a time', icon: <Presentation size={18} /> },
   { value: 'document', label: 'Document', hint: 'A4 sheets, one per page', icon: <FileText size={18} /> },
   { value: 'page', label: 'Page', hint: 'One continuous web page', icon: <ScrollText size={18} /> },
-]
-
-/** A tiny rendering of a theme's palette: its page colour with a heading in its text colour. */
-function Swatch({ dark, markdown }: { dark: boolean; markdown: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className="flex h-7 w-10 items-center justify-center rounded border text-[11px] font-semibold leading-none"
-      style={
-        dark
-          ? { background: '#1c2026', color: '#f2f2f2', borderColor: 'rgba(255, 255, 255, 0.22)' }
-          : { background: '#ffffff', color: '#1a1d21', borderColor: 'rgba(255, 255, 255, 0.09)' }
-      }
-    >
-      {markdown ? <span className="font-mono"># Aa</span> : 'Aa'}
-    </span>
-  )
-}
-
-const THEMES: Array<{ value: Theme; label: string; icon: ReactNode }> = [
-  { value: 'light', label: 'Light', icon: <Swatch dark={false} markdown={false} /> },
-  { value: 'dark', label: 'Dark', icon: <Swatch dark markdown={false} /> },
-  { value: 'markdown-light', label: 'Markdown light', icon: <Swatch dark={false} markdown /> },
-  { value: 'markdown-dark', label: 'Markdown dark', icon: <Swatch dark markdown /> },
 ]
 
 function since(iso: string): string {
@@ -65,23 +21,22 @@ function since(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
+/** One artifact, a full-width row: title and details on the left, the badge and the actions on the right. */
 function Card({ artifact, domain }: { artifact: Artifact; domain: string | null }) {
   return (
-    <li className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate font-semibold">{artifact.title}</h3>
-          <p className="text-xs text-muted">
-            {artifact.type} · updated {since(artifact.updated_at)}
-            {artifact.owner_email && !artifact.can_manage ? ` · ${artifact.owner_email}` : ''}
-          </p>
-        </div>
-        <Badge
-          visibility={artifact.visibility}
-          orgEditable={artifact.org_editable}
-          domain={artifact.visibility === 'org' ? domain : null}
-        />
+    <li className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-panel px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <h3 className="truncate font-semibold">{artifact.title}</h3>
+        <p className="text-xs text-muted">
+          {artifact.type} · updated {since(artifact.updated_at)}
+          {artifact.owner_email && !artifact.can_manage ? ` · ${artifact.owner_email}` : ''}
+        </p>
       </div>
+      <Badge
+        visibility={artifact.visibility}
+        orgEditable={artifact.org_editable}
+        domain={artifact.visibility === 'org' ? domain : null}
+      />
       <div className="flex gap-2">
         {artifact.can_edit ? (
           <Button
@@ -92,116 +47,53 @@ function Card({ artifact, domain }: { artifact: Artifact; domain: string | null 
             <Pencil size={14} /> Edit
           </Button>
         ) : null}
-        <LinkButton href={artifact.url} target="_blank" rel="noopener">
-          <ExternalLink size={14} /> Open
+        <LinkButton href={artifact.url} target="_blank" rel="noopener" title="Open the page in a new tab">
+          <Eye size={14} /> View
         </LinkButton>
       </div>
     </li>
   )
 }
 
-/** The permission choices offered at creation: two without an organisation, the five combinations with one. */
-function accessOptions(domain: string | null): ListOption<AccessChoice>[] {
-  if (domain === null) {
-    return [
-      { value: 'private', label: 'Only me' },
-      { value: 'public', label: 'Anyone with the link', hint: 'read only' },
-    ]
-  }
-  return [
-    { value: 'private', label: 'Only me' },
-    { value: 'org', label: `Everyone at ${domain}`, hint: 'read only' },
-    { value: 'org-editable', label: `Everyone at ${domain}`, hint: 'they can edit it too' },
-    { value: 'public', label: 'Anyone with the link', hint: `read only, listed for ${domain}` },
-    { value: 'public-editable', label: 'Anyone with the link', hint: `read only, ${domain} can edit it` },
-  ]
-}
-
-/** The placement and permissions a choice stands for: an org choice places the artifact in the organisation. */
-function accessFields(
-  choice: AccessChoice,
-  domain: string | null,
-): Pick<NewArtifact, 'placement' | 'public' | 'org_editable'> {
-  const org = domain !== null && choice !== 'private'
-  return {
-    placement: org ? 'org' : 'personal',
-    public: choice.startsWith('public'),
-    org_editable: choice.endsWith('editable'),
-  }
-}
-
-function NewArtifactDialog({ me, open, onClose }: { me: Me; open: boolean; onClose: () => void }) {
-  const domain = me.organization?.domain ?? null
-  const [access, setAccess] = useState<AccessChoice>(domain === null ? 'private' : 'org')
-  const [form, setForm] = useState<Omit<NewArtifact, 'placement' | 'public' | 'org_editable'>>({
-    title: '',
-    type: 'deck',
-    theme: 'light',
-  })
-  const [busy, setBusy] = useState(false)
+/** The three ways to start: one click creates an artifact of that type with a placeholder title, a theme that
+ * suits it and a page or two to replace, and opens the editor; the chat's first turn names it. */
+function Starters() {
+  const [busy, setBusy] = useState<ArtifactType | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    setBusy(true)
+  const start = async (type: ArtifactType) => {
+    setBusy(type)
     setError(null)
     try {
-      const created = await api.create({ ...form, ...accessFields(access, domain) })
+      const created = await api.create({ type })
       navigate(`/edit/${created.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-      setBusy(false)
+      setBusy(null)
     }
   }
-
   return (
-    <Dialog open={open} onClose={onClose} title="New artifact">
-      <form onSubmit={submit} className="grid gap-4">
-        <Field id="new-title" label="Title">
-          <input
-            id="new-title"
-            className={INPUT}
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-            placeholder="Quarterly review"
-            autoFocus
-            required
-          />
-        </Field>
-        <RadioCards
-          label="Type"
-          name="new-type"
-          columns={3}
-          value={form.type}
-          onChange={(type) => setForm({ ...form, type })}
-          options={TYPES}
-        />
-        <RadioCards
-          label="Theme"
-          name="new-theme"
-          columns={4}
-          value={form.theme}
-          onChange={(theme) => setForm({ ...form, theme })}
-          options={THEMES}
-        />
-        <fieldset className="grid gap-1 rounded-lg border border-line p-3 pt-2">
-          <legend className="px-1 text-xs text-muted">Who can see it</legend>
-          <RadioList name="new-access" value={access} onChange={setAccess} options={accessOptions(domain)} />
-          {domain === null ? (
-            <p className="mt-1 px-1.5 text-xs text-muted">
-              Sign in with a Google Workspace account to share with an organisation.
-            </p>
-          ) : null}
-        </fieldset>
-        {error ? <p className="text-sm text-danger">{error}</p> : null}
-        <div className="flex justify-end gap-2">
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={busy || !form.title.trim()}>
-            {busy ? 'Creating' : 'Create'}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
+    <section className="mb-8">
+      <h2 className="mb-3 font-semibold">New</h2>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {TYPES.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            disabled={busy !== null}
+            onClick={() => void start(option.value)}
+            className="grid gap-1.5 rounded-xl border border-line bg-panel p-4 text-left hover:border-faint disabled:opacity-60"
+          >
+            <span className="flex items-center gap-2 font-semibold">
+              <span className="text-accent">{option.icon}</span>
+              {option.label}
+              {busy === option.value ? <Spinner /> : null}
+            </span>
+            <span className="text-xs text-muted">{option.hint}</span>
+          </button>
+        ))}
+      </div>
+      {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
+    </section>
   )
 }
 
@@ -209,7 +101,6 @@ export function ArtifactList() {
   const [me, setMe] = useState<Me | null>(null)
   const [listing, setListing] = useState<Listing | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
     Promise.all([api.me(), api.artifacts()])
@@ -232,21 +123,15 @@ export function ArtifactList() {
           <Spinner />
         ) : (
           <>
+            {me ? <Starters /> : null}
             <section className="mb-8">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="font-semibold">Mine</h2>
-                {me ? (
-                  <Button variant="primary" onClick={() => setCreating(true)}>
-                    <Plus size={14} /> New artifact
-                  </Button>
-                ) : null}
-              </div>
+              <h2 className="mb-3 font-semibold">Mine</h2>
               {listing.mine.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-line p-8 text-center text-sm text-muted">
-                  Nothing yet. Create an artifact here, or from an agent over MCP.
+                  Nothing yet. Start one above, or from an agent over MCP.
                 </p>
               ) : (
-                <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <ul className="grid gap-3">
                   {listing.mine.map((a) => (
                     <Card key={a.id} artifact={a} domain={domain} />
                   ))}
@@ -256,7 +141,7 @@ export function ArtifactList() {
             {listing.shared.length > 0 ? (
               <section>
                 <h2 className="mb-3 font-semibold">Shared with you{domain ? ` at ${domain}` : ''}</h2>
-                <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <ul className="grid gap-3">
                   {listing.shared.map((a) => (
                     <Card key={a.id} artifact={a} domain={domain} />
                   ))}
@@ -266,7 +151,6 @@ export function ArtifactList() {
           </>
         )}
       </main>
-      {me ? <NewArtifactDialog me={me} open={creating} onClose={() => setCreating(false)} /> : null}
     </div>
   )
 }

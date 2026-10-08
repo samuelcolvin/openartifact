@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tomllib
 import uuid
 from pathlib import Path
 
@@ -298,9 +299,34 @@ async def test_shared_listing_and_set_access(principal: auth.Principal, db_pool:
     assert await workspace.list_shared_artifacts(me.org_ids, me.workspace_id) == []
     assert private.visibility == 'private'
 
-    changed = await workspace.set_access(mine, visibility='public', org_editable=True)
+    org_id = me.organization_id
+    changed = await workspace.set_access(mine, visibility='public', org_editable=True, organization_id=org_id)
     assert (changed.visibility, changed.org_editable) == ('public', True)
     with pytest.raises(Exception, match='artifacts_org_access'):
-        await workspace.set_access(mine, visibility='private', org_editable=False)
+        await workspace.set_access(mine, visibility='private', org_editable=False, organization_id=org_id)
     with pytest.raises(LookupError):
-        await workspace.set_access(uuid.uuid4(), visibility='public', org_editable=False)
+        await workspace.set_access(uuid.uuid4(), visibility='public', org_editable=False, organization_id=None)
+    # Moving it out of the organisation makes it personal and private; colleagues no longer see it.
+    moved = await workspace.set_access(mine, visibility='private', org_editable=False, organization_id=None)
+    assert (moved.organization_id, moved.visibility) == (None, 'private')
+    assert await workspace.list_shared_artifacts(colleague.org_ids, colleague.workspace_id) == []
+
+
+async def test_rename_artifact_updates_toml_and_row(principal: auth.Principal):
+    artifact = await workspace.import_directory(principal.workspace_id, 'Starter', 'deck', STARTER)
+    renamed = await workspace.rename_artifact(artifact.id, 'Quarterly "review" 2026')
+    assert renamed.title == 'Quarterly "review" 2026'
+    config = (workspace.checkout_path(artifact.id) / 'artifact.toml').read_text()
+    assert (
+        config.splitlines()[0] == 'title = "Quarterly \\"review\\" 2026"'
+        or 'title = "Quarterly \\"review\\" 2026"' in config
+    )
+    assert tomllib.loads(config)['title'] == 'Quarterly "review" 2026'
+    log = (await workspace.artifact_git(artifact.id, 'log', '--format=%s')).splitlines()
+    assert log[0] == 'rename: Quarterly "review" 2026'
+    found = await workspace.get_artifact(artifact.id)
+    assert found is not None and found.title == 'Quarterly "review" 2026'
+    # Without a title line, one is added at the top.
+    (workspace.checkout_path(artifact.id) / 'artifact.toml').write_text('type = "deck"\n')
+    await workspace.rename_artifact(artifact.id, 'Plain')
+    assert (workspace.checkout_path(artifact.id) / 'artifact.toml').read_text().startswith('title = "Plain"\ntype')

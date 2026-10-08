@@ -15,6 +15,7 @@ after the route function has already returned the response.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Literal
@@ -22,6 +23,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, TypeAdapter
+from pydantic_ai.messages import UserPromptPart
 from pydantic_ai.run import AgentRunResult
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 from pydantic_ai.ui.vercel_ai.request_types import StepStartUIPart, UIMessage
@@ -36,6 +38,7 @@ import login
 import mcp_server
 import workspace
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/api')
 
 UI_MESSAGES = TypeAdapter(list[UIMessage])
@@ -135,9 +138,11 @@ async def list_artifacts(request: Request) -> dict[str, object]:
 
 
 class NewArtifactBody(BaseModel):
-    title: str
+    """What the app sends to create an artifact; everything but `type` has a default fit for the type (`agent.py`)."""
+
     type: mcp_server.ArtifactType = 'deck'
-    theme: mcp_server.Theme = 'light'
+    title: str | None = None
+    theme: mcp_server.Theme | None = None
     content: str | None = None
     placement: Literal['personal', 'org'] = 'personal'
     public: bool = False
@@ -146,12 +151,13 @@ class NewArtifactBody(BaseModel):
 
 @router.post('/artifacts', status_code=201)
 async def create_artifact(body: NewArtifactBody, request: Request) -> dict[str, object]:
-    """Create an artifact the way the MCP tools do, with a one-line placeholder unless content is given."""
+    """Create an artifact the way the MCP tools do; a placeholder title, a theme and starter pages for the type
+    unless given. The placeholder title is replaced after the chat's first turn (`agent.suggest_title`)."""
     mutation(request)
     viewer = await viewer_required(request)
-    title = body.title.strip()
-    if not title:
-        raise HTTPException(400, 'a title is required')
+    title = (body.title or '').strip() or agent.DEFAULT_TITLES[body.type]
+    theme = body.theme or agent.DEFAULT_THEMES[body.type]
+    content = body.content if body.content is not None else agent.STARTER_CONTENT[body.type]
     if body.placement == 'org':
         if viewer.organization_id is None:
             raise HTTPException(400, 'your account is not in an organisation')
@@ -164,9 +170,9 @@ async def create_artifact(body: NewArtifactBody, request: Request) -> dict[str, 
         artifact_id = await mcp_server.create_artifact(
             viewer,
             title=title,
-            content=body.content if body.content is not None else f'# {title}\n',
+            content=content,
             type=body.type,
-            theme=body.theme,
+            theme=theme,  # pyright: ignore[reportArgumentType]  (a Theme or a value of DEFAULT_THEMES, kept in step by a test)
             visibility=visibility,
             org_editable=body.org_editable if body.placement == 'org' else False,
             organization_id=organization_id,
@@ -179,24 +185,38 @@ async def create_artifact(body: NewArtifactBody, request: Request) -> dict[str, 
 
 
 class AccessBody(BaseModel):
+    """Who may see and edit an artifact, and where it lives: `placement` left out keeps the current one."""
+
     public: bool
     org_editable: bool = False
+    placement: Literal['personal', 'org'] | None = None
 
 
 @router.patch('/artifacts/{artifact_id}')
 async def set_access(artifact_id: str, body: AccessBody, request: Request) -> dict[str, object]:
-    """Change who may see and edit an artifact; the owner only."""
+    """Change who may see and edit an artifact, and move it between the owner's own space and their organisation;
+    the owner only."""
     mutation(request)
     viewer = await viewer_required(request)
     found = await artifact_for(artifact_id, viewer, manage=True)
-    if found.organization_id is None:
+    if body.placement is None:
+        organization_id = found.organization_id
+    elif body.placement == 'org':
+        if viewer.organization_id is None:
+            raise HTTPException(400, 'your account is not in an organisation')
+        organization_id = viewer.organization_id
+    else:
+        organization_id = None
+    if organization_id is None:
         visibility = 'public' if body.public else 'private'
     else:
         visibility = 'public' if body.public else 'org'
-    problem = access.check_access(visibility, body.org_editable, found.organization_id)
+    problem = access.check_access(visibility, body.org_editable, organization_id)
     if problem is not None:
         raise HTTPException(400, problem)
-    changed = await workspace.set_access(found.id, visibility=visibility, org_editable=body.org_editable)
+    changed = await workspace.set_access(
+        found.id, visibility=visibility, org_editable=body.org_editable, organization_id=organization_id
+    )
     return artifact_json(changed, viewer, viewer.email)
 
 
@@ -241,6 +261,22 @@ async def clear_chat(artifact_id: str, request: Request) -> Response:
     return Response(status_code=204)
 
 
+async def name_after_first_turn(found: workspace.Artifact, model_id: str, result: AgentRunResult[Any]) -> None:
+    """Replace the placeholder title with one the naming agent makes from the first request and the markdown it
+    produced. Best effort: a model or storage failure is logged and the turn is unaffected."""
+    request = next((p.content for m in result.all_messages() for p in m.parts if isinstance(p, UserPromptPart)), None)
+    if not isinstance(request, str):
+        return
+    try:
+        async with workspace.open_artifact(found) as directory:
+            markdown = (directory / 'main.md').read_text(encoding='utf-8')
+        title = await agent.suggest_title(agent.resolve_model(model_id), request, markdown)
+        if title is not None:
+            await workspace.rename_artifact(found.id, title)
+    except Exception:
+        logger.exception('naming artifact %s after its first turn failed', found.id)
+
+
 @router.post('/artifacts/{artifact_id}/chat')
 async def chat(artifact_id: str, request: Request) -> Response:
     """One turn of the editing conversation, streamed as Vercel AI SDK chunks.
@@ -263,9 +299,13 @@ async def chat(artifact_id: str, request: Request) -> Response:
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     history, _ = await chats.load(found.id, viewer.user_id)
+    # The first turn of an artifact still carrying its placeholder title also names it, once the turn is stored.
+    name_it = not history and agent.is_untitled(found.title)
 
     async def save(result: AgentRunResult[Any]) -> None:
         await chats.save(found.id, viewer.user_id, result.all_messages(), chosen)
+        if name_it:
+            await name_after_first_turn(found, chosen, result)
 
     async def events() -> AsyncIterator[BaseChunk]:
         # Set here, not around the call above: the body streams after this function has returned, in this task,

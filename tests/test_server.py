@@ -662,7 +662,16 @@ async def test_native_telemetry_reaches_logfire(live_server: str, capfire: Captu
 
 
 def set_access(client: TestClient, artifact: workspace.Artifact, visibility: str, org_editable: bool = False) -> None:
-    in_app(client, lambda: workspace.set_access(artifact.id, visibility=visibility, org_editable=org_editable))
+    """Change the permissions, keeping the placement the artifact has."""
+
+    async def change() -> workspace.Artifact:
+        current = await workspace.get_artifact(artifact.id)
+        assert current is not None
+        return await workspace.set_access(
+            artifact.id, visibility=visibility, org_editable=org_editable, organization_id=current.organization_id
+        )
+
+    in_app(client, change)
 
 
 def org_members(client: TestClient) -> tuple[auth.Principal, auth.Principal]:

@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
+import re
 import shutil
 import uuid
 from collections.abc import AsyncGenerator, Iterable
@@ -456,18 +458,41 @@ async def list_shared_artifacts(
     return [(Artifact.from_row(row), row['owner_email']) for row in rows]
 
 
-async def set_access(artifact_id: uuid.UUID, *, visibility: str, org_editable: bool) -> Artifact:
-    """Change who may see and edit an artifact. Metadata, not content: no commit. The caller validated the
-    combination with `access.check_access`; the database checks it again."""
+async def set_access(
+    artifact_id: uuid.UUID, *, visibility: str, org_editable: bool, organization_id: uuid.UUID | None
+) -> Artifact:
+    """Change where an artifact lives (personal, or in an organisation) and who may see and edit it. Metadata,
+    not content: no commit. The caller validated the combination with `access.check_access`; the database checks
+    it again."""
     row = await db.pool().fetchrow(
-        'UPDATE artifacts SET visibility = $2, org_editable = $3, updated_at = now() WHERE id = $1 '
-        f'RETURNING {ARTIFACT_COLUMNS}',
+        'UPDATE artifacts SET visibility = $2, org_editable = $3, organization_id = $4, updated_at = now() '
+        f'WHERE id = $1 RETURNING {ARTIFACT_COLUMNS}',
         artifact_id,
         visibility,
         org_editable,
+        organization_id,
     )
     if row is None:
         raise LookupError(f'artifact {artifact_id} does not exist')
+    return Artifact.from_row(row)
+
+
+TITLE_LINE = re.compile(r'^title\s*=.*$', re.MULTILINE)
+
+
+async def rename_artifact(artifact_id: uuid.UUID, title: str) -> Artifact:
+    """Give an artifact a new title, in `artifact.toml` (a commit, `rename: <title>`) and on its row, together."""
+    async with edit(artifact_id, f'rename: {title}') as tx:
+        config = tx.path / 'artifact.toml'
+        text = config.read_text(encoding='utf-8') if config.is_file() else ''
+        line = f'title = {json.dumps(title)}'
+        # JSON string escaping is valid TOML. The title must be the first line: a later one could sit in a table.
+        text = TITLE_LINE.sub(line, text, count=1) if TITLE_LINE.search(text) else f'{line}\n{text}'
+        config.write_text(text, encoding='utf-8')
+        row = await tx.conn.fetchrow(
+            f'UPDATE artifacts SET title = $2 WHERE id = $1 RETURNING {ARTIFACT_COLUMNS}', artifact_id, title
+        )
+    assert row is not None
     return Artifact.from_row(row)
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -71,6 +72,42 @@ def test_me_and_configure(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     assert artifact.id
 
 
+def test_create_with_defaults_and_move_between_spaces(client: TestClient):
+    starter(client)
+    colleague, _ = org_members(client)
+    # One click, one field: the type. Title, theme and content follow from it.
+    created = client.post('/api/artifacts', json={'type': 'document'})
+    assert created.status_code == 201, created.text
+    doc = created.json()
+    assert (doc['title'], doc['type'], doc['visibility'], doc['org_editable']) == (
+        'Untitled document',
+        'document',
+        'private',
+        False,
+    )
+    directory = workspace.checkout_path(uuid.UUID(doc['id']))
+    assert (directory / 'main.md').read_text().startswith('# A new document\n')
+    assert 'theme = "light"' in (directory / 'artifact.toml').read_text()
+    deck = client.post('/api/artifacts', json={'type': 'deck'}).json()
+    assert deck['title'] == 'Untitled deck'
+    assert 'theme = "dark"' in (workspace.checkout_path(uuid.UUID(deck['id'])) / 'artifact.toml').read_text()
+    # The owner moves it into the organisation and back; a colleague sees it only while it is there.
+    moved = client.patch(
+        f'/api/artifacts/{doc["id"]}', json={'placement': 'org', 'public': False, 'org_editable': True}
+    )
+    assert moved.status_code == 200, moved.text
+    assert (moved.json()['visibility'], moved.json()['org_editable']) == ('org', True)
+    sign_in(client, colleague)
+    assert [a['id'] for a in client.get('/api/artifacts').json()['shared']] == [doc['id']]
+    sign_in(client, in_app(client, seed_starter)[0])
+    back = client.patch(f'/api/artifacts/{doc["id"]}', json={'placement': 'personal', 'public': False}).json()
+    assert (back['visibility'], back['org_editable']) == ('private', False)
+    sign_in(client, colleague)
+    assert client.get('/api/artifacts').json()['shared'] == []
+    # Nobody without an organisation can place an artifact in one.
+    assert client.patch(f'/api/artifacts/{doc["id"]}', json={'placement': 'org', 'public': True}).status_code == 404
+
+
 def test_list_create_and_access(client: TestClient):
     artifact = starter(client)
     colleague, outsider = org_members(client)
@@ -91,13 +128,14 @@ def test_list_create_and_access(client: TestClient):
     notes = created.json()
     assert (notes['title'], notes['type'], notes['visibility']) == ('Notes', 'page', 'public')
     page = client.get(f'/artifacts/{notes["id"]}/main.md')
-    assert page.text == '# Notes\n'
+    assert page.text.startswith('# A new page\n')  # the type's starter content, with no content given
     team = client.post(
         '/api/artifacts',
         json={'title': 'Team', 'placement': 'org', 'org_editable': True, 'content': '# Team\n\nHello.\n'},
     ).json()
     assert (team['visibility'], team['org_editable']) == ('org', True)
-    assert client.post('/api/artifacts', json={'title': '  '}).status_code == 400
+    # A blank title is the placeholder, like no title at all; the type is checked.
+    assert client.post('/api/artifacts', json={'title': '  '}).json()['title'] == 'Untitled deck'
     assert client.post('/api/artifacts', json={'title': 'T', 'type': 'scroll'}).status_code == 422
     cross = client.post('/api/artifacts', json={'title': 'T'}, headers={'sec-fetch-site': 'cross-site'})
     assert cross.status_code == 403
