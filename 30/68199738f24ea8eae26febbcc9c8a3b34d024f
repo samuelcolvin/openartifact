@@ -1,0 +1,19 @@
+backend/agent.py
+  s_d9c84d24ba8b7a::t_755bcf5df1cf5b 76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3068199738f24ea8eae26febbcc9c8a3b34d024f",
+  "prompts": {},
+  "sessions": {
+    "s_d9c84d24ba8b7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f3de0cd-2045-4200-80e7-51fbfc20f7e2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
