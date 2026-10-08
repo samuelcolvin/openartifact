@@ -1,0 +1,9 @@
+chrome/Dockerfile
+  ai_agent 12-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d54d1b38f710cf0b8e266d5d1c599001df83c582",
+  "prompts": {}
+}

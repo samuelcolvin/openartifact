@@ -1,0 +1,20 @@
+docker-entrypoint.sh
+  s_b977084953228b::t_1bf441044d7862 1-10,13-14
+  ai_agent 11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "05df4a8ba31a1e0e6ead804b81ad12efda809fb6",
+  "prompts": {},
+  "sessions": {
+    "s_b977084953228b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "440a996e-b9e6-4f66-b1f3-02d0a3db61b5",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}

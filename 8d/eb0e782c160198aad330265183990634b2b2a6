@@ -1,0 +1,33 @@
+backend/config.py
+  s_b977084953228b::t_de3e9f936e4739 22-33,37,43-44,46-47
+tests/test_config.py
+  s_b977084953228b::t_de3e9f936e4739 1-29
+docker-entrypoint.sh
+  s_b977084953228b::t_1bf441044d7862 1-10,12-13
+CLAUDE.md
+  s_b977084953228b::t_9a03b15d236d15 166-168
+README.md
+  s_b977084953228b::t_9a03b15d236d15 151-152
+render.yaml
+  s_b977084953228b::t_1bf441044d7862 1-85
+Dockerfile
+  s_b977084953228b::t_1bf441044d7862 4-5,53,62-63
+.dockerignore
+  s_b977084953228b::t_1bf441044d7862 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8deb0e782c160198aad330265183990634b2b2a6",
+  "prompts": {},
+  "sessions": {
+    "s_b977084953228b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "440a996e-b9e6-4f66-b1f3-02d0a3db61b5",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Samuel Colvin <s@muelcolvin.com>"
+    }
+  }
+}
