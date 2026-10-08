@@ -61,12 +61,12 @@ dev: ## Start the server on the host at http://127.0.0.1:8765 with reload, MCP a
 chrome-dev: ## Start the chrome service on the host at http://127.0.0.1:8766, using the local Chrome
 	uv run uvicorn chrome.main:app --reload --port 8766
 
-.PHONY: docker-up
-docker-up: ## Build the images and start the server, the chrome service and the database via docker compose
+.PHONY: up
+up: ## Build the images and start the server, the chrome service and the database via docker compose
 	docker compose up --build -d --wait
 
-.PHONY: docker-down
-docker-down: ## Stop the server and database
+.PHONY: down
+down: ## Stop the server and database
 	docker compose down
 
 .PHONY: docker-logs

@@ -36,6 +36,7 @@ import agent
 import auth
 import build
 import chats
+import config
 import login
 import mcp_server
 import workspace
@@ -119,9 +120,15 @@ async def me(request: Request) -> dict[str, object]:
 
 @router.get('/configure')
 async def configure(request: Request) -> dict[str, object]:
-    """The models the chat's picker offers, and the default."""
+    """The models the chat's picker offers and the default, and how an MCP client reaches this server.
+
+    `mcp` is what the app's set-up snippets are made from: the endpoint URL and whether a client signs in with
+    Google (`oauth`) or sends the development token (`token`, with the token itself).
+    """
     await viewer_required(request)
+    token = auth.dev_token()
     return {
+        'mcp': {'url': f'{config.base_url()}/mcp/', 'auth': 'oauth' if token is None else 'token', 'token': token},
         'models': [{'id': m.id, 'name': m.name} for m in agent.configured_models()],
         'default': agent.default_model(),
     }

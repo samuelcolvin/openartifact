@@ -58,7 +58,15 @@ export interface ModelChoice {
   name: string
 }
 
+/** How an MCP client reaches this server: the endpoint, and whether it signs in with Google or sends a token. */
+export interface McpInfo {
+  url: string
+  auth: 'oauth' | 'token'
+  token: string | null
+}
+
 export interface Configure {
+  mcp: McpInfo
   models: ModelChoice[]
   default: string | null
 }

@@ -199,17 +199,20 @@ export function RadioCards<T extends string>({
   )
 }
 
-/** A native dialog, shown as a modal while `open` is true; closes on Escape, the backdrop or `onClose`. */
+/** A native dialog, shown as a modal while `open` is true; closes on Escape, the backdrop or `onClose`.
+ * `wide` is for content with code in it. */
 export function Dialog({
   open,
   onClose,
   title,
   children,
+  wide = false,
 }: {
   open: boolean
   onClose: () => void
   title: string
   children: ReactNode
+  wide?: boolean
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
@@ -226,7 +229,7 @@ export function Dialog({
       onClick={(e) => {
         if (e.target === ref.current) onClose()
       }}
-      className="m-auto w-[min(92vw,460px)] rounded-xl border border-line bg-panel p-6 text-fg shadow-2xl backdrop:bg-black/60"
+      className={`m-auto ${wide ? 'w-[min(94vw,680px)]' : 'w-[min(92vw,460px)]'} rounded-xl border border-line bg-panel p-6 text-fg shadow-2xl backdrop:bg-black/60`}
     >
       <h2 className="mb-4 text-lg font-semibold">{title}</h2>
       {children}

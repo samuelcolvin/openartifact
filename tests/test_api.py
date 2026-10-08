@@ -7,9 +7,11 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from conftest import DEV_TOKEN
 from fastapi.testclient import TestClient
 from test_server import in_app, org_members, seed_starter, sign_in, sign_out, starter
 
+import config
 import server
 import workspace
 
@@ -51,14 +53,24 @@ def test_me_and_configure(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     assert client.get('/api/me').json()['viewer']['name'] == 'C'
     monkeypatch.setenv('OPENARTIFACT_MODELS', 'gateway/anthropic:claude-opus-5-5=Opus, test:x = Test X')
     assert client.get('/api/configure').json() == {
+        'mcp': {'url': f'{config.base_url()}/mcp/', 'auth': 'token', 'token': DEV_TOKEN},
         'models': [{'id': 'gateway/anthropic:claude-opus-5-5', 'name': 'Opus'}, {'id': 'test:x', 'name': 'Test X'}],
         'default': 'gateway/anthropic:claude-opus-5-5',
     }
+    # With Google login configured the clients sign in themselves: no token to show.
+    monkeypatch.setenv('GOOGLE_CLIENT_ID', 'client-id')
+    assert client.get('/api/configure').json()['mcp'] == {
+        'url': f'{config.base_url()}/mcp/',
+        'auth': 'oauth',
+        'token': None,
+    }
+    monkeypatch.delenv('GOOGLE_CLIENT_ID')
     monkeypatch.setenv('OPENARTIFACT_MODELS', 'test:x=Test X')
     assert client.get('/api/configure').json()['default'] == 'test:x'
     monkeypatch.delenv('OPENARTIFACT_MODELS')
     monkeypatch.delenv('PYDANTIC_AI_GATEWAY_API_KEY', raising=False)
-    assert client.get('/api/configure').json() == {'models': [], 'default': None}
+    unconfigured = client.get('/api/configure').json()
+    assert (unconfigured['models'], unconfigured['default']) == ([], None)
     monkeypatch.setenv('PYDANTIC_AI_GATEWAY_API_KEY', 'pylf_v1_eu_test')
     configured = client.get('/api/configure').json()
     assert configured['default'] == 'gateway/anthropic:claude-opus-5-5'

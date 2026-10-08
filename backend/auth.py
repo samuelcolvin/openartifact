@@ -85,6 +85,18 @@ def make_auth_provider() -> AuthProvider:
     )
 
 
+def dev_token() -> str | None:
+    """The static bearer token the MCP endpoint accepts, when that is how it authenticates (no Google login).
+
+    The web app shows it in its MCP set-up snippets: in development the token is the way in, and the page that
+    shows it is already behind the development sign-in that acts as the same user. With Google configured the
+    clients sign in themselves and this is None.
+    """
+    if os.environ.get('GOOGLE_CLIENT_ID'):
+        return None
+    return os.environ.get('OPENARTIFACT_DEV_TOKEN') or None
+
+
 def install_pages() -> None:
     """Make FastMCP's consent and OAuth error pages ours (`pages.py`).
 

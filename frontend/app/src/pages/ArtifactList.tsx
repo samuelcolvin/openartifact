@@ -1,9 +1,10 @@
 /** The home page: three ways to start an artifact, the viewer's own, and the ones their organisation shares. */
 
-import { Eye, FileText, Pencil, Presentation, ScrollText } from 'lucide-react'
+import { Eye, FileText, Pencil, Plug, Presentation, ScrollText } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 import { type Artifact, type ArtifactType, api, type ArtifactList as Listing, type Me } from '../api.ts'
 import { Header } from '../components/Header.tsx'
+import { McpDialog } from '../components/McpDialog.tsx'
 import { Badge, Button, LinkButton, Spinner } from '../components/ui.tsx'
 import { navigate } from '../router.ts'
 
@@ -101,6 +102,7 @@ export function ArtifactList() {
   const [me, setMe] = useState<Me | null>(null)
   const [listing, setListing] = useState<Listing | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [mcpOpen, setMcpOpen] = useState(false)
 
   useEffect(() => {
     Promise.all([api.me(), api.artifacts()])
@@ -116,7 +118,17 @@ export function ArtifactList() {
     <div className="flex h-full flex-col">
       <Header me={me}>
         <h1 className="text-sm text-muted">Your artifacts</h1>
+        <span className="flex-1" />
+        <Button
+          variant="primary"
+          className="h-8"
+          onClick={() => setMcpOpen(true)}
+          title="Connect a coding agent or chat platform to this server over MCP"
+        >
+          <Plug size={14} /> MCP
+        </Button>
       </Header>
+      <McpDialog open={mcpOpen} onClose={() => setMcpOpen(false)} />
       <main className="mx-auto w-full max-w-5xl flex-1 overflow-y-auto px-4 py-6">
         {error ? <p className="text-danger">{error}</p> : null}
         {!listing ? (

@@ -10,12 +10,23 @@
  * source is fetched again unless a draft is in progress, in which case the draft wins.
  */
 
-import { ArrowLeft, ChevronLeft, ChevronRight, Code, ExternalLink, Eye, PencilLine, RefreshCw } from 'lucide-react'
+import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  Code,
+  ExternalLink,
+  Eye,
+  PencilLine,
+  RefreshCw,
+  Terminal,
+} from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DeckController, DeckPosition } from '../../../src/deck.ts'
 import { type AccessChoice, type Artifact, accessFields, accessOf, api, findArtifact, type Me } from '../api.ts'
 import { Chat } from '../chat/Chat.tsx'
 import { Header } from '../components/Header.tsx'
+import { McpDialog } from '../components/McpDialog.tsx'
 import { Badge, Button, LinkButton, Select, Spinner } from '../components/ui.tsx'
 import { type EditMode, MarkdownEditor } from '../editor/MarkdownEditor.tsx'
 import { Preview } from '../Preview.tsx'
@@ -320,6 +331,7 @@ export function Editor({ id }: { id: string }) {
   const [me, setMe] = useState<Me | null>(null)
   const [artifact, setArtifact] = useState<Artifact | null | undefined>(undefined)
   const [version, setVersion] = useState(1)
+  const [promptOpen, setPromptOpen] = useState(false)
   // After a turn the artifact may have changed beyond its page: the first turn names it.
   const reload = useCallback(() => {
     setVersion((v) => v + 1)
@@ -388,10 +400,18 @@ export function Editor({ id }: { id: string }) {
         />
         {artifact.can_manage ? <AccessSelect artifact={artifact} domain={domain} onChange={setArtifact} /> : null}
         <span className="flex-1" />
+        <Button
+          onClick={() => setPromptOpen(true)}
+          className="h-7"
+          title="A prompt that puts your coding agent to work on this artifact over MCP"
+        >
+          <Terminal size={14} /> Prompt
+        </Button>
         <LinkButton href={artifact.url} target="_blank" rel="noopener" className="h-7">
           <ExternalLink size={14} /> Open page
         </LinkButton>
       </Header>
+      <McpDialog open={promptOpen} onClose={() => setPromptOpen(false)} artifact={artifact} />
       <Workbench artifact={artifact} version={version} reload={reload} page={page} />
     </div>
   )
