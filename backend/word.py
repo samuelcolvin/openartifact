@@ -7,7 +7,10 @@ paragraphs, lists, code blocks, quotes, tables, images and rules into the page, 
 of the DOM (`POST /scene/`), and python-docx turns each block into its Word counterpart with the built-in styles
 (Heading 1 to 6, List Bullet and List Number at three levels, Quote, Table Grid), one page break between the
 artifact's pages. Nothing of the theme is carried over: no page or text colour, Word's defaults throughout, so
-the file is a plain document to go on editing. Images are read from the artifact's directory.
+the file is a plain document to go on editing. Images are read from the artifact's directory, except SVGs, which
+Word cannot show: the runtime numbers each (inline or an `<img>` of a `.svg` file) and, opened with `&svg=N`,
+shows that one alone at its rendered size, which the chrome service photographs at 2x (`svg_pictures`). Every
+image is sized in Word as it was on the page.
 """
 
 # python-docx's XML layer (numbering, borders, hyperlinks) is untyped, and this module leans on it.
@@ -17,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import math
 from pathlib import Path
 from typing import Literal
 
@@ -30,6 +34,7 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 from docx.text.paragraph import Paragraph
 from docx.text.run import Run as RunType
+from PIL import Image as PilImage
 from pydantic import BaseModel
 
 import workspace
@@ -39,9 +44,16 @@ MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.doc
 LIST_LEVELS = 3
 CODE_FONT = 'Consolas'
 CODE_SIZE = Pt(9.5)
-# Images are scaled down to the text width of the default template (Letter, one-inch margins).
+# Images are shown at their rendered width, 96 CSS pixels to the inch, capped at the text width of the default
+# template (Letter, one-inch margins).
 IMAGE_WIDTH = Inches(6)
+PX_PER_INCH = 96
 IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff'}
+# The device pixel ratio an SVG is photographed at, and how many are photographed at once.
+PICTURE_SCALE = 2
+CONCURRENCY = 4
+# The chrome service's smallest window; a smaller SVG is cut out of one that size.
+MIN_WINDOW = 200
 
 
 class Run(BaseModel):
@@ -99,9 +111,20 @@ class Table(BaseModel):
 
 
 class Image(BaseModel):
+    """An image, by its `src` as written, with its rendered size in CSS pixels; `svg` numbers an SVG for the runtime
+    to show alone when the page is opened with `&svg=N`."""
+
     type: Literal['image']
     src: str
     alt: str
+    width: float = 0
+    height: float = 0
+    svg: int | None = None
+
+    @property
+    def key(self) -> str:
+        """What the image's bytes are filed under: the SVG number for one the chrome service renders, else the path."""
+        return f'svg:{self.svg}' if self.svg else self.src
 
 
 class Rule(BaseModel):
@@ -136,7 +159,42 @@ async def export(found: workspace.Artifact) -> bytes:
     )
     async with workspace.open_artifact(found) as directory:
         images = await asyncio.to_thread(load_images, outline, directory)
+    images.update(await svg_pictures(found, outline))
     return await asyncio.to_thread(build_docx, outline, images, found.title)
+
+
+async def svg_pictures(found: workspace.Artifact, outline: Outline) -> dict[str, bytes]:
+    """A PNG of every SVG in the outline, photographed by the chrome service from the page opened with `&svg=N`.
+
+    The window is the SVG's rendered size (at least the service's minimum, the picture cut to size after), at
+    `PICTURE_SCALE`.
+    """
+    limit = asyncio.Semaphore(CONCURRENCY)
+    svgs = {image.svg: image for page in outline.pages for image in walk(page.blocks) if image.svg}
+
+    async def picture(image: Image) -> tuple[str, bytes]:
+        width, height = max(1, math.ceil(image.width)), max(1, math.ceil(image.height))
+        body: dict[str, object] = {
+            'url': f'{render.print_url(found, scene=True)}&svg={image.svg}',
+            'width': max(width, MIN_WINDOW),
+            'height': max(height, MIN_WINDOW),
+            'scale': PICTURE_SCALE,
+        }
+        async with limit:
+            png = await render.call_chrome('/screenshot/', body)
+        return image.key, await asyncio.to_thread(crop, png, width * PICTURE_SCALE, height * PICTURE_SCALE)
+
+    return dict(await asyncio.gather(*(picture(image) for image in svgs.values())))
+
+
+def crop(png: bytes, width: int, height: int) -> bytes:
+    """`png` cut to `width` x `height` pixels from its top-left corner, where the isolated SVG is; untouched if it fits."""
+    with PilImage.open(io.BytesIO(png)) as picture:
+        if picture.width <= width and picture.height <= height:
+            return png
+        out = io.BytesIO()
+        picture.crop((0, 0, min(width, picture.width), min(height, picture.height))).save(out, 'PNG')
+        return out.getvalue()
 
 
 def load_images(outline: Outline, directory: Path) -> dict[str, bytes]:
@@ -145,7 +203,7 @@ def load_images(outline: Outline, directory: Path) -> dict[str, bytes]:
     root = directory.resolve()
     for page in outline.pages:
         for image in walk(page.blocks):
-            if image.src in images:
+            if image.svg or image.src in images:
                 continue
             path = (directory / image.src).resolve()
             if path.is_relative_to(root) and path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES:
@@ -267,12 +325,13 @@ class Writer:
         self.document.add_paragraph()
 
     def image(self, block: Image) -> None:
-        data = self.images.get(block.src)
+        data = self.images.get(block.key)
         if data is None:
-            # Not a raster file in the artifact (an SVG, say): say what was here.
+            # Not a file in the artifact, or not one Word can show: say what was here.
             self.document.add_paragraph(f'[image: {block.alt or block.src}]').runs[0].font.italic = True
             return
-        self.document.add_picture(io.BytesIO(data), width=IMAGE_WIDTH)
+        width = min(Inches(block.width / PX_PER_INCH), IMAGE_WIDTH) if block.width > 0 else IMAGE_WIDTH
+        self.document.add_picture(io.BytesIO(data), width=width)
 
     def rule(self) -> None:
         paragraph = self.document.add_paragraph()

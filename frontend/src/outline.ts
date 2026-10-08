@@ -11,8 +11,13 @@
  *
  * Only the rendered markdown, `.page-body`, is walked: a page component's header or footer is the page's chrome,
  * which Word has its own idea of. A component's HTML inside the body is walked like any other: its containers
- * are looked through, its headings, paragraphs and lists are what they are. Text inside `<svg>` stays out, as
- * does anything hidden.
+ * are looked through, its headings, paragraphs and lists are what they are. Anything hidden stays out.
+ *
+ * Images carry their rendered size, so Word shows them as the page did. An SVG, inline or an `<img>` of a `.svg`
+ * file, cannot go into a Word file as it is: each is numbered in document order (`data-oa-svg`) and reported with
+ * that number, and the server opens the page again with `&svg=N` for each, which `isolateSvg` answers by showing
+ * that one element alone at the top-left corner of the window at its rendered size, on the page's background,
+ * for the chrome service to photograph.
  */
 
 /** A stretch of text in one style; a `text` of `"\n"` alone is a line break. */
@@ -44,8 +49,20 @@ export type OutlineBlock =
   | { type: 'code'; text: string }
   | { type: 'quote'; blocks: OutlineBlock[] }
   | { type: 'table'; rows: OutlineCell[][] }
-  | { type: 'image'; src: string; alt: string }
+  | OutlineImage
   | { type: 'rule' }
+
+export interface OutlineImage {
+  type: 'image'
+  /** The `src` as written (relative to the page); empty for an inline `<svg>`. */
+  src: string
+  alt: string
+  /** The rendered size in CSS pixels. */
+  width: number
+  height: number
+  /** For an SVG: its number, to be rendered by opening the page with `&svg=N`. */
+  svg?: number
+}
 
 export interface OutlinePage {
   index: number
@@ -59,7 +76,10 @@ export interface Outline {
 }
 
 /** Tags whose content is not text to export. */
-const SKIP_TAGS = new Set(['svg', 'script', 'style', 'template', 'noscript', 'button'])
+const SKIP_TAGS = new Set(['script', 'style', 'template', 'noscript', 'button'])
+
+/** SVGs met so far in the walk, numbered from 1 in document order. */
+let svgCount = 0
 
 /** Display values of an element that is laid out inline with its siblings' text. */
 const INLINE_DISPLAYS = new Set(['inline', 'inline-block', 'inline-flex', 'inline-grid', 'contents'])
@@ -171,9 +191,10 @@ function inlineRuns(el: Element, runs: OutlineRun[], images: OutlineBlock[], roo
       const tag = child.tagName.toLowerCase()
       if (tag === 'br') {
         runs.push({ text: '\n', bold: false, italic: false, code: false, underline: false, strike: false })
-      } else if (tag === 'img') {
-        images.push(imageBlock(child as HTMLImageElement))
-      } else if (!skipped(child)) {
+      } else if (skipped(child)) {
+      } else if (isImage(tag)) {
+        images.push(imageBlock(child))
+      } else {
         inlineRuns(child, runs, images, root)
       }
     }
@@ -202,8 +223,26 @@ function trimRuns(runs: OutlineRun[]): OutlineRun[] {
   return runs
 }
 
-function imageBlock(img: HTMLImageElement): OutlineBlock {
-  return { type: 'image', src: img.getAttribute('src') ?? '', alt: img.alt }
+/** An `<img>` or an inline `<svg>` as an image block; an SVG of either kind is numbered for `isolateSvg`. */
+function imageBlock(el: Element): OutlineImage {
+  const rect = el.getBoundingClientRect()
+  const inline = el.tagName.toLowerCase() === 'svg'
+  const src = inline ? '' : (el.getAttribute('src') ?? '')
+  const alt = inline ? (el.querySelector('title')?.textContent?.trim() ?? '') : (el as HTMLImageElement).alt
+  const block: OutlineImage = { type: 'image', src, alt, width: round(rect.width), height: round(rect.height) }
+  if (inline || /\.svg($|[?#])/i.test(src)) {
+    block.svg = ++svgCount
+    ;(el as HTMLElement).dataset.oaSvg = String(block.svg)
+  }
+  return block
+}
+
+function round(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+function isImage(tag: string): boolean {
+  return tag === 'img' || tag === 'svg'
 }
 
 /** The runs of `el`'s inline content as a paragraph-like block of `type`, followed by any images it held. */
@@ -232,8 +271,8 @@ function listItem(li: Element): OutlineItem {
       const tag = child.tagName.toLowerCase()
       if (tag === 'br') {
         runs.push({ text: '\n', bold: false, italic: false, code: false, underline: false, strike: false })
-      } else if (tag === 'img') {
-        images.push(imageBlock(child as HTMLImageElement))
+      } else if (isImage(tag)) {
+        images.push(imageBlock(child))
       } else if (isInline(child)) {
         inlineRuns(child, runs, images, li)
       } else if (tag === 'p' && own && runs.length === 0) {
@@ -307,7 +346,8 @@ function collectBlocks(el: Element, out: OutlineBlock[]): void {
       out.push({ type: 'rule' })
       return
     case 'img':
-      out.push(imageBlock(el as HTMLImageElement))
+    case 'svg':
+      out.push(imageBlock(el))
       return
     default:
       container(el, out)
@@ -334,8 +374,8 @@ function container(el: Element, out: OutlineBlock[]): void {
       const tag = child.tagName.toLowerCase()
       if (tag === 'br') {
         runs.push({ text: '\n', bold: false, italic: false, code: false, underline: false, strike: false })
-      } else if (tag === 'img') {
-        images.push(imageBlock(child as HTMLImageElement))
+      } else if (isImage(tag)) {
+        images.push(imageBlock(child))
       } else if (isInline(child)) {
         inlineRuns(child, runs, images, el)
       } else {
@@ -347,8 +387,24 @@ function container(el: Element, out: OutlineBlock[]): void {
   flush()
 }
 
+/**
+ * Outline every page of a document and write it into the page as `#artifact-scene`, then call `then` (the SVG
+ * isolation). Images have a size only once they have loaded, so this waits for `load` when the page is still
+ * loading: the chrome service dumps or photographs the page after that event, in whose handlers this runs. The
+ * one place the runtime defers work, and only on this render pass.
+ */
+export function outlineAtLoad(pages: HTMLElement[], then: () => void): void {
+  const run = () => {
+    writeOutline(pages)
+    then()
+  }
+  if (document.readyState === 'complete') run()
+  else window.addEventListener('load', run)
+}
+
 /** Outline every page of a document and write it into the page as `#artifact-scene`. */
 export function writeOutline(pages: HTMLElement[]): Outline {
+  svgCount = 0
   const outline: Outline = {
     kind: 'document',
     pages: pages.map((page, i) => {
@@ -364,4 +420,34 @@ export function writeOutline(pages: HTMLElement[]): Outline {
   script.textContent = JSON.stringify(outline).replace(/</g, '\\u003c')
   document.body.append(script)
   return outline
+}
+
+/** The `svg` number in the URL's query (`?scene&svg=3`), or null. */
+export function svgRequested(): number | null {
+  const value = new URLSearchParams(window.location.search).get('svg')
+  const n = value === null ? Number.NaN : Number.parseInt(value, 10)
+  return n >= 1 ? n : null
+}
+
+/**
+ * Show SVG number `n` alone: the rest of the page invisible, the element fixed at the window's top-left corner at
+ * its rendered size, on the background of the page it sits on, so a screenshot window of that size is the SVG.
+ * It keeps its place in the DOM, so the stylesheet rules and CSS variables that colour it still apply.
+ */
+export function isolateSvg(n: number): void {
+  const target = document.querySelector<HTMLElement>(`[data-oa-svg="${n}"]`)
+  if (!target) return
+  const rect = target.getBoundingClientRect()
+  const page = target.closest<HTMLElement>('.page')
+  const background = page ? getComputedStyle(page).backgroundColor : 'white'
+  // Under `#root` so these outrank the `#root *` rule that hides everything else.
+  const selector = `#root [data-oa-svg="${n}"]`
+  const style = document.createElement('style')
+  style.textContent =
+    `html,body{margin:0!important;padding:0!important;overflow:hidden!important;background:${background}!important}` +
+    '#root *{visibility:hidden!important}' +
+    `${selector},${selector} *{visibility:visible!important}` +
+    `${selector}{position:fixed!important;left:0!important;top:0!important;margin:0!important;` +
+    `width:${rect.width}px!important;height:${rect.height}px!important;max-width:none!important;z-index:2147483647}`
+  document.head.append(style)
 }

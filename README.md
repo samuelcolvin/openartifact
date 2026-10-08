@@ -139,7 +139,7 @@ Next to the page at `/artifacts/<id>/`, the server offers:
 - `/artifacts/<id>.zip` - the artifact as a git repository: every source file at the head, plus `.git` with the artifact's own history (one commit per change, with the original messages and dates). Unzip it and `git log`.
 - `/artifacts/<id>.pdf` - the page printed to PDF.
 - `/artifacts/<id>.pptx` - a deck as a PowerPoint file: a picture of each slide as its background, with every block of text laid over it as an editable text box at the browser's position, font, size and colour. Retyping works; moving a text box leaves its background behind.
-- `/artifacts/<id>.docx` - a document as a Word file: headings, paragraphs, lists, code, quotes, tables and images as ordinary Word paragraphs in Word's own styles, with none of the theme's colours, one page break per page of the artifact.
+- `/artifacts/<id>.docx` - a document as a Word file: headings, paragraphs, lists, code, quotes, tables and images as ordinary Word paragraphs in Word's own styles, with none of the theme's colours, one page break per page of the artifact. Images keep their size on the page; SVGs, which Word cannot show, are rendered to pictures by the chrome service.
 - `/artifacts/<id>.png?page=N` - one page as a PNG, the way a viewer sees it: a deck's slide, or a document scrolled to that page.
 
 The zip, the PDF, the PowerPoint and the Word file download as `<title> <commit>.zip` / `.pdf` / `.pptx` / `.docx`, the title from `artifact.toml` and the short sha of the artifact's last change.

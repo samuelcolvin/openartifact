@@ -11,6 +11,7 @@ from pathlib import Path
 import word
 from docx import Document
 from docx.oxml.ns import qn
+from docx.shared import Inches
 from PIL import Image
 
 
@@ -64,8 +65,9 @@ OUTLINE = {
                     'type': 'table',
                     'rows': [[{'runs': [run('h')], 'header': True}], [{'runs': [run('d')], 'header': False}]],
                 },
-                {'type': 'image', 'src': 'assets/pic.png', 'alt': 'A picture'},
-                {'type': 'image', 'src': 'assets/logo.svg', 'alt': 'A logo'},
+                {'type': 'image', 'src': 'assets/pic.png', 'alt': 'A picture', 'width': 192, 'height': 96},
+                {'type': 'image', 'src': 'assets/logo.svg', 'alt': 'A logo', 'width': 96, 'height': 96, 'svg': 1},
+                {'type': 'image', 'src': 'assets/gone.png', 'alt': 'Missing'},
                 {'type': 'rule'},
             ],
         },
@@ -81,7 +83,10 @@ def test_build_docx_writes_word_paragraphs(tmp_path: Path):
     (tmp_path / 'assets' / 'logo.svg').write_text('<svg/>')
     (tmp_path / 'assets' / 'outside.png').symlink_to(Path('/etc/hosts'))
     images = word.load_images(outline, tmp_path)
-    assert list(images) == ['assets/pic.png']  # the SVG is not a raster file
+    assert list(images) == ['assets/pic.png']  # the SVG is the chrome service's to render, the missing file is missing
+    svg = io.BytesIO()
+    Image.new('RGB', (192, 192)).save(svg, 'PNG')
+    images['svg:1'] = svg.getvalue()
 
     document = Document(io.BytesIO(word.build_docx(outline, images, 'Doc')))
     assert document.core_properties.title == 'Doc'
@@ -97,7 +102,7 @@ def test_build_docx_writes_word_paragraphs(tmp_path: Path):
     ]
     assert styles[6] == ('No Spacing', 'def f():\n    return 1')
     assert styles[7] == ('Quote', 'quoted')
-    assert ('Normal', '[image: A logo]') in styles
+    assert ('Normal', '[image: Missing]') in styles and not any('A logo' in text for _, text in styles)
     assert styles[-1] == ('Normal', 'second page')
 
     # Run styles: a bold run, a monospace code run, and the link as a hyperlink with its own run.
@@ -118,14 +123,16 @@ def test_build_docx_writes_word_paragraphs(tmp_path: Path):
     # A table with a bold header row, one picture, a rule as a bottom border, and a page break before page two.
     [table] = document.tables
     assert table.style.name == 'Table Grid' and table.rows[0].cells[0].paragraphs[0].runs[0].font.bold  # pyright: ignore
-    assert len(document.inline_shapes) == 1
+    # Pictures are as wide as on the page, 96 px to the inch.
+    picture, logo = document.inline_shapes
+    assert (picture.width, logo.width) == (Inches(2), Inches(1))
     assert any(p._p.pPr is not None and p._p.pPr.find(qn('w:pBdr')) is not None for p in paragraphs)
     assert document.element.body.findall(f'.//{qn("w:br")}[@{qn("w:type")}="page"]')
 
 
 def test_walk_finds_images_in_lists_and_quotes():
     outline = word.Outline.model_validate(OUTLINE)
-    assert [image.src for image in word.walk(outline.pages[0].blocks)] == ['assets/pic.png', 'assets/logo.svg']
+    assert [image.key for image in word.walk(outline.pages[0].blocks)] == ['assets/pic.png', 'svg:1', 'assets/gone.png']
     nested = word.Outline.model_validate(
         {
             'kind': 'document',
@@ -145,3 +152,12 @@ def test_walk_finds_images_in_lists_and_quotes():
         }
     )
     assert [image.src for image in word.walk(nested.pages[0].blocks)] == ['a.png', 'b.png']
+
+
+def test_crop_cuts_the_svg_out_of_the_minimum_window():
+    out = io.BytesIO()
+    Image.new('RGB', (400, 400)).save(out, 'PNG')
+    cropped = Image.open(io.BytesIO(word.crop(out.getvalue(), 96, 48)))
+    assert cropped.size == (96, 48)
+    # A picture that fits is passed through untouched.
+    assert word.crop(out.getvalue(), 400, 500) == out.getvalue()
