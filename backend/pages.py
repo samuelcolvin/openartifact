@@ -16,6 +16,12 @@ from urllib.parse import urlencode
 from fastapi.responses import HTMLResponse
 
 # FastMCP's default consent policy, also applied to our own pages: no scripts, inline styles, https images.
+# The brand mark: the "star" vertex of the Penrose kite-and-dart tiling, the same path as the app's favicon.
+MARK = (
+    '<svg class="mark" viewBox="0 0 100 100" aria-hidden="true">'
+    '<path d="M 50.00 8.39 L 66.71 31.39 L 93.75 40.18 L 77.04 63.18 L 77.04 91.61 '
+    'L 50.00 82.82 L 22.96 91.61 L 22.96 63.18 L 6.25 40.18 L 33.29 31.39 Z" fill="#e620e9"/></svg>'
+)
 CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' https: data:; base-uri 'none'"
 
 STYLES = """
@@ -25,8 +31,7 @@ body { min-height: 100vh; display: flex; flex-direction: column; align-items: ce
   gap: 28px; padding: 32px 16px; background: #101317; color: rgba(255, 255, 255, 0.88); }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; letter-spacing: 0.01em;
   color: rgba(255, 255, 255, 0.88); text-decoration: none; }
-.brand .mark { width: 14px; height: 14px; border-radius: 4px;
-  background: linear-gradient(135deg, #4a9eff, #b388ff); }
+.brand .mark { width: 16px; height: 16px; }
 .card { width: 100%; max-width: 420px; padding: 28px; border-radius: 14px; background: #1c2026;
   border: 1px solid rgba(255, 255, 255, 0.09); box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4); }
 .card h1 { font-size: 20px; font-weight: 600; margin-bottom: 8px; color: #f2f4f7; }
@@ -75,7 +80,7 @@ def render_page(title: str, body: str, *, csp: str | None = CSP) -> str:
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         '<link rel="icon" href="/app/favicon.svg" type="image/svg+xml">\n'
         f'{meta}<title>{_e(title)} - OpenArtifact</title>\n<style>{STYLES}</style>\n</head>\n<body>\n'
-        '<a class="brand" href="/"><span class="mark"></span>OpenArtifact</a>\n'
+        f'<a class="brand" href="/">{MARK}OpenArtifact</a>\n'
         f'<main class="card">\n{body}\n</main>\n</body>\n</html>\n'
     )
 

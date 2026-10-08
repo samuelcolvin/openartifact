@@ -260,11 +260,25 @@ export function Spinner({ label = 'Loading' }: { label?: string }) {
   )
 }
 
+/** The brand: the star of the Penrose kite-and-dart tiling (the favicon, `app/public/favicon.svg`) and the name. */
 export function Wordmark() {
   return (
     <span className="inline-flex items-center gap-2 text-sm font-semibold tracking-wide">
-      <span className="size-3.5 rounded bg-gradient-to-br from-accent to-accent-2" />
+      <Star className="size-4" />
       OpenArtifact
     </span>
+  )
+}
+
+/** The "star" vertex of the Penrose kite-and-dart tiling, five darts meeting at their apexes, in Pydantic
+ * magenta: the same path as the favicon. */
+export function Star({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 100" className={className} aria-hidden="true">
+      <path
+        d="M 50.00 8.39 L 66.71 31.39 L 93.75 40.18 L 77.04 63.18 L 77.04 91.61 L 50.00 82.82 L 22.96 91.61 L 22.96 63.18 L 6.25 40.18 L 33.29 31.39 Z"
+        fill="#e620e9"
+      />
+    </svg>
   )
 }

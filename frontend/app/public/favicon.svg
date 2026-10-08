@@ -1,4 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- The dart of the Penrose kite-and-dart tiling, as it sits at the top of the Pydantic logo. -->
-  <path d="M 50.00 21.10 L 92.00 78.90 L 50.00 65.26 L 8.00 78.90 Z" fill="#e620e9"/>
+  <!-- The "star" vertex of the Penrose kite-and-dart tiling: five darts meeting at their apexes. -->
+  <path d="M 50.00 8.39 L 66.71 31.39 L 93.75 40.18 L 77.04 63.18 L 77.04 91.61 L 50.00 82.82 L 22.96 91.61 L 22.96 63.18 L 6.25 40.18 L 33.29 31.39 Z" fill="#e620e9"/>
 </svg>
