@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import re
 import shutil
 import threading
@@ -16,6 +17,7 @@ from typing import TypeVar
 
 import httpx2
 import logfire
+import powerpoint
 import pytest
 import render
 import uvicorn
@@ -25,6 +27,8 @@ from fastapi.responses import Response
 from fastapi.testclient import TestClient
 from fastmcp import Client
 from logfire.testing import CaptureLogfire
+from PIL import Image
+from pptx import Presentation
 
 import auth
 import db
@@ -316,10 +320,18 @@ def test_artifact_pdf_needs_the_chrome_service(client: TestClient, monkeypatch: 
     assert 'OPENARTIFACT_CHROME_URL' in response.json()['detail']
 
 
-def stub_chrome(monkeypatch: pytest.MonkeyPatch, status: int, body: bytes) -> list[str]:
-    """Point the server at an in-process stand-in for the chrome service; returns the URLs it was asked to print."""
+def stub_chrome(monkeypatch: pytest.MonkeyPatch, status: int, body: bytes, scene: str = '') -> list[str]:
+    """Point the server at an in-process stand-in for the chrome service; returns the URLs it was asked to print.
+
+    `scene` is what its `/scene/` endpoint answers, for the PowerPoint export.
+    """
     asked: list[str] = []
     stub = FastAPI()
+
+    @stub.post('/scene/')
+    async def read_scene(request: Request) -> Response:
+        asked.append((await request.json())['url'])
+        return Response(scene, status_code=status, media_type='application/json' if status == 200 else 'text/plain')
 
     @stub.post('/pdf/')
     async def print_pdf(request: Request) -> Response:
@@ -448,9 +460,88 @@ def test_artifact_png_is_one_page_by_the_chrome_service(client: TestClient, monk
     assert client.get(f'/artifacts/{artifact.id}.png').status_code == 503
 
 
+SCENE = {
+    'width': 1055.9,
+    'height': 594.1,
+    'pages': [
+        {
+            'index': n,
+            'blocks': [
+                {
+                    'x': 81,
+                    'y': 83,
+                    'w': 929,
+                    'h': 52,
+                    'align': 'left',
+                    'lineHeight': 51.52,
+                    'runs': [
+                        {
+                            'text': f'Page {n}',
+                            'font': 'Segoe UI',
+                            'size': 44.8,
+                            'bold': True,
+                            'italic': False,
+                            'underline': False,
+                            'strike': False,
+                            'color': '#fbffea',
+                            'spacing': 0,
+                        }
+                    ],
+                }
+            ],
+        }
+        for n in (1, 2)
+    ],
+}
+
+
+def test_artifact_pptx_is_assembled_from_the_chrome_services_scene_and_pictures(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    artifact = starter(client)
+    picture = io.BytesIO()
+    Image.new('RGB', (4, 2)).save(picture, 'PNG')
+    asked = stub_chrome(monkeypatch, 200, picture.getvalue(), json.dumps(SCENE))
+    response = client.get(f'/artifacts/{artifact.id}.pptx')
+    assert response.status_code == 200, response.text
+    assert response.headers['content-type'] == powerpoint.MEDIA_TYPE
+    sha = last_commit(client, artifact)
+    assert response.headers['content-disposition'].startswith(f'attachment; filename="OpenArtifact Starter {sha}.pptx"')
+    assert response.headers['cache-control'] == 'private'
+    # The scene was read from the print pass in scene mode, then each of its pages photographed at the slide's size.
+    scene_url, *pictures = asked
+    assert re.fullmatch(rf'http://app:8765/print/[^/]+/artifacts/{artifact.id}/\?scene', scene_url)
+    assert sorted(pictures) == [f'{scene_url}#1 1056x594', f'{scene_url}#2 1056x594']
+    prs = Presentation(io.BytesIO(response.content))
+    texts = [shape.text_frame.text for slide in prs.slides for shape in slide.shapes]  # pyright: ignore
+    assert texts == ['Page 1', 'Page 2']
+    # The same access rules as the page.
+    colleague, _ = org_members(client)
+    sign_in(client, colleague)
+    assert client.get(f'/artifacts/{artifact.id}.pptx').status_code == 403
+    sign_out(client)
+    assert client.get(f'/artifacts/{artifact.id}.pptx').status_code == 401
+
+
+def test_artifact_pptx_is_for_decks_only(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    principal, _ = in_app(client, seed_starter)
+    document = in_app(
+        client,
+        lambda: workspace.import_directory(principal.workspace_id, 'Doc', 'document', ROOT / 'examples' / 'document'),
+    )
+    sign_in(client, principal)
+    stub_chrome(monkeypatch, 200, b'', json.dumps(SCENE))
+    response = client.get(f'/artifacts/{document.id}.pptx')
+    assert response.status_code == 422 and 'only a deck' in response.json()['detail']
+    # And without a chrome service a deck's export is a 503 like the PDF.
+    monkeypatch.delenv('OPENARTIFACT_CHROME_URL')
+    artifact = starter(client)
+    assert client.get(f'/artifacts/{artifact.id}.pptx').status_code == 503
+
+
 def test_exports_of_unknown_artifacts_are_404(client: TestClient):
     missing = uuid.uuid4()
-    for suffix in ('.md', '.zip', '.pdf', '.png'):
+    for suffix in ('.md', '.zip', '.pdf', '.png', '.pptx'):
         assert client.get(f'/artifacts/{missing}{suffix}').status_code == 404, suffix
         assert client.get(f'/artifacts/not-a-uuid{suffix}').status_code == 404, suffix
 

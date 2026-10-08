@@ -1,5 +1,5 @@
-"""Tests for `chrome/`: `pdf.py`'s command assembly and error paths, and the `/pdf/` and `/screenshot/` endpoints.
-Chrome is stubbed."""
+"""Tests for `chrome/`: `pdf.py`'s command assembly and error paths, and the `/pdf/`, `/screenshot/` and `/scene/`
+endpoints. Chrome is stubbed."""
 
 from __future__ import annotations
 
@@ -21,6 +21,14 @@ WRITES_PNG = (
     'for a in "$@"; do case "$a" in --screenshot=*) out="${a#--screenshot=}";; esac; done; '
     'printf "%s\\n" "$@" > "$out.args"; printf "\\211PNG fake" > "$out"'
 )
+# A fake Chrome that dumps a page holding a scene block, as a deck opened with `?scene` has, and the arguments
+# after it as a comment, since a dump goes to stdout and leaves nothing else behind.
+SCENE = '{"width": 1056, "height": 594, "pages": [{"index": 1, "blocks": []}]}'
+DUMPS_SCENE = (
+    f"""printf '<html><body><script type="application/json" id="artifact-scene">{SCENE}</script>"""
+    """<!-- %s -->\\n' "$*"; echo 'dbus: no bus' >&2"""
+)
+DUMPS_PLAIN = "printf '<html><body><p>no scene here</p></body></html>\\n'"
 
 
 def fake_chrome(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str) -> Path:
@@ -95,11 +103,45 @@ def test_screenshot_sizes_the_window_and_keeps_the_hash(tmp_path: Path, monkeypa
     assert args[-1] == f'{URL}#3' and not any(a.startswith('--print-to-pdf') for a in args)
 
 
+def test_screenshot_scale_is_the_device_pixel_ratio(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fake_chrome(tmp_path, monkeypatch, WRITES_PNG)
+    out = tmp_path / 'page.png'
+    pdf.screenshot(URL, out, 1056, 594, scale=2)
+    args = (tmp_path / 'page.png.args').read_text().splitlines()
+    assert '--force-device-scale-factor=2' in args and '--window-size=1056,594' in args
+    # The flag is left out at 1, Chrome's default.
+    pdf.screenshot(URL, out, 1056, 594)
+    assert not any(
+        a.startswith('--force-device-scale-factor') for a in out.with_suffix('.png.args').read_text().split()
+    )
+
+
 def test_screenshot_writing_nothing_is_an_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     fake_chrome(tmp_path, monkeypatch, LOAD_FAILS)
     with pytest.raises(pdf.ChromeError, match='without writing a screenshot') as exc_info:
         pdf.screenshot(URL, tmp_path / 'page.png', 800, 600)
     assert 'Page load failed' in exc_info.value.stderr
+
+
+def test_dump_dom_returns_the_page_and_stderr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fake_chrome(tmp_path, monkeypatch, DUMPS_SCENE)
+    dumped = pdf.dump_dom(f'{URL}?scene')
+    assert SCENE in dumped.html and dumped.stderr == 'dbus: no bus'
+    # Chrome got the dump flag and the URL with its query, and no file flags.
+    assert f'<!-- --headless=new --disable-gpu --dump-dom {URL}?scene -->' in dumped.html
+
+
+def test_dump_dom_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fake_chrome(tmp_path, monkeypatch, LOAD_FAILS)
+    with pytest.raises(pdf.ChromeError, match='Chrome exited without dumping the page') as exc_info:
+        pdf.dump_dom(URL)
+    assert exc_info.value.stderr == 'Page load failed: net::ERR_SSL_PROTOCOL_ERROR'
+    fake_chrome(tmp_path, monkeypatch, 'echo boom >&2\nexit 3')
+    with pytest.raises(pdf.ChromeError, match=r'Chrome exited with code 3'):
+        pdf.dump_dom(URL)
+    monkeypatch.setattr(pdf, 'find_chrome', lambda: None)
+    with pytest.raises(pdf.ChromeError, match=f'(?s)not found.*--dump-dom {URL}'):
+        pdf.dump_dom(URL)
 
 
 def test_shell_quote():
@@ -166,6 +208,27 @@ def test_screenshot_endpoint_reports_chrome_failure(
 ):
     fake_chrome(tmp_path, monkeypatch, LOAD_FAILS)
     response = client.post('/screenshot/', json={'url': URL})
+    assert response.status_code == 502 and 'Page load failed' in response.json()['detail']
+
+
+def test_scene_endpoint_returns_the_scene(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fake_chrome(tmp_path, monkeypatch, DUMPS_SCENE)
+    response = client.post('/scene/', json={'url': f'{URL}?scene'})
+    assert response.status_code == 200, response.text
+    assert response.headers['content-type'] == 'application/json'
+    assert response.json() == {'width': 1056, 'height': 594, 'pages': [{'index': 1, 'blocks': []}]}
+    assert client.post('/scene/', json={'url': 'file:///etc/passwd'}).status_code == 422
+
+
+def test_scene_endpoint_without_a_scene_is_a_502(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fake_chrome(tmp_path, monkeypatch, DUMPS_PLAIN)
+    response = client.post('/scene/', json={'url': URL})
+    assert (
+        response.status_code == 502
+        and response.json()['detail'] == f'no scene in the page at {URL}: is it a deck opened with ?scene'
+    )
+    fake_chrome(tmp_path, monkeypatch, LOAD_FAILS)
+    response = client.post('/scene/', json={'url': URL})
     assert response.status_code == 502 and 'Page load failed' in response.json()['detail']
 
 
