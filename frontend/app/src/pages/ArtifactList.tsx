@@ -118,7 +118,7 @@ export function ArtifactList() {
 
   const domain = me?.organization?.domain ?? null
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-full flex-col">
       <Header me={me}>
         <h1 className="text-sm text-muted">Your artifacts</h1>
         <span className="flex-1" />
@@ -132,7 +132,7 @@ export function ArtifactList() {
         </Button>
       </Header>
       <McpDialog open={mcpOpen} onClose={() => setMcpOpen(false)} />
-      <main className="mx-auto w-full max-w-5xl flex-1 overflow-y-auto px-4 py-6">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
         {error ? <p className="text-danger">{error}</p> : null}
         {!listing ? (
           <Spinner />
@@ -166,7 +166,7 @@ export function ArtifactList() {
           </>
         )}
       </main>
-      <footer className="flex h-9 shrink-0 items-center justify-center gap-3 border-t border-line bg-panel px-4 text-xs text-faint">
+      <footer className="flex h-9 shrink-0 items-center justify-center gap-3 border-t border-line px-4 text-xs text-faint">
         <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="hover:text-muted">
           github.com/samuelcolvin/openartifact
         </a>
