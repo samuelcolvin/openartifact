@@ -1,10 +1,12 @@
-"""Rendering an artifact's page through the chrome service: the PDF export and a screenshot of one page.
+"""Rendering an artifact's page through the chrome service: the PDF export, a screenshot of one page, and the
+scene and slide pictures the PowerPoint export (`powerpoint.py`) is built from.
 
 The chrome service (`chrome/`) runs Chrome headless against a URL this server serves. Chrome carries no session,
 so it is sent to the print pass, `/print/{token}/artifacts/{id}/`, a short-lived signed URL (`print_token`) that
 `server.py` answers with the page and its media. The page is built first, under the artifact lock, which is
 released before the chrome service is called: Chrome fetches the page from this process, which takes the same
-lock. Both `server.py` (the `.pdf` and `.png` routes) and `mcp_server.py` (the `screenshot` tool) call in here.
+lock. `server.py` (the `.pdf` and `.png` routes), `mcp_server.py` (the `screenshot` tool) and `powerpoint.py` call
+in here.
 """
 
 from __future__ import annotations
@@ -52,9 +54,12 @@ def verify_print_token(token: str, artifact_id: uuid.UUID) -> None:
     signing.verify(PRINT_PURPOSE, token, str(artifact_id))
 
 
-def print_url(found: workspace.Artifact, page: int | None = None) -> str:
-    """The address the chrome service fetches the page at, with the page number as the hash when given."""
+def print_url(found: workspace.Artifact, page: int | None = None, scene: bool = False) -> str:
+    """The address the chrome service fetches the page at, with the page number as the hash when given, and
+    `?scene` when the page is wanted in the runtime's scene mode (frontend/src/scene.ts), for the PowerPoint export."""
     url = f'{config.internal_url()}/print/{print_token(found.id)}/artifacts/{found.id}/'
+    if scene:
+        url += '?scene'
     return f'{url}#{page}' if page is not None else url
 
 

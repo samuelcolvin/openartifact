@@ -12,6 +12,7 @@ Routes:
     /artifacts/{id}.zip         the artifact as a git repository (its files and history) in a zip
     /artifacts/{id}.pdf         the page printed to PDF by the chrome service (`chrome/`)
     /artifacts/{id}.png?page=N  one page of the artifact as a PNG, by the same service (`render.py`)
+    /artifacts/{id}.pptx        a deck as an editable PowerPoint file (`powerpoint.py`), by the same service
     /artifacts/{id}.json        the artifact's placement, permissions and the viewer's rights, for the toolbar
     POST /artifacts/{id}/fork   copy the artifact into the signed-in viewer's own space
     /print/{token}/artifacts/{id}/...   the page and its media for the chrome service, by a short-lived pass
@@ -49,6 +50,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+import powerpoint
 import render
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -464,6 +466,20 @@ async def artifact_pdf(artifact_id: str, request: Request) -> Response:
         filename = await export_filename(found, directory, 'pdf')
     data = await rendered(render.pdf(found))
     return private(Response(data, media_type='application/pdf', headers=attachment(filename)))
+
+
+@app.get('/artifacts/{artifact_id}.pptx')
+async def artifact_pptx(artifact_id: str, request: Request) -> Response:
+    """A deck as a PowerPoint file with editable text: the chrome service measures the page and pictures each slide,
+    and `powerpoint.export` assembles them. Decks only; a document or page artifact is a 422."""
+    found = await load_artifact(artifact_id, request)
+    if found.type != 'deck':
+        raise HTTPException(422, f'only a deck exports to PowerPoint; this artifact is a {found.type}')
+    async with workspace.open_artifact(found) as directory:
+        await build_if_missing(found, directory)
+        filename = await export_filename(found, directory, 'pptx')
+    data = await rendered(powerpoint.export(found))
+    return private(Response(data, media_type=powerpoint.MEDIA_TYPE, headers=attachment(filename)))
 
 
 @app.get('/artifacts/{artifact_id}.png')

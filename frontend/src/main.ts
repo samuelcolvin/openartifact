@@ -14,6 +14,7 @@ import { type DeckController, initDeck } from './deck.ts'
 import type {} from './embed.ts'
 import hljsCss from './hljs.css'
 import { buildPage } from './page.ts'
+import { hideText, measureScene, prepareScene, sceneRequested } from './scene.ts'
 import { splitPages } from './split.ts'
 import deckCss from './styles/deck.css'
 import documentCss from './styles/document.css'
@@ -108,6 +109,13 @@ function main(): void {
     presenter.append(stream)
     root.replaceChildren(presenter)
     deck = initDeck(presenter, config)
+    if (sceneRequested()) {
+      // The measurement pass of the PowerPoint export (scene.ts): a render for the chrome service, not a viewer.
+      prepareScene()
+      measureScene(pages)
+      hideText(pages)
+      return
+    }
   } else {
     // A document or page artifact: the pages stack; the type's stylesheet lays them out.
     const wrapper = document.createElement('div')

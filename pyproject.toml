@@ -19,6 +19,7 @@ dependencies = [
     "pydantic-monty>=1.0.0",
     "uvicorn>=0.54.0",
     "pydantic-ai-slim[anthropic,mcp,openai]==2.54.0",
+    "python-pptx>=1.0.2",
 ]
 
 # Not a package: backend/ is a handful of modules imported by path (pytest and pyright add it to the path), with

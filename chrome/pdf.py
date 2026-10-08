@@ -1,11 +1,13 @@
-"""Print a served artifact page to PDF, or screenshot it, with Chrome headless.
+"""Print a served artifact page to PDF, screenshot it, or dump its DOM, with Chrome headless.
 
 The page carries its own print stylesheet, including the paper size: each artifact type's sheet sets `@page`
 (16:9 slides for a deck, A4 for a document or page), and Chrome honours it, so no paper flags are passed here.
 A screenshot is the page as a viewer sees it in a window of the given size; the URL's `#N` hash picks the page
 of a deck, or scrolls a document to it. Both take a URL rather than a file because the page is not
 self-contained: it loads `openartifact.js` and its images from the application server. Standard library only;
-`chrome/server.py` wraps them in HTTP endpoints and `chrome/Dockerfile` supplies Chromium.
+`chrome/server.py` wraps them in HTTP endpoints and `chrome/Dockerfile` supplies Chromium. `dump_dom` is the third
+job: the page's DOM after the runtime has run, which is how the PowerPoint export reads the scene the runtime
+measures.
 
 Chrome's stderr is kept in every case: it is the only record of what happened when a page fails to load, since
 Chrome then exits 0 without writing a file (`Page load failed: net::ERR_...` is all there is).
@@ -71,14 +73,46 @@ def print_to_pdf(url: str, pdf_path: Path) -> Printed:
     return run_chrome(url, pdf_path, ['--no-pdf-header-footer', '--print-to-pdf={path}'], 'a PDF')
 
 
-def screenshot(url: str, png_path: Path, width: int, height: int) -> Printed:
+def screenshot(url: str, png_path: Path, width: int, height: int, scale: int = 1) -> Printed:
     """Capture the page at `url` as a PNG of `width` x `height` CSS pixels, as a viewer with that window sees it.
 
-    The same errors as `print_to_pdf`. The hash of `url` is honoured by the page itself: `#3` is the third page
-    of a deck, or the third page of a document scrolled into view.
+    `scale` is the device pixel ratio: 2 gives a PNG of twice the size showing the same window, for a picture that
+    stays sharp when it is blown up (the PowerPoint export's slide backgrounds). The same errors as
+    `print_to_pdf`. The hash of `url` is honoured by the page itself: `#3` is the third page of a deck, or the
+    third page of a document scrolled into view.
     """
-    flags = ['--hide-scrollbars', f'--window-size={width},{height}', '--screenshot={path}']
-    return run_chrome(url, png_path, flags, 'a screenshot')
+    flags = ['--hide-scrollbars', f'--window-size={width},{height}']
+    if scale != 1:
+        flags.append(f'--force-device-scale-factor={scale}')
+    return run_chrome(url, png_path, [*flags, '--screenshot={path}'], 'a screenshot')
+
+
+@dataclass(frozen=True)
+class Dumped:
+    """What `dump_dom` produced: the page's DOM serialised after load, and Chrome's stderr meanwhile."""
+
+    html: str
+    stderr: str
+
+
+def dump_dom(url: str) -> Dumped:
+    """Load the page at `url` and return its DOM as HTML, serialised after the runtime has run (`--dump-dom`).
+
+    The PowerPoint export reads the scene the runtime writes into the page this way. Nothing written is an error
+    like a missing file is for the other jobs: a page that fails to load leaves stdout empty.
+    """
+    chrome = find_chrome()
+    args = ['--headless=new', '--disable-gpu', *container_flags(), '--dump-dom', url]
+    command = ' '.join(shell_quote(a) for a in (chrome or 'google-chrome', *args))
+    if chrome is None:
+        raise ChromeError(f'Chrome / Chromium not found on PATH or in /Applications; run this yourself:\n  {command}')
+    result = subprocess.run([chrome, *args], check=False, capture_output=True, text=True)
+    stderr = result.stderr.strip()
+    if result.returncode != 0:
+        raise ChromeError(f'Chrome exited with code {result.returncode}:\n  {command}\n{stderr}', stderr)
+    if not result.stdout.strip():
+        raise ChromeError(f'Chrome exited without dumping the page:\n  {command}\n{stderr}', stderr)
+    return Dumped(result.stdout, stderr)
 
 
 def run_chrome(url: str, output: Path, flags: list[str], what: str) -> Printed:

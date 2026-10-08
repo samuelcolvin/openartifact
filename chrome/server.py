@@ -1,7 +1,7 @@
-"""The chrome service: HTTP endpoints that print a page to PDF or screenshot it with Chrome headless.
+"""The chrome service: HTTP endpoints that print a page to PDF, screenshot it or read its scene with Chrome headless.
 
 It runs in its own image (`chrome/Dockerfile`, which has Chromium) because the application image has none, and
-the application server calls it for `/artifacts/{id}.pdf` and `/artifacts/{id}.png`. It is internal: it renders
+the application server calls it for `/artifacts/{id}.pdf`, `/artifacts/{id}.png` and `/artifacts/{id}.pptx`. It is internal: it renders
 whatever http(s) URL it is given, so it must not be reachable from outside the deployment.
 
 `chrome/main.py` configures Logfire and serves this app; this module never touches Logfire, so tests importing
@@ -13,6 +13,7 @@ load, Chrome says so there and nowhere else.
 from __future__ import annotations
 
 import asyncio
+import re
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -44,6 +45,18 @@ class ScreenshotRequest(BaseModel):
     url: str
     width: int = Field(1600, ge=200, le=4000)
     height: int = Field(900, ge=200, le=4000)
+    """The device pixel ratio: the PNG is `scale` times the window in each direction."""
+    scale: int = Field(1, ge=1, le=3)
+
+
+class SceneRequest(BaseModel):
+    """Whose scene to read: the URL of a served deck page opened with `?scene`."""
+
+    url: str
+
+
+# The scene the runtime writes into a deck page opened with `?scene` (frontend/src/scene.ts): one JSON block.
+SCENE_RE = re.compile(r'<script[^>]*\bid="artifact-scene"[^>]*>(.*?)</script>', re.DOTALL)
 
 
 def stderr_tail(stderr: str) -> str:
@@ -73,9 +86,38 @@ async def take_screenshot(request: ScreenshotRequest) -> Response:
         request.url,
         'page.png',
         'chrome screenshot',
-        lambda path: pdf.screenshot(request.url, path, request.width, request.height),
+        lambda path: pdf.screenshot(request.url, path, request.width, request.height, request.scale),
     )
     return Response(data, media_type='image/png')
+
+
+@app.post('/scene/')
+async def read_scene(request: SceneRequest) -> Response:
+    """The scene a deck page opened with `?scene` measured, as the JSON the runtime wrote into it.
+
+    A page without one (not a deck, or not opened with `?scene`) is a 502 like a failed load, since from here they
+    look the same: Chrome dumped a page and the scene is not in it.
+    """
+    check_url(request.url)
+    with tracer.start_as_current_span('chrome dump dom', attributes={'url.full': request.url}) as span:
+        try:
+            dumped = await asyncio.to_thread(pdf.dump_dom, request.url)
+        except pdf.ChromeError as exc:
+            span.set_attribute('chrome.stderr', stderr_tail(exc.stderr))
+            span.record_exception(exc)
+            raise HTTPException(502, str(exc)) from exc
+        span.set_attribute('chrome.stderr', stderr_tail(dumped.stderr))
+        match = SCENE_RE.search(dumped.html)
+        if match is None:
+            raise HTTPException(502, f'no scene in the page at {request.url}: is it a deck opened with ?scene')
+        span.set_attribute('output.size', len(match[1]))
+    return Response(match[1], media_type='application/json')
+
+
+def check_url(url: str) -> None:
+    """422 unless `url` is http(s): the service renders what it is told to, so a file or data URL is refused."""
+    if urlsplit(url).scheme not in ('http', 'https'):
+        raise HTTPException(422, 'url must be http or https')
 
 
 async def render(url: str, filename: str, span_name: str, run: Callable[[Path], pdf.Printed]) -> bytes:
@@ -84,8 +126,7 @@ async def render(url: str, filename: str, span_name: str, run: Callable[[Path], 
     An http(s) URL only (422 otherwise); a `ChromeError` is a 502 whose detail is the error, with Chrome's stderr
     on the span either way.
     """
-    if urlsplit(url).scheme not in ('http', 'https'):
-        raise HTTPException(422, 'url must be http or https')
+    check_url(url)
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / filename
         with tracer.start_as_current_span(span_name, attributes={'url.full': url}) as span:
