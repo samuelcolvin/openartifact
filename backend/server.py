@@ -58,6 +58,7 @@ import word
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 import access
 import api
@@ -658,6 +659,27 @@ async def artifact_upload(artifact_id: str, path: str, request: Request, token: 
     return {'path': path, 'size': size, 'sha256': hashlib.sha256(body).hexdigest()}
 
 
+# The MCP endpoint and its resource metadata as a client reaches them when the URL was entered without the trailing
+# slash. Answered in place: the router's redirect to the slashed path is one claude.ai does not follow.
+SLASHLESS_PATHS = {
+    '/mcp': '/mcp/',
+    '/.well-known/oauth-protected-resource/mcp': '/.well-known/oauth-protected-resource/mcp/',
+}
+
+
+class SlashlessMcp:
+    """ASGI middleware serving `/mcp` as `/mcp/`, by rewriting the path before routing."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope['type'] == 'http' and (path := SLASHLESS_PATHS.get(scope['path'])):
+            scope = {**scope, 'path': path, 'raw_path': path.encode()}
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(SlashlessMcp)
 app.include_router(login.router)
 app.include_router(api.router)
 app.mount('/app', StaticFiles(directory=APP_DIR, check_dir=False), name='app')
