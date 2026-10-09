@@ -33,6 +33,9 @@ services:
         value: '8765'
       - key: OPENARTIFACT_BASE_URL
         value: https://openartifact.dev
+      # Trust Render's proxy for `X-Forwarded-Proto` (uvicorn reads this), so a redirect the app builds is https.
+      - key: FORWARDED_ALLOW_IPS
+        value: '*'
       # The app as the chrome service fetches pages from it: the private address, not the public domain.
       - key: OPENARTIFACT_INTERNAL_URL
         fromService:
