@@ -715,6 +715,17 @@ def test_upload_to_unknown_artifact_is_404(client: TestClient):
     assert client.put('/artifacts/not-a-uuid/main.md?token=x', content=b'abc').status_code == 404
 
 
+def test_mcp_without_trailing_slash_is_served_in_place(client: TestClient):
+    """`/mcp` answers as `/mcp/` does, with no redirect: claude.ai does not follow one."""
+    response = client.post(
+        '/mcp', headers={'accept': 'application/json, text/event-stream'}, json={}, follow_redirects=False
+    )
+    assert response.status_code == 401
+    assert response.headers['www-authenticate'] == client.post('/mcp/', json={}).headers['www-authenticate']
+    metadata = client.get('/.well-known/oauth-protected-resource/mcp', follow_redirects=False)
+    assert metadata.status_code == client.get('/.well-known/oauth-protected-resource/mcp/').status_code != 307
+
+
 def test_mcp_requires_a_token(client: TestClient):
     response = client.post(
         '/mcp/',

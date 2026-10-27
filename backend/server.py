@@ -58,6 +58,7 @@ import word
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import Route
 
 import access
 import api
@@ -658,6 +659,9 @@ async def artifact_upload(artifact_id: str, path: str, request: Request, token: 
     return {'path': path, 'size': size, 'sha256': hashlib.sha256(body).hexdigest()}
 
 
+# `/mcp` is served in place as `/mcp/`: the router's redirect to the slashed path is one claude.ai does not follow.
+mcp_endpoint = next(route for route in mcp_app.routes if isinstance(route, Route) and route.path == '/mcp/')
+app.add_route('/mcp', mcp_endpoint.endpoint, methods=list(mcp_endpoint.methods or ()))
 app.include_router(login.router)
 app.include_router(api.router)
 app.mount('/app', StaticFiles(directory=APP_DIR, check_dir=False), name='app')
